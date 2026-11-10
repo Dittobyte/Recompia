@@ -110,7 +110,8 @@ This Testing build adds logging and a few device checks, and changes no frame-ra
 - `pkp.log` no longer contains your whole room code, only its first group, so a log is safe to attach to a bug report. The launcher still shows the whole code
 
 ### Game
-- NVIDIA graphics cards no longer risk a crash (device lost) in three of the game's compute shaders when a loop count is not the game's: the count is held to the size of the table the loop walks (on other cards, to 16384). From pokopia-native 1.4.0; `[nvn] loop_guard = off` turns it off
+- NVIDIA graphics cards no longer risk a crash (device lost) in six of the game's compute shaders when a loop count is not the game's: the count is held to the size of the table the loop walks (on other cards, to 16384). From pokopia-native 1.4.0; `[nvn] loop_guard = off` turns it off
+  - The lighting shader now has the guard in all four of its variants, not one. Two of the unguarded ones ran in a game that fell from 95 to 3 fps after 8 minutes on an RTX 3060 (#309)
 - **Story co-op** (experimental, `[pkp] link_story_coop`): the host's own story no longer stops while friends are visiting. Before, any Link Play session turned the host's story talks into "Bring <host> here to say hi!" and paused its requests. From pokopia-native 1.4.0
 
 ### Launcher
