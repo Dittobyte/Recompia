@@ -76,14 +76,14 @@ const char* pad_name(PromptStyle style, const PadSettings& pad, bool label_abxy,
     static const char* const kSteam[kPadSrcCount] = {
         "steam/a", "steam/b", "steam/x", "steam/y", "steam/lb", "steam/rb", "steam/lt", "steam/rt", "steam/menu", "steam/view",
         "", "", "", "", "", "",
-        "steam/rg", "steam/lg", "steam/rg", "steam/lg", "steam/lp", "steam/rp",   // the grips (upper and lower on a side share the icon) and the trackpad clicks
+        "steam/r4", "steam/l4", "steam/r5", "steam/l5", "steam/lp", "steam/rp",   // the four rear grips (RightPaddle1, LeftPaddle1, RightPaddle2, LeftPaddle2) and the trackpad clicks
     };
     static const char* const kPs[kPadSrcCount] = {
         "ps/cross", "ps/circle", "ps/square", "ps/triangle", "ps/l1", "ps/r1", "ps/l2", "ps/r2", "ps/options", "ps/create",
         "", "", "", "", "", "", "", "", "", "", "", "",
     };
     const char* name = (style == PromptStyle::Xbox ? kXbox : steam_set ? kSteam : kPs)[static_cast<int>(src)];
-    // The Steam Deck has View and Menu like an Xbox pad; the Steam Controller's arrows (< and >) are not on it.
+    // The Steam Deck's View and Menu are the Xbox symbols; steam/view and steam/menu are the same art since the Steam Controller (2026) has them too.
     if (style == PromptStyle::SteamDeck) {
         if (std::string_view(name) == "steam/menu") return "deck/menu";
         if (std::string_view(name) == "steam/view") return "deck/view";

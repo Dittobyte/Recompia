@@ -16,6 +16,10 @@ Add the Steam Controller icons (steam/, from the Kenney "Steam Controller" folde
 Add the Steam Deck icons (deck/, the Xbox View and Menu symbols) to an existing pak; other entries are kept byte for byte:
   python -I scripts/build_prompt_pack.py --add-deck --out assets/prompts/prompt_icons.pak
 
+Fit steam/ to the Steam Controller (2026) in an existing pak (needs no Kenney pack): View and Menu from xbox/, one icon per rear grip
+(l4, l5, r4, r5) instead of the original controller's two; other entries are kept byte for byte:
+  python -I scripts/build_prompt_pack.py --add-sc2 --out assets/prompts/prompt_icons.pak
+
 Pack format, little endian:
   header (24 bytes): char magic[4]="MPIP", u32 version=1, u32 count, u32 icon_w=36, u32 icon_h=36, u32 reserved=0
   count directory entries (48 bytes each): char name[40] (ASCII, NUL padded), u32 offset, u32 size (=5184)
@@ -37,7 +41,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 ICON = 36
 BOX = 33                    # icon content is fitted into a BOX x BOX square
@@ -88,7 +92,8 @@ PS_MAP = {
 }
 
 # The Steam Controller set, laid out like the Xbox one (A/B/X/Y by printed letter, bumpers, triggers; the controller's left small button is
-# View and the right one Menu). Kenney's art is coloured like the Steam Deck's.
+# View and the right one Menu). Kenney's art is coloured like the Steam Deck's. It is drawn after the original Steam Controller (the < and >
+# buttons, two rear grips); sc2_fit() turns it into the Steam Controller (2026) set.
 STEAM_MAP = {
     "steam/a": "steam_button_color_a",
     "steam/b": "steam_button_color_b",
@@ -101,7 +106,7 @@ STEAM_MAP = {
     "steam/menu": "steam_button_start_icon",
     "steam/view": "steam_button_back_icon",
     "steam/dpad": "steam_dpad",
-    "steam/lg": "steam_lg",                  # left grip (the two rear buttons on a side share it)
+    "steam/lg": "steam_lg",                  # left grip: the source of the l4/l5 icons (sc2_fit() drops this name)
     "steam/rg": "steam_rg",
     "steam/lp": "steam_button_lp",           # left and right trackpad click
     "steam/rp": "steam_button_rp",
@@ -599,6 +604,7 @@ def add_steam(args: argparse.Namespace) -> int:
         add_dpad_directions(icons)
         for n in [n for n in icons if n.startswith("steam/")]:
             icons[n + "_pressed"] = pressed_variant(icons[n])
+        sc2_fit(icons, Path(args.font))
         size = write_pak(out, icons)
         print(f"wrote {out} ({size} bytes), {len(icons)} entries; steam/: {sum(1 for n in icons if n.startswith('steam/'))}")
         return 0
@@ -621,6 +627,67 @@ def add_deck(args: argparse.Namespace) -> int:
         icons[name + "_pressed"] = icons[src + "_pressed"].copy()
     size = write_pak(out, icons)
     print(f"wrote {out} ({size} bytes), {len(icons)} entries; deck/: {sum(1 for n in icons if n.startswith('deck/'))}")
+    return 0
+
+
+# The Steam Controller (2026) differs from Kenney's original-controller art in three places: its small buttons are View and Menu like an Xbox
+# pad (not < and >), it has four rear grips (L4, L5, R4, R5) where the original had two, and its trackpads keep the LP and RP icons.
+# Kenney has no art for it, so the grips are the original grip shape with the label redrawn, and View and Menu are the Xbox symbols.
+SC2_VIEW_MENU = {"steam/view": "xbox/view", "steam/menu": "xbox/menu"}
+SC2_GRIPS = {"steam/l4": ("steam/lg", "L4"), "steam/l5": ("steam/lg", "L5"),
+             "steam/r4": ("steam/rg", "R4"), "steam/r5": ("steam/rg", "R5")}
+SC2_GRIP_OLD = ("steam/lg", "steam/rg")
+GRIP_TEXT_SCALE = 4         # the label is drawn this many times larger and scaled down, for smooth edges
+GRIP_TEXT_PX = 13           # label height in icon pixels (the original LG / RG text is about this tall)
+
+
+def grip_relabel(shape: Image.Image, text: str, font_path: Path) -> Image.Image:
+    """A grip icon: the white shape of `shape` (its old label is a transparent knockout, filled first) with `text` knocked out."""
+    alpha = shape.getchannel("A")
+    outside = alpha.point(lambda v: 255 if v < 128 else 0)
+    ImageDraw.floodfill(outside, (0, 0), 128)                       # the corner is outside the shape: mark what touches it
+    holes = outside.point(lambda v: 255 if v == 255 else 0)           # transparent and not reachable from outside: the old label
+    holes = holes.filter(ImageFilter.MaxFilter(3))                    # plus its half-transparent rim, or the old letters ghost through
+    solid = ImageChops.lighter(alpha, holes)
+    big = GRIP_TEXT_SCALE
+    font = ImageFont.truetype(str(font_path), GRIP_TEXT_PX * big)
+    mask = Image.new("L", (ICON * big, ICON * big), 0)
+    ImageDraw.Draw(mask).text((ICON * big // 2, ICON * big // 2), text, font=font, fill=255, anchor="mm", stroke_width=big // 2, stroke_fill=255)
+    mask = mask.resize((ICON, ICON), RESAMPLE)
+    out_alpha = ImageChops.multiply(solid, ImageChops.invert(mask))
+    icon = Image.new("RGBA", (ICON, ICON), (255, 255, 255, 0))
+    icon.putalpha(out_alpha)
+    return icon
+
+
+def sc2_fit(icons: dict[str, Image.Image], font_path: Path) -> None:
+    """Turns the steam/ entries into the Steam Controller (2026) set, in place; running it again changes nothing."""
+    for name, src in SC2_VIEW_MENU.items():
+        icons[name] = icons[src].copy()
+        icons[name + "_pressed"] = icons[src + "_pressed"].copy() if src + "_pressed" in icons else pressed_variant(icons[name])
+    for name, (old, text) in SC2_GRIPS.items():
+        if old not in icons:
+            if name not in icons:
+                raise SystemExit(f"no grip shape for {name}: the pak has neither {old} nor {name}")
+            continue                                    # already fitted: keep the icon
+        icons[name] = grip_relabel(icons[old], text, font_path)
+    for old in SC2_GRIP_OLD:
+        icons.pop(old, None)
+        icons.pop(old + "_pressed", None)
+    for name in SC2_GRIPS:
+        icons[name + "_pressed"] = pressed_variant(icons[name])
+
+
+def add_sc2(args: argparse.Namespace) -> int:
+    """Fits the steam/ entries of an existing pak to the Steam Controller (2026); every other entry is kept as it is."""
+    font_path = Path(args.font)
+    if not font_path.is_file():
+        raise SystemExit(f"font not found: {font_path}")
+    out = Path(args.out)
+    icons = read_pak(out)
+    sc2_fit(icons, font_path)
+    size = write_pak(out, icons)
+    print(f"wrote {out} ({size} bytes), {len(icons)} entries; steam/: {sum(1 for n in icons if n.startswith('steam/'))}")
     return 0
 
 
@@ -663,6 +730,7 @@ def build(args: argparse.Namespace) -> int:
 
         for name in list(icons):
             icons[name + "_pressed"] = pressed_variant(icons[name])
+        sc2_fit(icons, font_path)
 
         out = Path(args.out)
         size = write_pak(out, icons)
@@ -692,6 +760,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--verify", metavar="PAK", help="check an existing pak and exit")
     ap.add_argument("--add-steam", metavar="KENNEY", help="add the steam/ icons from the Kenney pack (folder or .zip) to the pak given by --out, in place, and exit")
     ap.add_argument("--add-deck", action="store_true", help="add the deck/ icons (Xbox View and Menu) to the pak given by --out, in place, and exit")
+    ap.add_argument("--add-sc2", action="store_true", help="fit the steam/ icons to the Steam Controller (2026) in the pak given by --out, in place, and exit")
     ap.add_argument("--derive", metavar="PAK", help="add the derived d-pad direction entries to an existing pak in place and exit")
     args = ap.parse_args(argv)
     if args.verify:
@@ -702,6 +771,8 @@ def main(argv: list[str] | None = None) -> int:
         return add_steam(args)
     if args.add_deck:
         return add_deck(args)
+    if args.add_sc2:
+        return add_sc2(args)
     if not args.kenney:
         ap.error("--kenney is required")
     return build(args)
