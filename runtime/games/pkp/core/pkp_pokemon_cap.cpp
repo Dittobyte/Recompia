@@ -2,6 +2,7 @@
 // Pokopia v2.0.1a: configurable resident parameter limits (25..50 living, five extra object slots).
 // This does NOT expand model resources or guarantee visibility of all 50 Pokemon.
 #include "core/pkp_pokemon_cap.h"
+#include "core/pkp_resident_census.h"
 
 #include <cstdint>
 
@@ -73,18 +74,20 @@ void game_frame(::Ctx*) {
                 static_cast<unsigned>(living), static_cast<unsigned>(objects));
         g.reported = true;
     }
+    resident_census::tick();
 }
 
 void install(const FeatureInstall& in) {
     g = {};
     g.base = in.base;
+    resident_census::start(in.base);
     g.enabled = settings::get_bool(settings::Key::PokemonCap50);
     g.limit = static_cast<std::uint32_t>(settings::get_int(settings::Key::PokemonCapLimit));
     NXLOG_I("pkp", "pokemon cap: %s (%u living / %u objects)", g.enabled ? "enabled" : "disabled",
             static_cast<unsigned>(g.limit), static_cast<unsigned>(g.limit + 5));
 }
 
-void remove() { g = {}; }
+void remove() { resident_census::stop(); g = {}; }
 
 } // namespace
 
