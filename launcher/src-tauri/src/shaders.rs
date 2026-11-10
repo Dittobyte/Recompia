@@ -5,14 +5,15 @@
 //!   1. `tools/shaders/extract_corpus.py` (Python 3 with the `lz4` package) finds every GLSLC output in the romfs and in
 //!      exefs/main and writes the distinct shader blocks to `shader_cache/corpus` (pack/<NN>.code, .ctrl, .glslc and
 //!      unique.tsv with each block's pack refs: a few large files, issue #194);
-//!   2. `tools/spirv_harness/spirv_harness.exe` (self-contained .NET publish) translates them to `<hash>.spv` plus the
-//!      `results.tsv` rows the runtime reads.
+//!   2. `tools/spirv_harness/spirv_harness.exe` (self-contained .NET publish; on Linux its Linux build when the release has it)
+//!      translates them to `<hash>.spv` plus the `results.tsv` rows the runtime reads.
 //!
 //! Resumable: the full block list is kept as `corpus/unique_all.tsv`; translation runs in chunks (the harness reads
 //! `corpus/unique.tsv`, rewritten per chunk) into `shader_cache/stage`, and a chunk counts only once its `.spv` files are
 //! moved into `spirv/` and its rows appended to `spirv/results.tsv`. A block with a row there is never translated again.
 //! `shader_cache/setup.json` records what is done. The tools run at below-normal priority.
-//! On Linux the extractor runs with the Linux Python and the translator (a Windows program) through Proton (host.rs).
+//! On Linux the extractor runs with the Linux Python, and the translator is its Linux build when the release has one, else the
+//! Windows program through Proton (host.rs translator).
 //! Compact storage (shader_archive.rs): when the cache has a shader archive, or a new setup asks for one (`Job::compact`), every chunk is
 //! moved into the archive as soon as it is committed, so the loose files never pile up. A cache of loose files stays loose until the
 //! player makes it smaller (main.rs compact_shaders).
@@ -300,7 +301,7 @@ fn on_path(exe: &str) -> Vec<PathBuf> {
     std::env::var_os("PATH").map(|p| std::env::split_paths(&p).map(|d| d.join(exe)).filter(|f| f.is_file()).collect()).unwrap_or_default()
 }
 
-/// The files of tools/spirv_harness without which the translator cannot start.
+/// The files of tools/spirv_harness without which the Windows translator cannot start.
 const HARNESS_FILES: &[&str] = &[
     "spirv_harness.exe",
     "spirv_harness.dll",
@@ -311,15 +312,27 @@ const HARNESS_FILES: &[&str] = &[
     "coreclr.dll",
 ];
 
+/// The same for the Linux build of the translator (host.rs translator).
+const HARNESS_FILES_LINUX: &[&str] = &[
+    "spirv_harness",
+    "spirv_harness.dll",
+    "spirv_harness.deps.json",
+    "spirv_harness.runtimeconfig.json",
+    "libhostfxr.so",
+    "libhostpolicy.so",
+    "libcoreclr.so",
+];
+
 /// Finds the tools in `tools_dir` (the launcher's `tools/` folder). Python: `tools/python/python.exe` (Linux:
 /// `tools/linux/python/bin/python3`), else the first python.exe (python3) on PATH that has `lz4`. Every missing piece is named
 /// in the error.
 pub fn find_tools(tools_dir: &Path) -> Result<Tools, String> {
     let mut missing = Vec::new();
-    let harness_dir = tools_dir.join("spirv_harness");
-    let harness = harness_dir.join("spirv_harness.exe");
+    let harness = crate::host::translator(tools_dir);
+    let harness_dir = harness.parent().unwrap_or(tools_dir).to_path_buf();
+    let needed = if harness.extension().is_some_and(|e| e == "exe") { HARNESS_FILES } else { HARNESS_FILES_LINUX };
     // what the self-contained .NET publish needs to start at all; an empty file is a cut-off copy or extraction (#366)
-    let broken: Vec<&str> = HARNESS_FILES.iter().copied().filter(|f| fs::metadata(harness_dir.join(f)).map_or(true, |m| m.len() == 0)).collect();
+    let broken: Vec<&str> = needed.iter().copied().filter(|f| fs::metadata(harness_dir.join(f)).map_or(true, |m| m.len() == 0)).collect();
     if !broken.is_empty() {
         missing.push(format!("the shader translator ({}: {} missing or empty)", harness_dir.display(), broken.join(", ")));
     }
@@ -550,12 +563,13 @@ pub fn translate_missing(game_dir: &Path, tools_dir: &Path) -> Result<usize, Str
     let _ = fs::remove_dir_all(&input);
     let _ = fs::remove_dir_all(&stage);
     fs::create_dir_all(&input).map_err(|e| format!("cannot create {}: {}", input.display(), e))?;
+    let harness = crate::host::translator(tools_dir);
     let mut text = format!("{}\n", header);
     for r in &todo {
         let mut f: Vec<String> = r.split('\t').map(String::from).collect();
         for k in [11, 12] {
             if let Some(v) = f.get_mut(k) {
-                *v = crate::host::win_path(&runtime.join(&*v)).to_string_lossy().replace('\\', "/");
+                *v = crate::host::translator_path(&harness, &runtime.join(&*v)).to_string_lossy().replace('\\', "/");
             }
         }
         text.push_str(&f.join("\t"));
@@ -563,8 +577,8 @@ pub fn translate_missing(game_dir: &Path, tools_dir: &Path) -> Result<usize, Str
     }
     fs::write(input.join("manifest.tsv"), text).map_err(|e| format!("cannot write {}: {}", input.display(), e))?;
     let jobs = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2).to_string();
-    let mut cmd = crate::host::windows_program(&tools_dir.join("spirv_harness").join("spirv_harness.exe"))?;
-    cmd.arg("--batch").arg(crate::host::win_path(&input)).arg("--out").arg(crate::host::win_path(&stage)).args(["--jobs", &jobs, "--no-val"]);
+    let mut cmd = crate::host::translator_command(&harness)?;
+    cmd.arg("--batch").arg(crate::host::translator_path(&harness, &input)).arg("--out").arg(crate::host::translator_path(&harness, &stage)).args(["--jobs", &jobs, "--no-val"]);
     cmd.env("DOTNET_gcServer", "1");
     if !run_harness(cmd, &stage, &AtomicBool::new(false), false, None, |_| {})? {
         return Err("the shader translator stopped".into());
@@ -746,8 +760,8 @@ pub fn run(job: &Job, tools: &Tools, cancel: &AtomicBool, mut report: impl FnMut
         }
         drop(f);
         let _ = fs::remove_dir_all(&stage);
-        let mut cmd = crate::host::windows_program(&tools.harness)?;
-        cmd.arg("--batch").arg(crate::host::win_path(&corpus)).arg("--out").arg(crate::host::win_path(&stage)).args(["--jobs", &jobs, "--no-val"]);
+        let mut cmd = crate::host::translator_command(&tools.harness)?;
+        cmd.arg("--batch").arg(crate::host::translator_path(&tools.harness, &corpus)).arg("--out").arg(crate::host::translator_path(&tools.harness, &stage)).args(["--jobs", &jobs, "--no-val"]);
         // server GC: with the default workstation GC each collection stops every worker (about 4x slower)
         cmd.env("DOTNET_gcServer", "1");
         let base = finished;

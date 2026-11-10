@@ -151,6 +151,40 @@ impl Game {
     }
 }
 
+/// The shader translator in `tools_dir`: on Linux the Linux build (`spirv_harness/spirv_harness`, a self-contained linux-x64
+/// publish that game-build/scripts/build-linux.sh adds to a release) when the package has it, else the Windows one
+/// (`spirv_harness/spirv_harness.exe`), which runs through `runner` on Linux.
+pub fn translator(tools_dir: &Path) -> PathBuf {
+    let dir = tools_dir.join("spirv_harness");
+    let native = dir.join("spirv_harness");
+    if cfg!(not(windows)) && native.is_file() {
+        native
+    } else {
+        dir.join("spirv_harness.exe")
+    }
+}
+
+/// A command that runs the translator `harness` (from `translator`): a Windows program (.exe) as `windows_program` runs it,
+/// the Linux build directly.
+pub fn translator_command(harness: &Path) -> Result<Command, String> {
+    if is_windows_program(harness) { windows_program(harness) } else { Ok(command(harness)) }
+}
+
+/// `p` as the translator `harness` sees it: `win_path` for the Windows one, unchanged for the Linux build.
+pub fn translator_path(harness: &Path, p: &Path) -> OsString {
+    if is_windows_program(harness) { win_path(p) } else { p.as_os_str().to_os_string() }
+}
+
+/// Whether the package whose launcher is in `install_dir` runs a Windows program on Linux, so needs `runner`: pkp.exe when the
+/// game is not native, the Windows translator when the release has no Linux one. Always false on Windows.
+pub fn needs_runner(install_dir: &Path) -> bool {
+    cfg!(not(windows)) && (!Game::of(install_dir).native || is_windows_program(&translator(&install_dir.join("tools"))))
+}
+
+fn is_windows_program(p: &Path) -> bool {
+    p.extension().is_some_and(|e| e.eq_ignore_ascii_case("exe"))
+}
+
 /// `p` as a Windows program sees it: unchanged on Windows, `Z:\...` under Proton and Wine (Z: is the Linux root there).
 pub fn win_path(p: &Path) -> OsString {
     #[cfg(windows)]

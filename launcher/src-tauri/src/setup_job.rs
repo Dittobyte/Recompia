@@ -126,9 +126,10 @@ pub fn start_setup(app: AppHandle, state: SetupArg, gentle: Option<bool>) -> Res
             if !tools_ready {
                 return Ok(false);
             }
-            // Linux: the translator and the hidden run need Proton; say so now, not after the build
-            #[cfg(not(windows))]
-            log(&format!("Windows programs run with: {}", host::runner()?.label));
+            // Linux: a Windows translator or pkp.exe needs Proton; say so now, not after the build
+            if host::needs_runner(&exe_dir()) {
+                log(&format!("Windows programs run with: {}", host::runner()?.label));
+            }
             // no build yet, or one from an older release (stale tools stamp): build pkp.exe (again)
             if package_b && !gamebuild::is_built(&build_job.game_dir, &tools_dir) {
                 let tools = gamebuild::find_tools(&tools_dir)?;

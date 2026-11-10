@@ -92,7 +92,8 @@ pub struct Facts {
     pub ram_total: Option<u64>,
     pub cpu_brand: Option<String>,
     pub microcode: Option<u32>,
-    /// Linux: what runs the Windows programs (host.rs runner: Ok(its name), Err(what to install)). None on Windows.
+    /// Linux: what runs the Windows programs (host.rs runner: Ok(its name), Err(what to install)). None on Windows and when the
+    /// release runs none (host::needs_runner).
     pub runner: Option<Result<String, String>>,
     /// the translated shaders will be packed (Remaining::compact): what the disk message says stays
     pub compact: bool,
@@ -315,10 +316,7 @@ pub fn probe(game_dir: &Path, r: &Remaining) -> Facts {
         ram_total: sys::ram_total(),
         cpu_brand: brand,
         microcode,
-        #[cfg(windows)]
-        runner: None,
-        #[cfg(not(windows))]
-        runner: Some(crate::host::runner().map(|r| r.label)),
+        runner: crate::host::needs_runner(&crate::paths::exe_dir()).then(|| crate::host::runner().map(|r| r.label)),
     }
 }
 
