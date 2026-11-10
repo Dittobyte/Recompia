@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Generates the keyboard and mouse prompt icons the port draws on the game's button glyphs.
 
 runtime/games/pkp/pkp_kbm.cpp loads assets/kbm_icons/<name>.png next to the exe (Kenney's Input Prompts names) and the

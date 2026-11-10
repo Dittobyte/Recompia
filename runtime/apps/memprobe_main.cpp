@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include <cstdio>
 #include "nxrt/log.h"
 #include "nxrt/memory.h"

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Symbolizes what a pkp crash report, freeze dump or sampling profile carries.
 
 The runtime prints host frames as absolute addresses (a crash report says `pc 0x10989114c` and `image base 0x102b00000`)

@@ -1,13 +1,15 @@
 # macOS support: port plan
 
-Status: **M0–M2 verified on Apple Silicon (macOS 27, M3); M3 boots the game to NVN graphics bring-up and stops in the
-game's own init; M4–M6 outstanding.** §7 is the evidence log.
-companion: prerequisites, the build, the smoke tests, the M3 recipe and the address-space mechanism.
+Status: **the game runs on Apple Silicon** — M0–M3 done, M4 done except Link Play against a peer and a real gamepad,
+M5 done, M6 partial (launcher, `.app`, CI and the shader pipeline done; AVFoundation movies and notarization open).
+§7 is the evidence log; §8 is the operational guide (build, lift, run, launcher, shader cache, memory, traps).
+
 Target: a native `arm64` macOS build of `pkp` (Apple Silicon), running the same lifted game libraries the Windows
 build links.
 
-This document is written against `main` at `5f98748`. Every file/line reference below was read from that tree; the
-counts are `wc -l` on the checked-out sources.
+The design sections were written against `main` at `5f98748`; the file/line references are from that tree and the counts
+are `wc -l` on it. The port has since been rebased onto `main` at `d6e240e` (see §8), where the launcher was split into
+modules and the texture-edit hook was removed.
 
 ---
 
@@ -750,13 +752,11 @@ first evidence that the emitted code is portable C++20 rather than something onl
 was then run end to end on that Linux host (g++ 13.3, GNU make, no Ninja): `--target pkp_rtld` lifts, compiles and
 archives `libpkp_rtld.a` in 1.4 s, so `NxRecomp.cmake`'s non-MSVC branch is exercised, not just written.
 
-### Not started
+### Still open
 
-M3's remaining work (the game boots to NVN graphics bring-up and stops in its own initialisation; see §8),
-M4 (platform services: the CoreAudio sink — device enumeration exists —, `fs_volume` XPC check, keyboard/mouse through
-SDL3, the network shims), M5 (fault-driven features: `GetThreadContext`/`SuspendThread` on another thread, which needs
-`thread_get_state` on a mach thread port; the write tracker and the sampler both want it, the freeze dump works around
-it by reading the registered guest `Ctx`), M6 (AVFoundation movies, launcher, packaging).
+See §8 "What is left": Link Play against a `pokopia-native` peer, a real gamepad, the `fs_volume` XPC check, a
+`tt_runner` executable, AVFoundation movies, signing and notarization, an `arm64-apple-macos` target in `pkp_build.py`,
+and the GPU-bound frame rate in the world.
 
 ## 8. Running the port on a Mac
 

@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Assembles PokopiaLauncher.app around the launcher binary. The bundle carries the launcher only: pkp, pkp.ini,
 # controls.ini and shader_cache stay beside it (a 26 GB cache does not belong inside a bundle), and the launcher looks
 # for the game in the folder the .app sits in.
