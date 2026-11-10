@@ -9,6 +9,7 @@ export const ACCEPT_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 export const DEFAULT_BACKGROUND = { v: 1, mode: 'builtin', dim: 35, sharp: '', soft: '' };
 
 const PREFIX = 'data:image/jpeg;base64,';
+const BASE64_BODY = /^[A-Za-z0-9+/]+={0,2}$/;   // the whole value ends up inside url("..."): nothing but base64 may follow the prefix
 
 function cleanDim(d) {
   if (typeof d !== 'number' || !Number.isFinite(d)) return DIM_DEFAULT;
@@ -16,7 +17,7 @@ function cleanDim(d) {
 }
 
 function validUrl(s) {
-  return typeof s === 'string' && s.startsWith(PREFIX) && s.length > PREFIX.length && s.length <= MAX_STORED_CHARS;
+  return typeof s === 'string' && s.startsWith(PREFIX) && s.length > PREFIX.length && s.length <= MAX_STORED_CHARS && BASE64_BODY.test(s.slice(PREFIX.length));
 }
 
 export function normalize(raw) {

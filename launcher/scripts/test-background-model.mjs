@@ -22,6 +22,8 @@ check(normalize({ ...custom, mode: 'weird' }).dim === 50, 'dim kept when mode is
 check(normalize({ ...custom, sharp: 'http://x/a.jpg' }).mode === 'builtin', 'non-data URL sharp rejected');
 check(normalize({ ...custom, soft: 'data:image/png;base64,AAAA' }).mode === 'builtin', 'non-jpeg data URL soft rejected');
 check(normalize({ ...custom, sharp: P }).mode === 'builtin', 'prefix only is rejected');
+check(normalize({ ...custom, sharp: P + 'AAAA") ; x' }).mode === 'builtin' && normalize({ ...custom, soft: P + 'AA"AA' }).mode === 'builtin' && normalize({ ...custom, sharp: P + 'AA AA' }).mode === 'builtin' && normalize({ ...custom, soft: P + 'AAAA\n' }).mode === 'builtin', 'anything but base64 after the prefix is rejected');
+check(normalize({ ...custom, sharp: P + 'QUJD+/8=' }).mode === 'custom', 'valid base64 with + / and padding is kept');
 check(normalize({ ...custom, soft: 7 }).mode === 'builtin' && normalize({ v: 1, mode: 'custom' }).mode === 'builtin', 'non-string or missing URL rejected');
 check(normalize({ ...custom, sharp: P + 'A'.repeat(M.MAX_STORED_CHARS - P.length) }).mode === 'custom', 'exactly at the limit is kept');
 check(normalize({ ...custom, sharp: P + 'A'.repeat(M.MAX_STORED_CHARS - P.length + 1) }).mode === 'builtin', 'oversize rejected');
