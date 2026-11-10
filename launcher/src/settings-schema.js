@@ -448,6 +448,10 @@ export const SECTIONS = [
             ],
           },
           { id: 'f1_bindings', label: 'Change bindings in game', type: 'keycap', key: 'F1' },
+          {
+            id: 'steam_input_note', type: 'note', when: (_v, env) => env.linux,
+            note: () => ({ text: 'Steam Controller or other pad on Linux: add the game to Steam (Game tab, Steam) and keep Steam Input on for it. With Steam Input on, the game sees an Xbox style pad, so the Steam Controller rows (back grips, trackpad clicks) only react if your Steam layout sends them. With Steam Input off, a Steam Controller may not be detected under Proton; if your pad does not work, turn Steam Input on.' }),
+          },
         ],
       },
     ],

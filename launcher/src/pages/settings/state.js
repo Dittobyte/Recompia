@@ -55,6 +55,7 @@ export function env(st) {
     backups: st.backups,
     backupLine: backupText(st.backups),
     steam: st.steam,
+    linux: /Linux/.test(globalThis.navigator?.userAgent ?? '') && !/Android/.test(globalThis.navigator?.userAgent ?? ''),
     steamBusy: st.steamBusy,
     backupDetail: backupDetail(st.backups),
     importing: st.importing,
