@@ -20,12 +20,20 @@ set(PKP_EXEFS_DEFAULT "${PKP_ROOT}/game/dump/exefs" CACHE PATH "default ExeFS fo
 # a message box, output still reaches a terminal it was started from), looks for ./exefs by default, and carries no local build paths
 # (source paths in assert strings, the .pdb path): see the installed-layout comment in src/pkp_main.cpp.
 # __FILE__ (the assert strings of the audio renderer) never carries the build folder, in any build: paths are written relative to the checkout.
-add_compile_options("-clang:-fmacro-prefix-map=${PKP_ROOT}=.")
+# clang-cl takes clang options behind -clang:, clang and gcc take them as they are.
+if(MSVC)
+    set(PKP_CLANG_OPT "-clang:")
+else()
+    set(PKP_CLANG_OPT "")
+    # Linux: the runtime becomes a shared library (release model b), so every static library that goes into it is position independent.
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
+add_compile_options("${PKP_CLANG_OPT}-fmacro-prefix-map=${PKP_ROOT}=.")
 option(PKP_RELEASE "build pkp.exe as a release package binary" OFF)
 if(PKP_RELEASE)
     set(PKP_GUI_SUBSYSTEM ON)
     set(PKP_EXEFS_DEFAULT "exefs")
-    add_compile_options("-clang:-ffile-prefix-map=${PKP_ROOT}=.")
+    add_compile_options("${PKP_CLANG_OPT}-ffile-prefix-map=${PKP_ROOT}=.")
 endif()
 
 # The release version ("0.1.0"; "dev" for local builds). The game log, --version and the exe's file properties show it.
@@ -67,17 +75,34 @@ endforeach()
 # and src/pkp_stub.cpp (tools/build/pkp_build.py in the package, with the bundled Zig). Nothing lifted is imported here.
 option(PKP_RT_DLL "build the runtime as pkp_rt.dll for release model (b)" OFF)
 if(PKP_RT_DLL)
-    add_library(pkp_rt SHARED src/pkp_main.cpp src/pkp_rt.def)
+    if(WIN32)
+        add_library(pkp_rt SHARED src/pkp_main.cpp src/pkp_rt.def)
+    else()
+        # libpkp_rt.so: every function is exported (the runtime builds with default visibility), which covers the list in pkp_rt.def.
+        # pkp_host_stack_linux.cpp is the Linux side of /STACK (the main thread's stack size).
+        add_library(pkp_rt SHARED src/pkp_main.cpp src/pkp_host_stack_linux.cpp)
+        # The export list stays pkp_rt.def: each name is pulled out of the static runtime libraries into the shared one.
+        file(STRINGS src/pkp_rt.def _pkp_rt_def)
+        foreach(_line IN LISTS _pkp_rt_def)
+            string(STRIP "${_line}" _line)
+            if(_line MATCHES "^[A-Za-z_][A-Za-z0-9_]*$" AND NOT _line STREQUAL "EXPORTS")
+                target_link_options(pkp_rt PRIVATE "-Wl,--undefined=${_line}")
+            endif()
+        endforeach()
+    endif()
     set_source_files_properties(src/pkp_main.cpp PROPERTIES COMPILE_DEFINITIONS "PKP_VERSION=\"${PKP_VERSION}\"")
     target_compile_definitions(pkp_rt PRIVATE PKP_RT_DLL=1 PKP_GUI_SUBSYSTEM=1 PKP_EXEFS_DEFAULT="exefs")
     target_include_directories(pkp_rt PRIVATE "${PKP_GEN_INCLUDE}")
     target_link_libraries(pkp_rt PRIVATE nxrt_game_pkp nxrt_gfx nxrt)
     # /DEBUG off: no .pdb path in the DLL. Low host allocations as for pkp.exe (guest ranges at 0x71_0000_0000 stay free).
-    target_link_options(pkp_rt PRIVATE /HIGHENTROPYVA:NO /DEBUG:NONE /Brepro)
-    target_compile_options(pkp_rt PRIVATE "-clang:-ffile-prefix-map=${PKP_ROOT}=.")
+    # (Linux maps libraries and anonymous memory near the top of the address space, far above the guest ranges: nothing to set.)
+    if(WIN32)
+        target_link_options(pkp_rt PRIVATE /HIGHENTROPYVA:NO /DEBUG:NONE /Brepro)
+    endif()
+    target_compile_options(pkp_rt PRIVATE "${PKP_CLANG_OPT}-ffile-prefix-map=${PKP_ROOT}=.")
     add_custom_command(TARGET pkp_rt POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${PKP_RUNTIME_DIR}/assets/fonts/DejaVuSans.ttf" "$<TARGET_FILE_DIR:pkp_rt>/fonts/DejaVuSans.ttf")
-    file(GLOB PKP_A2B_DLLS "${NXRT_A2B_DIR}/astcdec-*-shared.dll")
+    file(GLOB PKP_A2B_DLLS "${NXRT_A2B_DIR}/astcdec-*-shared.dll" "${NXRT_A2B_DIR}/libastcdec-*-shared.so")
     foreach(dll ${PKP_A2B_DLLS})
         add_custom_command(TARGET pkp_rt POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different "${dll}" "$<TARGET_FILE_DIR:pkp_rt>")
     endforeach()

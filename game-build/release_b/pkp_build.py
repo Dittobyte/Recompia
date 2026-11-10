@@ -1,8 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """First-run game build of release model (b): turns the player's own dump into pkp.exe on their PC.
 
-    python -I tools/build/pkp_build.py --exefs <dump>/updates/<v>/exefs --game <install folder> [--jobs N] [--keep]
-    python -I tools/build/pkp_build.py --check --game <install folder>
+    python -I tools/build/pkp_build.py --exefs <dump>/updates/<v>/exefs --game <install folder> [--jobs N] [--keep] [--target T]
+    python -I tools/build/pkp_build.py --check --game <install folder> [--target T]
+
+--target windows (the default) builds pkp.exe, on Windows or for Proton on Linux. --target linux (Linux only) builds the native
+Linux program `pkp` against libpkp_rt.so, the Linux runtime next to it: the same steps with the Linux flags (ZIG_LINUX), ELF
+objects and an ELF link. Wherever this text says pkp.exe and pkp_rt.lib / pkp_rt.dll, the Linux build has pkp and libpkp_rt.so.
 
 The package ships no game code. This script
   1. verifies the dump's ExeFS against dump_hashes.json (the supported build: sha256 of every module + main's build ID),
@@ -55,8 +59,6 @@ FORMAT = 3          # bump when the build layout or the stamp changes: older bui
 # the lifter as game-build/scripts/make-release.ps1 ships it: paths under RECOMP, the same in the zip (tools/build/recomp/...)
 # and in the repo (recomp/...)
 LIFTER = ['nxrecomp', 'include/nxrecomp', 'games/pkp/CMakeLists.txt', 'games/pkp/config.py']
-# what the link takes from sdk/ besides the lifted objects and pkp_rt.lib (stamped on its own, as 'runtime')
-SDK_FILES = ['pkp_stub.cpp', 'pkp_rt_api.h', 'pkp.rc', 'pkp.manifest']
 
 # the module table and the compile flags come from the bundled lifter, the same tables the developer build (CMake) reads:
 # recomp/games/pkp/config.py (modules) and recomp/nxrecomp/compile_flags.py (ZIG_MINGW)
@@ -68,8 +70,29 @@ GAME = load_game('pkp')
 MODULES = [(m.name, m.source, m.base, i, m.shards) for i, m in enumerate(GAME.modules)]
 # site lists per module, as paths under RECOMP (main's main.sites)
 SITES = {m.name: 'games/pkp/' + m.sites for m in GAME.modules if m.sites}
-CXXFLAGS = compile_flags.ZIG_MINGW
 COMPILER = [ZIG, 'c++']                 # the compile command before the flags (tests put a fake one here)
+
+
+class Target:
+    """What differs between the Windows build (pkp.exe) and the native Linux one (pkp)."""
+    def __init__(self, name, cxxflags, exe, runtime, sdk_files):
+        self.name = name
+        self.cxxflags = cxxflags        # the lifted code's compile flags (recomp/nxrecomp/compile_flags.py)
+        self.exe = exe                  # the program the link writes into the game folder
+        self.runtime = runtime          # the runtime the link takes (stamped on its own, as 'runtime')
+        self.sdk_files = sdk_files      # what the link takes from sdk/ besides the lifted objects and the runtime
+
+
+TARGETS = {
+    # pkp_rt.lib is the import library of pkp_rt.dll (in the package root, next to pkp.exe)
+    'windows': Target('windows', compile_flags.ZIG_MINGW, 'pkp.exe', os.path.join(SDK, 'pkp_rt.lib'),
+                      ['pkp_stub.cpp', 'pkp_rt_api.h', 'pkp.rc', 'pkp.manifest']),
+    # libpkp_rt.so is linked where the package keeps it (the root, two levels above tools/build) and found next to pkp at run time
+    'linux': Target('linux', compile_flags.ZIG_LINUX, 'pkp', os.path.join(os.path.dirname(os.path.dirname(HERE)), 'libpkp_rt.so'),
+                    ['pkp_stub.cpp', 'pkp_rt_api.h']),
+}
+T = TARGETS['windows']                  # set by main() from --target
+CXXFLAGS = T.cxxflags
 CACHE_MB = 3072                         # default size cap of <game>/build/objcache
 CREATE_NO_WINDOW = 0x08000000
 BELOW_NORMAL = 0x00004000
@@ -123,8 +146,8 @@ def tree_hash(root, rels):
 
 def tool_stamp():
     """The part of the build stamp this package decides: a release that changes any of it rebuilds pkp.exe."""
-    return {'lifter': tree_hash(RECOMP, LIFTER), 'sites': tree_hash(RECOMP, sorted(SITES.values())), 'sdk': tree_hash(SDK, SDK_FILES),
-            'runtime': sha256(os.path.join(SDK, 'pkp_rt.lib')), 'cxxflags': CXXFLAGS, 'modules': [list(m) for m in MODULES],
+    return {'lifter': tree_hash(RECOMP, LIFTER), 'sites': tree_hash(RECOMP, sorted(SITES.values())), 'sdk': tree_hash(SDK, T.sdk_files),
+            'runtime': sha256(T.runtime), 'cxxflags': CXXFLAGS, 'modules': [list(m) for m in MODULES],
             'modheader': hashlib.sha256(modheader.render(GAME.modules).encode()).hexdigest()}
 
 
@@ -149,18 +172,18 @@ def libs_current(lib, stamp):
 
 def check(game):
     """Whether pkp.exe and <game>/build/done.json were built with this package's tools: (current, reason)."""
-    if not os.path.isfile(os.path.join(game, 'pkp.exe')):
-        return False, 'pkp.exe is not built yet'
+    if not os.path.isfile(os.path.join(game, T.exe)):
+        return False, '%s is not built yet' % T.exe
     done = read_json(os.path.join(game, 'build', 'done.json'))
     if not isinstance(done, dict):
-        return False, 'pkp.exe has no finished build record'
+        return False, '%s has no finished build record' % T.exe
     if done.get('format') != FORMAT or not isinstance(done.get('tools'), dict):
-        return False, 'pkp.exe was built by an older release'
+        return False, '%s was built by an older release' % T.exe
     want = tool_stamp()
     changed = [k for k in want if done['tools'].get(k) != want[k]]
     if changed:
         return False, 'this release changes ' + ', '.join(changed)
-    return True, 'pkp.exe matches this release'
+    return True, '%s matches this release' % T.exe
 
 
 def read_json(path):
@@ -556,18 +579,23 @@ def archive(runner, obj, lib, stamp, env):
 
 def link(runner, lib, game, env):
     libs = [os.path.join(lib, 'pkp_%s.a' % m[0]) for m in MODULES]
-    tmp = os.path.join(lib, 'pkp.exe')
+    tmp = os.path.join(lib, T.exe)
     modheader.write(GAME.modules, os.path.join(lib, 'gen', 'nx_modules.gen.h'))     # the module list pkp_stub.cpp includes
-    cmd = [ZIG, 'c++', '-target', 'x86_64-windows-gnu', '-mcpu=x86_64+cx16', '-O1', '-fno-exceptions', '-fno-rtti', '-I', SDK, '-I', os.path.join(lib, 'gen'),
-           os.path.join(SDK, 'pkp_stub.cpp'), os.path.join(SDK, 'pkp.rc')] + libs + [os.path.join(SDK, 'pkp_rt.lib'),
-           '-o', tmp, '-Wl,--stack,134217728', '-Wl,--subsystem,windows']
+    common = [ZIG, 'c++', '-target', CXXFLAGS[1], '-mcpu=x86_64+cx16', '-O1', '-fno-exceptions', '-fno-rtti', '-I', SDK,
+              '-I', os.path.join(lib, 'gen'), os.path.join(SDK, 'pkp_stub.cpp')]
+    if T.name == 'windows':
+        cmd = common + [os.path.join(SDK, 'pkp.rc')] + libs + [T.runtime, '-o', tmp, '-Wl,--stack,134217728', '-Wl,--subsystem,windows']
+    else:
+        # the runtime is found next to pkp at run time ($ORIGIN); the 128 MiB main stack is the runtime's (pkp_host_stack_linux.cpp)
+        cmd = common + libs + [T.runtime, '-Wl,-rpath,$ORIGIN', '-o', tmp]
     rc, tail = runner.run(cmd, env=env, cwd=SDK)
     if rc != 0:
-        raise Fail('Linking pkp.exe failed (exit %d):\n%s' % (rc, tail))
-    clear_high_entropy_va(tmp)
-    dst = os.path.join(game, 'pkp.exe')
+        raise Fail('Linking %s failed (exit %d):\n%s' % (T.exe, rc, tail))
+    if T.name == 'windows':
+        clear_high_entropy_va(tmp)
+    dst = os.path.join(game, T.exe)
     os.replace(tmp, dst)
-    progress('link', 1, 1, 'pkp.exe built')
+    progress('link', 1, 1, '%s built' % T.exe)
     return dst
 
 
@@ -579,8 +607,15 @@ def main():
     ap.add_argument('--cache-mb', type=int, default=CACHE_MB, help='size cap of the compiled-object cache in MiB (0 = off)')
     ap.add_argument('--keep', action='store_true', help='keep the generated sources and objects')
     ap.add_argument('--check', action='store_true', help='only say whether <game>/build/done.json matches these tools')
+    ap.add_argument('--target', choices=sorted(TARGETS), default='windows',
+                    help='windows: pkp.exe (also for Proton on Linux); linux: the native Linux program pkp')
     ap.add_argument('--lift-one', help=argparse.SUPPRESS)
     a = ap.parse_args()
+    global T, CXXFLAGS
+    if a.target == 'linux' and os.name == 'nt':
+        ap.error('--target linux builds on Linux only')
+    T = TARGETS[a.target]
+    CXXFLAGS = T.cxxflags
     if a.lift_one:                       # child process: one lifter run (keeps the lifter's own pool out of this process)
         from nxrecomp.__main__ import main as nx_main
         return nx_main(json.loads(a.lift_one)) or 0
@@ -637,7 +672,7 @@ def main():
             compile_all(runner, gen, obj, a.jobs, env, make_cache(os.path.join(build, 'objcache'), a.cache_mb, compiler))
             times['compile'] = round(time.time() - t, 1)
         t = time.time()
-        progress('link', 0, 1, 'Linking pkp.exe')
+        progress('link', 0, 1, 'Linking %s' % T.exe)
         if not reuse:
             archive(runner, obj, lib, libstamp, env)
         try:
@@ -656,7 +691,7 @@ def main():
                 shutil.rmtree(os.path.join(build, d), ignore_errors=True)
         done = dict(stamp, exe_sha256=sha256(exe), seconds=times, finished=time.strftime('%Y-%m-%d %H:%M:%S'))
         write_json(os.path.join(build, 'done.json'), done)
-        progress('finish', 1, 1, 'pkp.exe is ready (%d s)' % (time.time() - t0))
+        progress('finish', 1, 1, '%s is ready (%d s)' % (T.exe, time.time() - t0))
         return 0
     except Cancelled:
         say('cancelled', 'Build paused. Set up again continues where it stopped.')
