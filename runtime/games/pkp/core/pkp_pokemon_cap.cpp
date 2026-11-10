@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Pokopia v2.0.1a: change only the two resident parameter limits (25/30 -> 50/55).
+// Pokopia v2.0.1a: configurable resident parameter limits (25..50 living, five extra object slots).
 // This does NOT expand model resources or guarantee visibility of all 50 Pokemon.
 #include "core/pkp_pokemon_cap.h"
 
@@ -18,13 +18,14 @@ constexpr std::uint64_t kLivingOffset = 0x4bc;
 constexpr std::uint64_t kObjectsOffset = 0x4c0;
 constexpr std::uint32_t kOriginalLiving = 25;
 constexpr std::uint32_t kOriginalObjects = 30;
-constexpr std::uint32_t kTargetLiving = 50;
-constexpr std::uint32_t kTargetObjects = 55;
+constexpr std::uint32_t kMinimumLiving = 25;
+constexpr std::uint32_t kMaximumLiving = 50;
 
 struct State {
     std::uint64_t base = 0;
     std::uint64_t observed_params = 0;
     bool enabled = false;
+    std::uint32_t limit = 31;
     bool reported = false;
     bool warned = false;
 };
@@ -52,8 +53,8 @@ void game_frame(::Ctx*) {
 
     // Refuse unexpected layouts instead of treating arbitrary memory as counters.
     // Include the two mixed states in case one field is reinitialized independently.
-    const bool expected_living = living == kOriginalLiving || living == kTargetLiving;
-    const bool expected_objects = objects == kOriginalObjects || objects == kTargetObjects;
+    const bool expected_living = living >= kMinimumLiving && living <= kMaximumLiving;
+    const bool expected_objects = objects >= kOriginalObjects && objects <= kMaximumLiving + 5;
     if (!expected_living || !expected_objects) {
         if ((living != 0 || objects != 0) && !g.warned) {
             NXLOG_W("pkp", "pokemon cap: unexpected resident limits (%u/%u), leaving them unchanged",
@@ -63,10 +64,12 @@ void game_frame(::Ctx*) {
         return;
     }
 
-    if (living != kTargetLiving) guest::wr<std::uint32_t>(params + kLivingOffset, kTargetLiving);
-    if (objects != kTargetObjects) guest::wr<std::uint32_t>(params + kObjectsOffset, kTargetObjects);
+    const std::uint32_t target_objects = g.limit + 5;
+    if (living != g.limit) guest::wr<std::uint32_t>(params + kLivingOffset, g.limit);
+    if (objects != target_objects) guest::wr<std::uint32_t>(params + kObjectsOffset, target_objects);
     if (!g.reported) {
-        NXLOG_I("pkp", "pokemon cap: applied 50 living / 55 objects (previous %u/%u)",
+        NXLOG_I("pkp", "pokemon cap: applied %u living / %u objects (previous %u/%u)",
+                static_cast<unsigned>(g.limit), static_cast<unsigned>(target_objects),
                 static_cast<unsigned>(living), static_cast<unsigned>(objects));
         g.reported = true;
     }
@@ -76,7 +79,9 @@ void install(const FeatureInstall& in) {
     g = {};
     g.base = in.base;
     g.enabled = settings::get_bool(settings::Key::PokemonCap50);
-    NXLOG_I("pkp", "pokemon cap: %s (50 living / 55 objects)", g.enabled ? "enabled" : "disabled");
+    g.limit = static_cast<std::uint32_t>(settings::get_int(settings::Key::PokemonCapLimit));
+    NXLOG_I("pkp", "pokemon cap: %s (%u living / %u objects)", g.enabled ? "enabled" : "disabled",
+            static_cast<unsigned>(g.limit), static_cast<unsigned>(g.limit + 5));
 }
 
 void remove() { g = {}; }
