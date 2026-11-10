@@ -23,6 +23,9 @@ This Testing build adds logging and a few device checks, and changes no frame-ra
 - If the frame rate falls partway through a session: send the `pkp.log` lines that contain `waited on the GPU` and say how long into the session it began
 - If Set up stops on a Steam Deck or another Linux handheld: send `shader_cache/harness_error.txt` and `setup.log`
 
+### Controller log
+- `pkp.log` now lists what a connected controller offers: trackpads (and their fingers), rumble, lights, battery, extra buttons (grips, trackpad clicks, touch sensors) and its USB ids; the motion sensors are on the line before it. It is a note for bug reports; nothing about how controllers behave changes
+
 ### Memory limit
 - `pkp.log` now shows both memory readings (private commit and pagefile usage) in its `footprint` line and in the 75% warning, and says once when the private-commit reading is 0
   - Before: only the footprint was shown, so on Linux (Proton) a log reading `footprint 0.00 GB` could not tell whether the game used no memory or the reading was blind
