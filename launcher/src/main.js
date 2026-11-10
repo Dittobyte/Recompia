@@ -2,6 +2,7 @@ import '@fontsource-variable/inter/opsz.css';
 import './theme.css';
 import './layout.css';
 import './layout-modes.css';
+import './background.css';
 import './components.css';
 import './gamemode.css';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -14,6 +15,7 @@ import { store } from './store.js';
 import { isFirstRun } from './action.js';
 import { startGamepadNav } from './gamepad-nav.js';
 import { loadLayout, applyLayout } from './layout-apply.js';
+import { loadBackground, applyBackground } from './background-apply.js';
 import * as home from './pages/home.js';
 import * as linkplay from './pages/linkplay.js';
 import * as news from './pages/news.js';
@@ -62,6 +64,7 @@ function applyTheme(t) {
 }
 applyTheme(readTheme());
 applyLayout(loadLayout());
+applyBackground(loadBackground());
 
 // Hide sidebar: a per-PC preference kept in localStorage like the theme. When hidden the nav collapses so the art is
 // unobstructed; the floating #show-sidebar button (index.html) is the only way back. data-sidebar="hide" on <html> drives the CSS.
