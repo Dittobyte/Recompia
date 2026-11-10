@@ -43,7 +43,7 @@ This Testing build adds logging and a few device checks, and changes no frame-ra
 - `pkp.log` now shows both memory readings (private commit and pagefile usage) in its `footprint` line and in the 75% warning, and says once when the private-commit reading is 0
   - Before: only the footprint was shown, so on Linux (Proton) a log reading `footprint 0.00 GB` could not tell whether the game used no memory or the reading was blind
   - Now: the log names both readings; the limit itself is checked exactly as before
-  - Still not: the memory limit compares private commit, so it cannot trigger while that reading is 0; this only makes that visible in a log
+  - Still not: nothing else changes here; the limit itself under Proton is covered by "Memory limit under Proton" above
 
 ### Launcher in Steam game mode
 - On a Steam Deck, ROG Ally or Legion Go in game mode, the launcher now fills the screen and uses finger-sized controls
