@@ -38,7 +38,9 @@ constexpr ButtonMap kOtherButtons[] = {
 
 // Buttons with no built-in meaning: they press nothing until [padmap] gives them a Switch button (pad_default_buttons returns 0).
 // SDL names the Steam Controller's inputs as: R4 RIGHT_PADDLE1, L4 LEFT_PADDLE1, R5 RIGHT_PADDLE2, L5 LEFT_PADDLE2, left trackpad click TOUCHPAD,
-// right trackpad click MISC2 (SDL 3.4 SDL_gamepad.c, the mapping it gives the Steam Controller).
+// right trackpad click MISC2, Steam button GUIDE, quick-access "..." MISC1 (SDL 3.4.18 SDL_gamepad.c, the mapping it gives the Steam Controller and
+// the Steam Controller (2026)). SDL 3.4.18 has no trigger-click button for the Steam Controller (2026): its MISC3 to MISC6 are the stick and grip
+// touch sensors there, so they are not read here.
 struct ExtraButton {
     int sdl;
     PadSrc src;
@@ -46,6 +48,7 @@ struct ExtraButton {
 constexpr ExtraButton kExtraButtons[] = {
     {kSdlRightPaddle1, PadSrc::RightPaddle1}, {kSdlLeftPaddle1, PadSrc::LeftPaddle1}, {kSdlRightPaddle2, PadSrc::RightPaddle2},
     {kSdlLeftPaddle2, PadSrc::LeftPaddle2},   {kSdlTouchpad, PadSrc::Touchpad},       {kSdlMisc2, PadSrc::TouchpadRight},
+    {kSdlGuide, PadSrc::Guide},               {kSdlMisc1, PadSrc::Misc1},
 };
 
 // SDL stick axis (-32768..32767) to -1..1.
