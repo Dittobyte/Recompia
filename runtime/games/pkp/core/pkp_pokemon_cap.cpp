@@ -33,7 +33,10 @@ struct State {
 State g;
 
 void game_frame(::Ctx*) {
-    if (!g.enabled || !g.base) return;
+    if (!g.base) return;
+    // Run read-only diagnostics even when cap parameters are not initialized yet.
+    resident_census::tick();
+    if (!g.enabled) return;
 
     // All addresses are v2.0.1a guest offsets, not process-native pointers.
     const std::uint64_t root = g.base + layout::kPokemonParamsRoot;
@@ -74,7 +77,6 @@ void game_frame(::Ctx*) {
                 static_cast<unsigned>(living), static_cast<unsigned>(objects));
         g.reported = true;
     }
-    resident_census::tick();
 }
 
 void install(const FeatureInstall& in) {
