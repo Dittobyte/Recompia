@@ -66,7 +66,8 @@ constexpr Spec kSpecs[] = {
     gameplay(b(CraftSearch, "craft_search", true, "A Search button in the crafting screen's key guide.")),
     gameplay(b(TitleQuit, "title_quit", true, "A Quit Game key guide on the title screen.")),
     b(OptionsMenu, "options_menu", true, "The PC settings as tabs and rows of the game's own Settings screen."),
-    gameplay(b(PokemonCap50, "pokemon_cap_50", true, "Raise the simultaneous resident limit from 25 to 50 (object limit 30 to 55).")),
+    gameplay(b(PokemonCap50, "pokemon_cap_50", true, "Enable the configurable resident Pokemon limit (default 31).")),
+    i(PokemonCapLimit, "pokemon_cap_limit", 31, 25, 50, "Maximum simultaneous resident Pokemon; object limit is five higher."),
 };
 static_assert(sizeof(kSpecs) / sizeof(kSpecs[0]) == static_cast<size_t>(Count), "one Spec per Key");
 
