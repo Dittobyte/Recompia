@@ -31,6 +31,9 @@ of the game (version 2.0.1a): the download contains no game files.
 - Added **Copy invite** and **Paste invite** to the launcher's Link Play page: the host copies one message (address, room code and mode) and the friends paste it, instead of typing both. A Tailscale address is recognised and set up as internet play, and the host's page now lists the PC's Tailscale address even without a relay. Typing a Tailscale address into Same network now says what to do instead of just refusing it
 - Added **Test connection**, **Check my setup** and **Friends on my Tailscale** to the Link Play page: they say in plain words whether an address answers, what may block friends from joining (firewall, a Public network, client isolation), and which of your Tailscale devices are hosting, with a Join button. They only look and never change anything
 
+### Pool copy diagnostics
+- `pkp.log` now states why pool copy is on or off: whether the host is Wine, the graphics card type and its largest device-local memory heap in MiB, and the 8 GiB limit
+
 ### Gameplay mods
 - Settings > Gameplay and `pkp.log` now show which gameplay mods and experimental features are on, so you can see at a glance what a start will use
 
