@@ -11,10 +11,10 @@ of the game (version 2.0.1a): the download contains no game files.
 **Testing build:** the gameplay extras (Camera aim, Running jump, Sort, Search, Quit Game) are now **off by default**; players coming from 0.9.0 who never set them lose them until they switch them on in Settings. A value already in `pkp.ini` is kept.
 
 ### Launcher layout
-- Added a **Layout** button in the launcher's sidebar, beside Colours and Hide sidebar. It opens a panel where you choose how the launcher is arranged: the sidebar on the left, right, top or bottom, or icons only; the order of the sidebar items, and which of them to hide (Home and Settings always stay); comfortable or compact spacing; and whether the news cards and the Link Play shortcut show on Home. Changes show at once, **Reset to default** puts everything back, and your choice is kept on your PC
+- Added a **Layout** button in the launcher's sidebar, beside Colours and Hide sidebar. It opens a panel where you choose how the launcher is arranged: the sidebar on the left, right, top or bottom, or icons only; the order of the sidebar items, and which of them to hide (Home and Settings always stay); comfortable or compact spacing; and whether the news cards and the chips under the Play button (profile, Link Play and Discord) show on Home. Changes show at once, **Reset to default** puts everything back, and your choice is kept on your PC
   - Before: the launcher had one fixed arrangement
   - Now: the arrangement is yours, and the pad, keyboard and touch screen all work in every position. Notices about a problem, such as a crash or a failed update, are never hidden
-  - Still not: you cannot drag parts around freely yet, and the sections of Home other than the news cards and the Link Play shortcut cannot be moved or hidden
+  - Still not: you cannot drag parts around freely yet, and the sections of Home other than the news cards and those chips cannot be moved or hidden
 
 ### Graphics driver resets
 - `pkp.log` now says when every frame of a run waits on the graphics card from the start, which is what a driver reset on a Linux handheld looks like. The game cannot fix it: reboot the device. The README's common problems say so too

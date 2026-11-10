@@ -8,7 +8,7 @@ import { esc, icon, segmented, toggle } from './ui.js';
 const NAV_OPTIONS = [['left', 'Left'], ['right', 'Right'], ['top', 'Top'], ['bottom', 'Bottom'], ['icons', 'Icons only']];
 const DENSITY_OPTIONS = [['comfortable', 'Comfortable'], ['compact', 'Compact']];
 const FALLBACK_LABELS = { home: 'Home', linkplay: 'Link Play', news: "What's New", settings: 'Settings' };
-const BLOCK_LABELS = [['news', 'News cards'], ['link', 'Link Play shortcut']];
+const BLOCK_LABELS = [['news', 'News cards'], ['link', 'Chips under Play (profile, Link Play, Discord)']];
 
 /** The sidebar's own label for a page, so the panel never disagrees with it. */
 function labelOf(id) {

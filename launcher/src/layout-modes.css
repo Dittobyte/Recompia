@@ -31,7 +31,7 @@ html[data-density="compact"] .win-btn { height: 24px; }
 
 /* ---------- Home sections ---------- */
 html[data-hide-news] [data-block="news"] { display: none; }
-html[data-hide-link] [data-block="link"] { display: none; }
+html[data-hide-link] [data-block="link"], html[data-hide-link] .home-actions #link[data-block="link"] { display: none; }   /* the second form beats home.css (.home-actions #link) */
 
 /* ---------- Hide sidebar (the attribute may sit on <html> or <body>); wins over every position below ---------- */
 :is(html, body)[data-sidebar="hide"] #app#app { display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); padding: 0; }
