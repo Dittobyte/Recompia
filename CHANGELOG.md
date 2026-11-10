@@ -89,6 +89,10 @@ of the game (version 2.0.1a): the download contains no game files.
 - Fixed the **Mouse Mode Key** row in **Settings > Mouse** (#367)
   - Before: pressing a key on the row did nothing, and after one change the row got stuck at the end of its bar
   - Now: press left or right on the row (or click it), the row says "Press the new key", then press any key, mouse button or wheel notch. Esc cancels. It works every time, and F1 can't be picked by mistake
+- Added two more bindable controller buttons: the **Steam button** and the **extra button** (the Steam Controller (2026)'s and the Steam Deck's quick-access "...", an Xbox Share, a PlayStation 5 microphone button) (Settings F1 > Controller > Pad buttons, or `guide` and `misc1` in `[padmap]` of `controls.ini`)
+  - Before: they pressed nothing and could not be given a Switch button
+  - Now: each has a row and can press any Switch button; with the Steam icons on, a prompt for a button you gave them shows an **S** or three dots. They press nothing until you pick one
+  - Still not: with Steam running, Steam may keep these two buttons for itself (start the game outside Steam to use them); the Steam Controller (2026)'s trigger clicks are not here, because the controller library in this build does not report them
 - Changed the **Steam Controller** button icons to fit the new Steam Controller (2026)
   - Before: the icons were the original 2015 controller's: its small buttons were the `<` and `>` arrows and it had two rear grips, so R4 and R5 (or L4 and L5) both showed "RG" (or "LG")
   - Now: View and Menu show the same symbols as on a Steam Deck, and each rear grip has its own icon: **L4**, **L5**, **R4** and **R5**
