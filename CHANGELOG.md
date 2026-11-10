@@ -17,6 +17,10 @@ of the game (version 2.0.1a): the download contains no game files.
 - Added **4:3 Fix**, a very experimental option in Settings > Testing (Testing channel only, off by default) for 4:3, 16:10 and 3:2 screens: full-screen backgrounds, fades and dimming fill the whole picture instead of stopping at a 16:9 strip in the middle. Menus, text and buttons stay where they were. If you have a 4:3 or 16:10 screen, please try it and send `pkp.log` with what looked wrong. It needs a restart of the game to take effect
 - `pkp.log` also states how many megapixels a frame costs at the picture's shape
 
+### Link Play invites
+- Added **Copy invite** and **Paste invite** to the launcher's Link Play page: the host copies one message (address, room code and mode) and the friends paste it, instead of typing both. A Tailscale address is recognised and set up as internet play, and the host's page now lists the PC's Tailscale address even without a relay. Typing a Tailscale address into Same network now says what to do instead of just refusing it
+- Added **Test connection**, **Check my setup** and **Friends on my Tailscale** to the Link Play page: they say in plain words whether an address answers, what may block friends from joining (firewall, a Public network, client isolation), and which of your Tailscale devices are hosting, with a Join button. They only look and never change anything
+
 ### Gameplay mods
 - Settings > Gameplay and `pkp.log` now show which gameplay mods and experimental features are on, so you can see at a glance what a start will use
 

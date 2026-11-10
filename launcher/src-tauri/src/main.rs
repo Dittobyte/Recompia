@@ -17,6 +17,8 @@ mod guard;
 mod host;
 mod ini;
 mod lan;
+mod linkcheck;
+mod linkcheck_cmds;
 mod nsp;
 mod launch;
 mod nup;
@@ -173,6 +175,9 @@ fn main() {
             relay_cmds::room_code_new,
             relay_cmds::room_code_check,
             relay_cmds::room_code_host,
+            linkcheck_cmds::link_probe,
+            linkcheck_cmds::setup_facts,
+            linkcheck_cmds::tailscale_peers,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the launcher");
