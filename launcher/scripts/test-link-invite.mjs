@@ -1,7 +1,7 @@
 // Run: node scripts/test-link-invite.mjs (no browser, no Tauri). The Link Play invite: make, parse, and the settings it writes.
 import assert from 'node:assert/strict';
-import { addrProblem, applyEdits, editsFor, readIni, uiFrom } from '../src/linkplay-model.js';
-import { addrKind, inviteNote, inviteToUi, makeInvite, normalizeCode, parseInvite, tailscaleAddr } from '../src/link-invite-model.js';
+import { addrProblem, applyEdits, editsFor, readIni, tailscaleAddr, uiFrom } from '../src/linkplay-model.js';
+import { addrKind, inviteNote, inviteToUi, makeInvite, normalizeCode, parseInvite } from '../src/link-invite-model.js';
 
 const CODE = 'ABCD-EFGH-JKMN-PQRS';
 
@@ -42,7 +42,8 @@ for (const [input, want] of cases) {
   }
 }
 
-// not made: no code for a non-LAN address, own PC, bad address
+// not made: no code for a non-LAN address or for a relay (even on a LAN address), own PC, bad address
+assert.equal(makeInvite({ addr: '192.168.1.20:47610', through: true }), null);
 assert.equal(makeInvite({ addr: '100.101.102.103' }), null);
 assert.equal(makeInvite({ addr: '127.0.0.1', code: CODE }), null);
 assert.equal(makeInvite({ addr: 'nonsense', code: CODE }), null);
@@ -55,6 +56,10 @@ r = parseInvite(`Join over Tailscale: 100.101.102.103:47600\nRoom code: ${CODE}`
 assert.ok(r.ok && r.invite.addr === '100.101.102.103:47600');
 r = parseInvite('192.168.1.20');
 assert.ok(r.ok && r.invite.kind === 'lan' && r.invite.code === '');
+
+// a code followed by words on the same line is still the code
+r = parseInvite(`Join: 100.101.102.103:47600\nRoom code: ${CODE} thanks!`);
+assert.ok(r.ok && r.invite.code === CODE, 'trailing words after the code');
 
 // refused, in words
 for (const [bad, part] of [

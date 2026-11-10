@@ -10,7 +10,6 @@
 //   m  a hint for the person reading it; the receiving launcher works the kind out from the address itself.
 import { HOST_PORT, RELAY_PORT, parseAddr, localAddr, loopbackAddr, tailscaleAddr } from './linkplay-model.js';
 
-export { tailscaleAddr };
 
 export const INVITE_SCHEME = 'pokopia-link://join';
 export const INVITE_VERSION = 1;
@@ -43,7 +42,7 @@ export function makeInvite({ addr, code = '', through = false }) {
   if (!a || loopbackAddr(addr)) return null;
   const kind = addrKind(addr);
   const norm = normalizeCode(code);
-  if (kind !== 'lan' && !norm) return null;
+  if ((kind !== 'lan' || through) && !norm) return null;   // a relay always needs the code, whatever its address
   const full = withPort(String(addr).trim(), through ? RELAY_PORT : HOST_PORT);
   const q = [`v=${INVITE_VERSION}`, through ? `r=${full}` : `a=${full}`];
   if (norm && (kind !== 'lan' || through)) q.push(`c=${norm}`);
@@ -80,7 +79,7 @@ export function parseInvite(input) {
     // "Join over Tailscale: 100.64.0.5:47600" / "Room code: ABCD-..." lines, or just "100.64.0.5 ABCD-EFGH-..."
     const ip = /(\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?)/.exec(text);
     if (ip) addr = ip[1];
-    const labelled = /room\s*code\s*[:=]\s*([0-9A-Za-z -]{16,24})/i.exec(text);
+    const labelled = /room\s*code\s*[:=]\s*((?:[0-9A-Za-z]{4}[- ]?){3}[0-9A-Za-z]{4})/i.exec(text);
     if (labelled) code = labelled[1];
     else {
       const rest = ip ? text.replace(ip[1], ' ') : text;
