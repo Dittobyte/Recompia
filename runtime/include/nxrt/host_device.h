@@ -4,9 +4,10 @@
 
 namespace nxrt {
 
-// A gaming handheld played with its own controls: a Steam Deck (LCD or OLED) or a Lenovo Legion Go S, under SteamOS/Proton or
-// Windows. Detected from Steam's SteamDeck=1 in the environment or the board (SMBIOS product name Jupiter or Galileo, family
-// "Legion Go S ..."), read from the registry's BIOS key (Windows, and Wine fills it from SMBIOS) or Wine's Z:\sys\class\dmi.
+// A gaming handheld played with its own controls: a Steam Deck (LCD or OLED), a Lenovo Legion Go, Go S or Go 2, an ASUS ROG Ally,
+// Ally X or ROG Xbox Ally, or an MSI Claw A8, under SteamOS/Proton or Windows. Detected from Steam's SteamDeck=1 in the environment or
+// the board (the list in src/host_device.cpp, matched on the SMBIOS product name or family), read from the registry's BIOS key (Windows,
+// and Wine fills it from SMBIOS) or Wine's Z:\sys\class\dmi.
 // [host] handheld = auto (default) | on | off overrides it. What it changes: [display] render_scale auto renders at the window's
 // size instead of at least 1920x1080 (a handheld's GPU), and [prompts] style auto keeps controller prompts when the trackpad,
 // touchscreen or on-screen keyboard send mouse or keyboard input.
