@@ -8,26 +8,30 @@ assert.ok(sectionsFor('testing').some((s) => s.id === 'testing'));
 assert.ok(!sectionsFor('stable').some((s) => s.id === 'testing'));
 assert.equal(sectionsFor('stable').length, SECTIONS.length - 1);
 
-// the experimental toggles are in the tab, off by default, and no field id is used twice for different keys
+// the experimental toggles are in the tab and on by default (they are not gameplay mods); no field id is used twice for different keys
 const sec = SECTIONS.find((s) => s.id === 'testing');
 const ids = sec.groups.flatMap((g) => g.rows).map((r) => r.id);
-const EXTRAS = ['camera_aim', 'jump_momentum', 'inventory_sort', 'craft_search', 'title_quit', 'menu_in_game', 'taller_fov'];
-for (const id of EXTRAS) {
+const EXPERIMENTAL = ['menu_in_game', 'taller_fov'];
+for (const id of EXPERIMENTAL) {
   assert.ok(ids.includes(id), id);
-  assert.equal(FIELDS[id].def, '0', `${id} defaults off`);
+  assert.equal(FIELDS[id].def, '1', `${id} defaults on`);
 }
 const empty = { pkp: {}, controls: {}, config: { channel: 'testing' }, controls_exists: false };
 const testing = readAll(empty);
-assert.equal(testing.camera_aim, false);
-assert.equal(readAll({ ...empty, pkp: { 'pkp.camera_aim': '1' } }).camera_aim, true);
+assert.equal(testing.camera_aim, true);   // a gameplay mod: on by default on every channel (PROJECT.md 6.1)
+assert.equal(readAll({ ...empty, pkp: { 'pkp.camera_aim': '0' } }).camera_aim, false);
 
-// each extra shows in the Testing tab on Testing and in Game > Gameplay otherwise, never in both
+// the experimental toggles show in the Testing tab on Testing only; the gameplay mods stay in Game > Gameplay on every channel
 const shown = (secId, values) => SECTIONS.find((s) => s.id === secId).groups.flatMap((g) => rowsOf(g, values, {})).map((r) => r.id);
 const onTesting = { ...testing, channel: 'testing' };
 const onStable = { ...testing, channel: 'stable' };
-for (const id of EXTRAS) {
-  assert.ok(shown('testing', onTesting).includes(id) && !shown('game', onTesting).includes(id), `${id} on testing`);
-  assert.ok(!shown('testing', onStable).includes(id) && shown('game', onStable).includes(id), `${id} on stable`);
+for (const id of EXPERIMENTAL) {
+  assert.ok(shown('testing', onTesting).includes(id), `${id} on testing`);
+  assert.ok(!shown('testing', onStable).includes(id), `${id} not on stable`);
+}
+for (const id of ['camera_aim', 'jump_momentum', 'inventory_sort', 'craft_search', 'title_quit']) {
+  assert.ok(shown('game', onTesting).includes(id) && shown('game', onStable).includes(id), `${id} in Gameplay`);
+  assert.ok(!ids.includes(id), `${id} not in the Testing tab`);
 }
 
 // the model

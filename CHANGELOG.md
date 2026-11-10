@@ -8,17 +8,16 @@ of the game (version 2.0.1a): the download contains no game files.
 
 **Update:** press **Update**, then **Set up again** once (new game hooks for the crafting Search button; your saves and shaders are kept).
 
-### Defaults and the Testing tab
-- Changed every extra that is not in the original game to **off by default**, so you switch on only what you want (a feature can work on one PC and not on another)
-  - Off: **Camera aim**, **Running jump keeps speed**, the bag/box **Sort** button, the crafting **Search** button, the title screen **Quit Game** prompt, **Mouse in the game's menus**, the **Taller view** on 16:10 screens and the **Preparing shaders** note
-  - To try one: **Settings > Testing** (Testing channel) or **Settings > Game > Gameplay**, or the keys `[pkp] camera_aim`, `jump_momentum`, `inventory_sort`, `craft_search`, `title_quit`, `menu_in_game`, `taller_fov`, `[nvn] compile_note` set to `1` in `pkp.ini`. A value you already set stays as it is
-  - The in-game Options screen stays **on** (`[pkp] options_menu`). Fixes the game needs to run well (shader, timing and memory handling) stay on
-  - The touch screen **Menu button** stays automatic: on when the machine has a touch screen, so a handheld keeps its way into the menu. Frame pacing, shader and timing fixes and speed-ups also stay on
-- Added a **Testing** tab to Settings, shown only on the Testing channel: send logs, read them, and switch the experimental features on
+### The Testing tab
+- Added a **Testing** tab to Settings, shown only on the Testing channel: send logs, read them, and switch the features still being tried on or off
   - **Export and report** makes one zip of `pkp.log`, `pkp.log.prev`, the crash files, `setup.log` and `pkp.ini`, opens its folder (`testing-logs` next to `pkp.exe`) and the bug report form. Drag the zip into the form: the launcher has no GitHub login, so nothing is uploaded for you
   - Names in paths, your account and server settings and IP addresses are removed before anything is written. Long logs keep their end, so the zip stays under GitHub's 25 MB limit
   - **View logs** shows the end of each file in the launcher, with a filter and a Copy button
-  - The options above are listed under **Experimental features**. On Stable they are in **Game > Gameplay**
+  - **Experimental features** has **Mouse in the game's menus** and the **Taller view** on 16:10 screens, both on by default. The gameplay options (Camera aim, Running jump, Sort, Search, Quit Game) stay in **Game > Gameplay**, on by default
+- The touch screen **Menu button** is automatic: on when the machine has a touch screen, so a handheld keeps its way into the menu
+
+### Game
+- **Joy-Con 2 mouse mode** is switched off for now: it aimed at the wrong blocks on PC. The middle mouse button no longer turns it on and the **Mouse Mode Key** row is gone from **Settings > Mouse**. Camera aim is not affected
 
 ### Launcher
 - Backups, restore and downgrade now find the save folder the same way as Import and the game: when `pkp.ini` lists `[fs] save_dir` (or `[account] uid`) twice, the last one counts
@@ -30,6 +29,9 @@ of the game (version 2.0.1a): the download contains no game files.
   - Before: Steam's default layout for a non-Steam shortcut sends the d-pad as arrow keys, and the launcher ignored them
   - Now: the arrow keys move between controls, Enter presses, Escape goes back (closes a question, or returns Home), the same as the pad
   - Text boxes, sliders and drop-downs keep the arrows they need
+- Settings > **Gameplay** now lists every gameplay option, each on by default
+  - Before: only Camera aim and Running jump were there; the Sort button, crafting Search and Quit Game could only be switched off in `pkp.ini`
+  - Now: one switch each for Running jump, Camera aim, Sort button (plus **Sort each time the bag opens**, off by default), crafting Search and Quit Game on the title screen. A gameplay option added later shows up here by itself
 - **Set up again** after an update that changes only the runtime now just relinks the game (seconds instead of translating and compiling it again); it keeps the compiled game libraries (a few hundred MB) in `build/lib`
 
 ### Game
@@ -57,6 +59,16 @@ of the game (version 2.0.1a): the download contains no game files.
   - Before: Nearest gave sharp pixels only with Resolution; with Scene Resolution the 3D scene was still stretched smooth and blurry
   - Now: with Scene Resolution below 100% the 3D scene is enlarged with hard pixels too, and the menus and HUD stay at full size
   - Still not: bloom and other soft glow effects stay smooth on purpose
+- Fixed new Pokémon and areas staying **invisible until a restart** (#304)
+  - Before: when the graphics driver briefly refused to map more game memory (`importing pool ... failed (-2)` in `pkp.log`), every model whose data lay in that part of memory stayed invisible for the rest of the session
+  - Now: that memory is tried again a moment later (after half a second, then up to every few seconds), and imports nothing has used for a while are released first to make room, so the models appear once the driver has room again. `pkp.log` says when a retry worked
+
+- Added **Shadow quality**: sharper shadows (Settings (F1) > Graphics > **Shadow quality**, right under Texture anisotropy, or the game's Settings > **Shadow Quality**)
+  - Before: shadows were drawn from a 2048 x 2048 map, so their edges looked blocky up close
+  - Now: pick **High (2x)**, **Very High (3x)**, **Ultra (4x)** or **Extreme (8x)** to make the shadow maps that many times larger per side. It applies at once, no restart. Default is as the game draws them. Also `[display] shadow_quality = default | high | very_high | ultra | extreme`
+  - The game's soft shadow edge is made of 16 samples a texel of the original map apart; on a larger map the gaps between them showed as bands. With any option above Default each of those samples is now the average of 3 x 3 samples, which keeps the edge smooth. `[nvn] shadow_blur = false` turns that off
+  - **Quality preset** now sets it with the anti-aliasing: High gives High (2x) and SMAA High, Ultra gives Very High (3x) and SMAA Ultra, Desktop PC gives Very High (3x) and SMAA High; the others give Default and no anti-aliasing. Changing either by hand makes the preset Custom
+  - Still not: Ultra and Extreme use a lot of video memory (a 4x map is 128 MiB, an 8x one 512 MiB, and the game makes several); a size the GPU can't make leaves that map as the game made it
 
 ### Controls
 - Fixed the **Mouse Mode Key** row in **Settings > Mouse** (#367)

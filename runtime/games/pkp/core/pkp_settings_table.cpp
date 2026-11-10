@@ -23,10 +23,15 @@ constexpr Spec unset_by_default(Spec sp) {
     sp.optional = true;
     return sp;
 }
+// A gameplay mod (Spec::gameplay): on by default, the player opts out.
+constexpr Spec gameplay(Spec sp) {
+    sp.gameplay = true;
+    return sp;
+}
 
 // In Key order (checked below). Every key is read once, when its feature installs.
 constexpr Spec kSpecs[] = {
-    b(TallerFov, "taller_fov", false, "Screens taller than 16:9: the taller view through the camera's FOV and aspect (off: 16:9 with bars)."),
+    b(TallerFov, "taller_fov", true, "Screens taller than 16:9: the taller view through the camera's FOV and aspect (off: 16:9 with bars)."),
     b(RenderOverride, "render_override", true, "Render the scene at the chosen internal size instead of the game's 1920x1080 layout."),
     s(TargetFix, "target_fix", "screen", "off screen all", "Render targets made at a literal 1920x1080 follow the render size: screen-relative ones, all, or none."),
     b(SceneViewportFix, "scene_viewport_fix", true, "Keep the 3D scene's viewport whole when it renders below its targets' size."),
@@ -39,7 +44,7 @@ constexpr Spec kSpecs[] = {
     i(CameraGraceMs, "camera_grace_ms", 250, 0, 5000, "How long after the camera's turn branch last ran the mouse still turns the camera, in ms."),
     b(MenuMouse, "menu_mouse", true, "The mouse pointer in the game's menus."),
     i(MenuLog, "menu_log", 1, 0, 0, "Menu logging: 0 off, 1 what the pointer does (and the sort's and search's lists), 2 more detail, 3 the layout chain once a second."),
-    b(MenuInGame, "menu_in_game", false, "The mouse pointer also works in menus opened during play."),
+    b(MenuInGame, "menu_in_game", true, "The mouse pointer also works in menus opened during play."),
     s(MenuInGameIgnore, "menu_in_game_ignore", "", "", "Layouts (id/sub ...) never treated as an in-game menu."),
     s(MenuKeyGuides, "menu_key_guides", "881468973=btn_minus", "", "Key guide layouts a click sends a button for (id=action ...)."),   // gitleaks:allow (a layout id)
     b(KbmIcons, "kbm_icons", true, "Keyboard and mouse icons in the game's button prompts."),
@@ -52,14 +57,14 @@ constexpr Spec kSpecs[] = {
     b(LinkInteractEverywhere, "link_interact_everywhere", false, "Experimental: Link Play visitors can interact outside Palette Town."),
     b(LinkStoryCoop, "link_story_coop", false, "Experimental: Link Play visitors can take part in the host's story."),
     b(UuidRepair, "uuid_repair", true, "At start, give a save with the player UUID earlier builds shared a UUID of its own."),
-    b(JumpMomentum, "jump_momentum", false, "A running jump keeps the running speed in the air."),
+    gameplay(b(JumpMomentum, "jump_momentum", true, "A running jump keeps the running speed in the air.")),
     d(JumpMomentumStrength, "jump_momentum_strength", 1.0, 0.0, 1.0, "With jump_momentum: how much of the extra running speed is kept."),
-    b(CameraAim, "camera_aim", false, "Abilities and tools aim where the camera looks instead of where the character faces."),
+    gameplay(b(CameraAim, "camera_aim", true, "Abilities and tools aim where the camera looks instead of where the character faces.")),
     i(CameraAimReach, "camera_aim_reach", 2, 0, 4, "With camera_aim: extra cells of reach."),
-    b(InventorySort, "inventory_sort", false, "A Sort button in the bag's and the container screens' key guide."),
+    gameplay(b(InventorySort, "inventory_sort", true, "A Sort button in the bag's and the container screens' key guide.")),
     b(InventoryAutosort, "inventory_autosort", false, "Sort the bag each time the bag or a container screen opens."),
-    b(CraftSearch, "craft_search", false, "A Search button in the crafting screen's key guide."),
-    b(TitleQuit, "title_quit", false, "A Quit Game key guide on the title screen."),
+    gameplay(b(CraftSearch, "craft_search", true, "A Search button in the crafting screen's key guide.")),
+    gameplay(b(TitleQuit, "title_quit", true, "A Quit Game key guide on the title screen.")),
     b(OptionsMenu, "options_menu", true, "The PC settings as tabs and rows of the game's own Settings screen."),
 };
 static_assert(sizeof(kSpecs) / sizeof(kSpecs[0]) == static_cast<size_t>(Count), "one Spec per Key");
@@ -70,6 +75,18 @@ constexpr bool in_key_order() {
     return true;
 }
 static_assert(in_key_order(), "kSpecs in Key order");
+
+// A gameplay mod is a bool switch; in a release build (PKP_GAMEPLAY_DEFAULTS_CHECK, set by game-build with PKP_RELEASE: every build on
+// GitHub, stable and testing) it must also default on, so a default turned off for a test build cannot ship.
+constexpr bool gameplay_ok(bool release) {
+    for (const Spec& sp : kSpecs)
+        if (sp.gameplay && (sp.type != Bool || (release && sp.def == 0))) return false;
+    return true;
+}
+static_assert(gameplay_ok(false), "a gameplay mod is a bool");
+#if PKP_GAMEPLAY_DEFAULTS_CHECK
+static_assert(gameplay_ok(true), "release build: a gameplay mod ([pkp] key marked gameplay()) defaults off; turn it back on");
+#endif
 
 }  // namespace
 
@@ -110,6 +127,7 @@ std::vector<setting_doc::Row> doc_rows() {
             }
         }
         if (r.optional) r.def.clear();
+        if (sp.gameplay) r.group = "gameplay";
         r.doc = sp.doc;
         if (sp.applies == Applies::AtStart) r.doc += " Next start.";
         rows.push_back(std::move(r));
