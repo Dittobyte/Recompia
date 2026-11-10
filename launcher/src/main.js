@@ -12,6 +12,7 @@ import { errText, esc, icon } from './ui.js';
 import { store } from './store.js';
 import { isFirstRun } from './action.js';
 import { startGamepadNav } from './gamepad-nav.js';
+import { loadLayout, applyLayout } from './layout-apply.js';
 import * as home from './pages/home.js';
 import * as linkplay from './pages/linkplay.js';
 import * as news from './pages/news.js';
@@ -59,6 +60,7 @@ function applyTheme(t) {
   if (b) b.querySelector('.nav-label').textContent = b.querySelector('.nav-tip').textContent = `Colours: ${THEME_NAME[t]}`;
 }
 applyTheme(readTheme());
+applyLayout(loadLayout());
 
 function drawNav() {
   const items = Object.entries(PAGES).filter(([, p]) => p.nav).map(([id, p]) =>
@@ -68,16 +70,21 @@ function drawNav() {
     ${items.join('')}
     <div class="nav-spacer"></div>
     <button class="nav-item" id="theme-btn" aria-label="Change colours">${icon('palette')}<span class="nav-label"></span><span class="nav-tip" aria-hidden="true"></span></button>
+    <button class="nav-item" id="layout-btn" aria-label="Change layout">${icon('layout-dashboard')}<span class="nav-label">Layout</span><span class="nav-tip" aria-hidden="true">Layout</span></button>
     <button class="task-pill" id="task-pill" hidden>
       ${icon('loader-circle', 'spin')}<span class="task-name clip"></span><span class="task-pct"></span>
       <span class="task-track"><span class="task-fill"></span></span>
     </button>`;
   applyTheme(readTheme());
+  applyLayout(loadLayout());
   nav.addEventListener('click', (e) => {
     if (e.target.closest('#theme-btn')) {
       const next = THEMES[(THEMES.indexOf(readTheme()) + 1) % THEMES.length];
       try { localStorage.setItem('theme', next); } catch { /* the choice lasts until the launcher closes */ }
       applyTheme(next);
+    }
+    if (e.target.closest('#layout-btn')) {
+      import('./layout-panel.js').then((m) => m.openLayoutPanel()).catch((err) => console.error(err));
     }
     const page = e.target.closest('[data-page]')?.dataset.page;
     if (page && page !== current) go(page);

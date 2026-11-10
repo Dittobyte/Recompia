@@ -70,7 +70,7 @@ export function render(el, ctx) {
       <div class="home-actions">
         <button class="btn primary big" id="primary"></button>
         <button class="btn big on-art" id="update" data-act="update" hidden>${icon('download')}Update</button>
-        <span id="link"></span>
+        <span id="link" data-block="link"></span>
       </div>
       <p class="home-detail" id="detail" hidden></p>
       <div class="home-task glass strong" id="task" hidden>
@@ -81,7 +81,7 @@ export function render(el, ctx) {
       </div>
       <div class="home-notices" id="notices"></div>
     </div>
-    <section class="home-news" id="news" aria-label="Newest releases"></section>
+    <section class="home-news" id="news" data-block="news" aria-label="Newest releases"></section>
   </div>`;
 
   const part = (id) => el.querySelector(`#${id}`);
