@@ -13,9 +13,6 @@ Add the derived entries (the d-pad direction icons) to an existing pack without 
 Add the Steam Controller icons (steam/, from the Kenney "Steam Controller" folder) to an existing pak; other entries are kept byte for byte:
   python -I scripts/build_prompt_pack.py --add-steam <pack folder or .zip> --out assets/prompts/prompt_icons.pak
 
-Add the Steam Deck icons (deck/, the Xbox View and Menu symbols) to an existing pak; other entries are kept byte for byte:
-  python -I scripts/build_prompt_pack.py --add-deck --out assets/prompts/prompt_icons.pak
-
 Fit steam/ to the Steam Controller (2026) in an existing pak (needs no Kenney pack): View and Menu from xbox/, one icon per rear grip
 (l4, l5, r4, r5) instead of the original controller's two; other entries are kept byte for byte:
   python -I scripts/build_prompt_pack.py --add-sc2 --out assets/prompts/prompt_icons.pak
@@ -533,18 +530,18 @@ def verify(path: Path) -> int:
             problems.append(f"file size {len(data)} != header + directory + {count} blocks")
 
     s = set(names)
-    for p in ("xbox/", "ps/", "steam/", "deck/", "kbm/"):
+    for p in ("xbox/", "ps/", "steam/", "kbm/"):
         print(f"{p:8s} {sum(1 for n in names if n.startswith(p)):4d} entries")
-    other = [n for n in names if not n.startswith(("xbox/", "ps/", "steam/", "deck/", "kbm/"))]
+    other = [n for n in names if not n.startswith(("xbox/", "ps/", "steam/", "kbm/"))]
     if other:
         problems.append(f"unexpected prefixes: {other[:5]}")
     bases = [n for n in names if not n.endswith("_pressed")]
     print(f"base {len(bases)}, _pressed {len(names) - len(bases)}")
-    for p in ("xbox/", "ps/", "steam/", "deck/", "kbm/"):
+    for p in ("xbox/", "ps/", "steam/", "kbm/"):
         missing = [n for n in bases if n.startswith(p) and n + "_pressed" not in s]
         orphan = [n for n in names if n.endswith("_pressed") and n[: -len("_pressed")] not in s]
         print(f"{p:8s} pressed twins missing: {len(missing)}, orphan pressed: {len(orphan)}")
-        if p in ("xbox/", "ps/", "steam/", "deck/") and missing:
+        if p in ("xbox/", "ps/", "steam/") and missing:
             problems.append(f"{p} base names without _pressed twin: {missing}")
         if orphan:
             problems.append(f"orphan _pressed entries: {orphan[:5]}")
@@ -560,7 +557,7 @@ def write_preview(path: Path, icons: dict[str, Image.Image], font_path: Path) ->
     font = ImageFont.truetype(str(font_path), 10)
     head_font = ImageFont.truetype(str(font_path), 18)
     groups = []
-    for prefix in ("xbox/", "ps/", "steam/", "deck/", "kbm/"):
+    for prefix in ("xbox/", "ps/", "steam/", "kbm/"):
         base = sorted((n for n in icons if n.startswith(prefix) and not n.endswith("_pressed")),
                       key=lambda n: n.encode("ascii"))
         groups.append((f"{prefix} base", base))
@@ -611,23 +608,6 @@ def add_steam(args: argparse.Namespace) -> int:
     finally:
         for d in tmp_dirs:
             shutil.rmtree(d, ignore_errors=True)
-
-
-# The Steam Deck prompt style uses the steam/ art except for its two small buttons: the Deck has View and Menu like an Xbox pad, where the
-# Steam Controller has the < and > arrows. Needs no Kenney pack: the symbols are the Xbox ones already in the pak.
-DECK_FROM_XBOX = {"deck/view": "xbox/view", "deck/menu": "xbox/menu"}
-
-
-def add_deck(args: argparse.Namespace) -> int:
-    """Adds (or replaces) the deck/ entries of an existing pak, copied from xbox/; every other entry is kept as it is."""
-    out = Path(args.out)
-    icons = read_pak(out)
-    for name, src in DECK_FROM_XBOX.items():
-        icons[name] = icons[src].copy()
-        icons[name + "_pressed"] = icons[src + "_pressed"].copy()
-    size = write_pak(out, icons)
-    print(f"wrote {out} ({size} bytes), {len(icons)} entries; deck/: {sum(1 for n in icons if n.startswith('deck/'))}")
-    return 0
 
 
 # The Steam Controller (2026) differs from Kenney's original-controller art in three places: its small buttons are View and Menu like an Xbox
@@ -709,8 +689,6 @@ def build(args: argparse.Namespace) -> int:
         for name, stem in OTHER_KBM_MAP.items():
             icons[name] = fit_icon(load_src(root, KBM_DIR, stem))
         add_dpad_directions(icons)
-        for name, src in DECK_FROM_XBOX.items():
-            icons[name] = icons[src].copy()
 
         cap = load_src(root, KBM_DIR, "keyboard")
         baked: list[tuple[str, str]] = []
@@ -737,7 +715,7 @@ def build(args: argparse.Namespace) -> int:
 
         base = [n for n in icons if not n.endswith("_pressed")]
         print(f"wrote {out} ({size} bytes), {len(icons)} entries ({len(base)} base + {len(base)} _pressed)")
-        for p in ("xbox/", "ps/", "steam/", "deck/", "kbm/"):
+        for p in ("xbox/", "ps/", "steam/", "kbm/"):
             print(f"  {p:8s} {sum(1 for n in base if n.startswith(p))} base")
         print(f"baked text keys (no Kenney image), {len(baked)}:")
         print("  " + ", ".join(f"{sdl} -> {label}" for sdl, label in baked))
@@ -759,7 +737,6 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--font", default=str(DEFAULT_FONT), help="TTF used for baked key labels and the preview")
     ap.add_argument("--verify", metavar="PAK", help="check an existing pak and exit")
     ap.add_argument("--add-steam", metavar="KENNEY", help="add the steam/ icons from the Kenney pack (folder or .zip) to the pak given by --out, in place, and exit")
-    ap.add_argument("--add-deck", action="store_true", help="add the deck/ icons (Xbox View and Menu) to the pak given by --out, in place, and exit")
     ap.add_argument("--add-sc2", action="store_true", help="fit the steam/ icons to the Steam Controller (2026) in the pak given by --out, in place, and exit")
     ap.add_argument("--derive", metavar="PAK", help="add the derived d-pad direction entries to an existing pak in place and exit")
     args = ap.parse_args(argv)
@@ -769,8 +746,6 @@ def main(argv: list[str] | None = None) -> int:
         return derive(Path(args.derive))
     if args.add_steam:
         return add_steam(args)
-    if args.add_deck:
-        return add_deck(args)
     if args.add_sc2:
         return add_sc2(args)
     if not args.kenney:

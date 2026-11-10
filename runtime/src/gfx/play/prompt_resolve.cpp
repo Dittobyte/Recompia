@@ -82,13 +82,7 @@ const char* pad_name(PromptStyle style, const PadSettings& pad, bool label_abxy,
         "ps/cross", "ps/circle", "ps/square", "ps/triangle", "ps/l1", "ps/r1", "ps/l2", "ps/r2", "ps/options", "ps/create",
         "", "", "", "", "", "", "", "", "", "", "", "",
     };
-    const char* name = (style == PromptStyle::Xbox ? kXbox : steam_set ? kSteam : kPs)[static_cast<int>(src)];
-    // The Steam Deck's View and Menu are the Xbox symbols; steam/view and steam/menu are the same art since the Steam Controller (2026) has them too.
-    if (style == PromptStyle::SteamDeck) {
-        if (std::string_view(name) == "steam/menu") return "deck/menu";
-        if (std::string_view(name) == "steam/view") return "deck/view";
-    }
-    return name;
+    return (style == PromptStyle::Xbox ? kXbox : steam_set ? kSteam : kPs)[static_cast<int>(src)];
 }
 
 // Does binding b apply in context c? A binding of c applies; an `all` binding applies unless the same input has a binding of c itself.
