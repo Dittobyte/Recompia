@@ -445,7 +445,7 @@ export async function render(el, ctx) {
     }
   });
   el.addEventListener('click', (e) => {
-    const t = e.target.closest('[data-copy], [data-act]');
+    const t = e.target.closest('[data-copy], [data-act], [data-invite]');
     if (!t) return;
     if (t.dataset.invite) {
       const made = makeInvite({ addr: t.dataset.invite, code: shownCode({ gameCode, hostCode: ui.hostCode, running: gameActive(store.state) }), through: t.dataset.through === '1' });
