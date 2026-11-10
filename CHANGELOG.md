@@ -17,6 +17,7 @@ of the game (version 2.0.1a): the download contains no game files.
 - The touch screen **Menu button** is automatic: on when the machine has a touch screen, so a handheld keeps its way into the menu
 
 ### Game
+- NVIDIA graphics cards no longer risk a crash (device lost) in three of the game's compute shaders when a loop count is not the game's: the count is held to the size of the table the loop walks (on other cards, to 16384). From pokopia-native 1.4.0; `[nvn] loop_guard = off` turns it off
 - **Joy-Con 2 mouse mode** is switched off for now: it aimed at the wrong blocks on PC. The middle mouse button no longer turns it on and the **Mouse Mode Key** row is gone from **Settings > Mouse**. Camera aim is not affected
 
 ### Launcher
