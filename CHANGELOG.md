@@ -46,10 +46,14 @@ of the game (version 2.0.1a): the download contains no game files.
 - **Joy-Con 2 mouse mode** is switched off for now: it aimed at the wrong blocks on PC. The middle mouse button no longer turns it on and the **Mouse Mode Key** row is gone from **Settings > Mouse**. Camera aim is not affected
 
 ### Launcher
-- Changed the launcher artwork to neutral placeholders: the **Koi's Camp** colours are now called **Meadow**, and the logo and icons are plain
-  - Before: Meadow was a hand-drawn picture with Pokemon characters, credited in Settings > About, and the logo and icons were multi-colour bubble letters like the game's
-  - Now: Meadow is a plain meadow picture and the Steam shortcut art matches it; the logo is plain "Recompia" text and the icons are an R on a rounded square (Testing: with a T badge). A saved colour choice still works
-  - Still not: the pictures are placeholders until we have art we can publish; the About credit for the old picture is gone
+- Changed the logo and icons to plain ones, and took the earlier game's name and a personal folder path out of comments and scripts
+  - Before: the logo and icons were multi-colour bubble letters like the game's
+  - Now: the logo is plain "Recompia" text and the icons are an R on a rounded square (Testing: with a T badge); the README pictures are plain placeholders
+  - Still not: the launcher's **Koi's Camp** colours and the Steam shortcut pictures keep Koi's hand-drawn picture
+- Added **Meadow**, a fourth launcher colour with an original scene made for the project (hills, trees, a pond and a path), next to Sunrise, Dusk and Koi's Camp
+  - Before: Koi's Camp was the only daytime picture
+  - Now: pick **Meadow** with the Colours button; the new picture is about 100 KB, and the Steam shortcut pictures are lighter 256-colour PNGs
+  - Still not: a custom-drawn look from an artist, which comes with the visual refresh
 - Backups, restore and downgrade now find the save folder the same way as Import and the game: when `pkp.ini` lists `[fs] save_dir` (or `[account] uid`) twice, the last one counts
 - Added **Add DLC** (on the Setup page, or drop the file in the launcher): unpack the add-on of a DLC `.nsp` without building it by hand
   - Before: DLC had to be unpacked and put in `aoc/<add-on id>/romfs/` yourself, and the game saw none until you did
