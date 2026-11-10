@@ -131,6 +131,25 @@ pub fn setup_started(dir: &Path) -> bool {
 
 /// The one answer to "can Play run": the Play command and the page's main button both come here, so they cannot disagree.
 pub fn readiness(cfg: &Config) -> Probe {
+    // macOS: the game is the native build from this tree and reads its own pkp.ini (exefs, romfs) -- there is no package to
+    // choose, no pkp_rt.dll and nothing to build, so the launcher only checks the binary, the ini and the shader cache.
+    if crate::host::native_game() {
+        let dir = game_dir_of(cfg);
+        let refuse = |r: Readiness| Probe { readiness: r, paths: None, dump: None };
+        if !crate::host::game_exe(&dir).is_file() {
+            return refuse(Readiness::of(
+                "no_exe",
+                format!("{} was not found in {}. Put it there or set the game folder in Settings.", crate::host::game_exe_name(), dump::fwd(&dir)),
+            ));
+        }
+        if !dir.join(crate::settings::PKP_INI).is_file() {
+            return refuse(Readiness::of("no_files", format!("pkp.ini was not found in {}. It needs [fs] exefs and [fs] romfs.", dump::fwd(&dir))));
+        }
+        if !crate::shaders::is_complete(&dir) {
+            return refuse(Readiness::of("setup", "Press Set up to extract and translate the game's shaders."));
+        }
+        return Probe { readiness: Readiness::of("ready", ""), paths: None, dump: None };
+    }
     let refuse = |r: Readiness| Probe { readiness: r, paths: None, dump: None };
     let picked = cfg.dump_dir.trim();
     if picked.is_empty() {

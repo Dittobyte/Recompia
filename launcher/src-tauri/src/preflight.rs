@@ -96,6 +96,8 @@ pub struct Facts {
     pub runner: Option<Result<String, String>>,
     /// the translated shaders will be packed (Remaining::compact): what the disk message says stays
     pub compact: bool,
+    /// macOS: the game is a native build — no Vulkan driver check, no Proton, no /proc (host.rs native_game)
+    pub native: bool,
 }
 
 /// What of setup is still to do, as far as the disk goes.
@@ -202,6 +204,15 @@ pub fn evaluate(f: &Facts) -> Report {
         Err(e) => push("write", Level::Fail, e.title(), e.message()),
     }
 
+    let mut suggest_gentle = false;
+    if f.native {
+        push(
+            "native",
+            Level::Ok,
+            "Native build",
+            "The game runs natively on this Mac: no Vulkan driver, no Proton and no RAM probe are needed.".into(),
+        );
+    } else {
     match &f.vulkan {
         Vulkan::NoLoader(e) => push(
             "vulkan",
@@ -246,7 +257,6 @@ pub fn evaluate(f: &Facts) -> Report {
         None => push("ram", Level::Warn, "Memory unknown", "Could not read the amount of RAM.".into()),
     }
 
-    let mut suggest_gentle = false;
     if let Some(brand) = f.cpu_brand.as_deref().filter(|b| raptor_lake_desktop(b)) {
         match f.microcode {
             Some(m) if m >= FIXED_MICROCODE => push("cpu", Level::Ok, "Processor", format!("{} runs microcode {:#x}, which has Intel's fix.", brand.trim(), m)),
@@ -267,6 +277,7 @@ pub fn evaluate(f: &Facts) -> Report {
         }
     }
 
+    }
     let blocked = checks.iter().any(|c| c.level == Level::Fail);
     let warnings = checks.iter().filter(|c| c.level == Level::Warn).count();
     Report { checks, blocked, warnings, need_bytes: f.need_bytes, suggest_gentle }
@@ -303,7 +314,9 @@ pub fn microcode_of(raw: &[u8]) -> Option<u32> {
 /// Everything `evaluate` needs, from this PC.
 pub fn probe(game_dir: &Path, r: &Remaining) -> Facts {
     let need = disk_needed(r);
-    let (brand, microcode) = sys::cpu();
+    // macOS runs the game natively: there is no Vulkan driver to find, no Proton to run it with and no /proc to read the RAM from.
+    let native = crate::host::native_game();
+    let (brand, microcode) = if native { (None, None) } else { sys::cpu() };
     Facts {
         free_bytes: sys::free_bytes(game_dir),
         need_bytes: need,
@@ -311,14 +324,15 @@ pub fn probe(game_dir: &Path, r: &Remaining) -> Facts {
         drive: drive_of(game_dir),
         game_dir: game_dir.to_string_lossy().into_owned(),
         write: writecheck::check(game_dir),
-        vulkan: sys::vulkan(),
-        ram_total: sys::ram_total(),
+        vulkan: if native { Vulkan::Gpus(Vec::new()) } else { sys::vulkan() },
+        ram_total: if native { None } else { sys::ram_total() },
         cpu_brand: brand,
         microcode,
         #[cfg(windows)]
         runner: None,
         #[cfg(not(windows))]
-        runner: Some(crate::host::runner().map(|r| r.label)),
+        runner: if native { None } else { Some(crate::host::runner().map(|r| r.label)) },
+        native,
     }
 }
 

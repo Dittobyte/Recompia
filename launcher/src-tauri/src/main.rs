@@ -73,6 +73,15 @@ fn main() {
     if args.iter().any(|a| a == "--play") {
         std::process::exit(cli::run_play(&args));
     }
+    if args.iter().any(|a| a == "--setup") {
+        std::process::exit(cli::run_setup(&args));
+    }
+    if args.iter().any(|a| a == "--preflight") {
+        std::process::exit(cli::run_preflight(&args));
+    }
+    if args.iter().any(|a| a == "--readiness") {
+        std::process::exit(cli::run_readiness(&args));
+    }
     readiness::UPDATED.store(args.iter().any(|a| a == "--updated"), Ordering::SeqCst);
     // WebKitGTK's DMA-BUF renderer leaves the window blank or kills it ("Error 71 (Protocol error)") on NVIDIA's driver
     #[cfg(target_os = "linux")]

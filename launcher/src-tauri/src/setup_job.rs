@@ -63,6 +63,47 @@ pub fn setup_status(app: AppHandle, state: SetupArg) -> SetupStatus {
 pub fn start_setup(app: AppHandle, state: SetupArg, gentle: Option<bool>) -> Result<(), String> {
     ensure_idle(&app, &[Need::Update, Need::Storage])?;
     let cfg = load_config(&app);
+    // macOS: the game is the native build from this tree and reads its own pkp.ini, so Set up is the shader corpus (extracted
+    // from the RomFS) and its translation -- no dump to choose, no build, no Proton (host.rs macos_set_up).
+    if host::native_game() {
+        let dir = game_dir_of(&cfg);
+        writecheck::check(&dir).map_err(|e| e.message())?;
+        {
+            let mut p = state.progress.lock().unwrap();
+            if p.state == RunState::Running {
+                return Err("Setup is already running.".into());
+            }
+            *p = shaders::Progress { state: RunState::Running, phase: "check".into(), message: "Checking the game folder...".into(), ..Default::default() };
+        }
+        let st = state.inner().clone();
+        st.cancel.store(false, Ordering::SeqCst);
+        let slog = Arc::new(setuplog::SetupLog::open(&dir));
+        let log: shaders::LogFn = {
+            let l = slog.clone();
+            Arc::new(move |t: &str| l.line(t))
+        };
+        log(&format!("=== Set up started: launcher {}, macOS native", env!("CARGO_PKG_VERSION")));
+        std::thread::spawn(move || {
+            let mut last = (String::new(), 0u64, String::new());
+            let mut emit = |p: shaders::Progress| {
+                if setuplog::progress_worth_logging(&mut last, &p.phase, p.done, p.total, &p.message) && p.state == RunState::Running {
+                    log(&format!("[{}] {}", p.phase, p.message));
+                }
+                *st.progress.lock().unwrap() = p.clone();
+                let _ = app.emit("setup-status", p);
+            };
+            let result = host::macos_set_up(&dir, &st.cancel, &mut |phase, done, total, message| {
+                emit(shaders::Progress { state: RunState::Running, phase: phase.to_string(), done, total, message: message.to_string() })
+            });
+            let end = match result {
+                Ok(n) => shaders::Progress { state: RunState::Done, phase: "finish".into(), message: format!("Setup finished: {} shaders translated.", n), ..Default::default() },
+                Err(e) => shaders::Progress { state: RunState::Error, message: e, ..Default::default() },
+            };
+            slog.line(&format!("=== Set up ended: {}{}", end.state, if end.message.is_empty() { String::new() } else { format!(": {}", end.message) }));
+            emit(end);
+        });
+        return Ok(());
+    }
     let gentle = gentle.unwrap_or(cfg.gentle_build);
     let report = dump::scan(&cfg.dump_dir);
     let chosen = report.chosen.ok_or_else(|| "Choose usable game files first.".to_string())?;

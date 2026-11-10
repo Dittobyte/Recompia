@@ -14,9 +14,21 @@ pub fn exe_dir() -> PathBuf {
     std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())).unwrap_or_else(|| PathBuf::from("."))
 }
 
+/// The game folder a fresh install starts from: the launcher's own folder, or -- inside a macOS `.app` -- the folder the bundle
+/// sits in (the bundle carries the launcher only; pkp, pkp.ini and shader_cache stay beside it, where a 26 GB cache belongs).
+pub fn default_game_dir() -> PathBuf {
+    let exe = exe_dir();
+    if exe.file_name().is_some_and(|n| n == "MacOS") && exe.parent().is_some_and(|p| p.file_name().is_some_and(|n| n == "Contents")) {
+        if let Some(dir) = exe.parent().and_then(std::path::Path::parent).and_then(std::path::Path::parent) {
+            return dir.to_path_buf();
+        }
+    }
+    exe
+}
+
 pub fn game_dir_of(cfg: &Config) -> PathBuf {
     if cfg.game_dir.trim().is_empty() {
-        exe_dir()
+        default_game_dir()
     } else {
         PathBuf::from(cfg.game_dir.trim())
     }

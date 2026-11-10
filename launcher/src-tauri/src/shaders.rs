@@ -187,6 +187,13 @@ pub fn is_complete(game_dir: &Path) -> bool {
     m.complete && m.translator >= TRANSLATOR_REV && game_dir.join(SPIRV_REL).join("results.tsv").is_file()
 }
 
+/// Records a finished cache (the macOS setup translates it itself, outside shaders::run): `is_complete` then says so and
+/// Set up does not run again until the RomFS or the translator changes.
+pub fn mark_complete(game_dir: &Path, romfs: &str, blocks: usize) -> Result<(), String> {
+    let m = Marker { romfs: romfs.to_string(), extracted: true, blocks, complete: true, translator: TRANSLATOR_REV, storage: "loose".into() };
+    write_marker(game_dir, &m)
+}
+
 /// True when the cache was finished by an older translator that a later fix changes: Set up has to run once more.
 pub fn needs_retranslation(game_dir: &Path) -> bool {
     let m = read_marker(game_dir);

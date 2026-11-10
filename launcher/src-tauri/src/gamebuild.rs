@@ -48,7 +48,8 @@ pub struct Tick {
 
 /// The package builds pkp.exe itself (model b) when it carries the build tools.
 pub fn is_package_b(tools_dir: &Path) -> bool {
-    tools_dir.join("build").join("pkp_build.py").is_file()
+    // The release builds pkp.exe with its Windows tools; macOS builds the game with CMake, so there is nothing to set up.
+    !crate::host::native_game() && tools_dir.join("build").join("pkp_build.py").is_file()
 }
 
 /// What Play says when pkp.exe is from an older release (Built::Stale). The time is the compile's, as in the README.

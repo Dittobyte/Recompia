@@ -131,11 +131,71 @@ mod win_console {
     }
 }
 
+/// The game folder a command line mode works on: `--game <folder>`, else the launcher's own (paths.rs default_game_dir).
+fn game_arg(args: &[String]) -> PathBuf {
+    args.iter().position(|a| a == "--game").and_then(|i| args.get(i + 1)).map(PathBuf::from).unwrap_or_else(crate::paths::default_game_dir)
+}
+
+/// `--setup [--game <folder>]`: Set up without the window. macOS: extract the shader corpus from the RomFS and translate it
+/// (host.rs macos_set_up); the Windows and Linux setup needs the window's dump choice and the build, so this refuses there.
+pub fn run_setup(args: &[String]) -> i32 {
+    if !crate::host::native_game() {
+        eprintln!("--setup runs the native (macOS) setup only; use the window on Windows and Linux");
+        return 2;
+    }
+    let game = game_arg(args);
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut emit = |phase: &str, done: u64, total: u64, message: &str| {
+        println!("[{}] {} ({}/{})", phase, message, done, total);
+        use std::io::Write;
+        let _ = std::io::stdout().flush();
+    };
+    match crate::host::macos_set_up(&game, &cancel, &mut emit) {
+        Ok(n) => {
+            println!("setup done: {} shaders translated", n);
+            0
+        }
+        Err(e) => {
+            eprintln!("setup failed: {}", e);
+            1
+        }
+    }
+}
+
+/// `--preflight [--game <folder>]`: the checks Set up runs, without the window.
+pub fn run_preflight(args: &[String]) -> i32 {
+    let game = game_arg(args);
+    let f = crate::preflight::probe(&game, &crate::preflight::Remaining { shaders_complete: true, ..Default::default() });
+    let report = crate::preflight::evaluate(&f);
+    for c in &report.checks {
+        println!("{:?}: {} - {}", c.level, c.title, c.detail);
+    }
+    if report.blocked {
+        1
+    } else {
+        0
+    }
+}
+
+/// `--readiness [--game <folder>]`: what the Play button would see, without the window (a diagnostic for a machine where the
+/// launcher itself cannot be watched).
+pub fn run_readiness(args: &[String]) -> i32 {
+    let game = game_arg(args);
+    let cfg = crate::config::Config { game_dir: crate::dump::fwd(&game), ..Default::default() };
+    let probe = crate::readiness::readiness(&cfg);
+    println!("{}: {}", probe.readiness.kind, probe.readiness.detail);
+    if probe.readiness.kind == "ready" {
+        0
+    } else {
+        1
+    }
+}
+
 /// `--play [--game <folder>]`: starts the game as Play does, without the window (a Steam or Sunshine shortcut). The game
 /// folder is the launcher's own unless given: the one set in Settings lives in the window's config, not read here.
 pub fn run_play(args: &[String]) -> i32 {
     #[cfg(windows)]
     win_console::attach_and_hook_ctrl_c();
-    let game = args.iter().position(|a| a == "--game").and_then(|i| args.get(i + 1)).map(PathBuf::from).unwrap_or_else(exe_dir);
+    let game = game_arg(args);
     play::run_cli(&game, &exe_dir().join("tools"))
 }

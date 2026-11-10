@@ -16,6 +16,348 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::atomic::AtomicBool;
 
+/// macOS runs the game as the native binary built from this tree: there is no pkp.exe, no Proton and none of the release's
+/// Windows tools (Python, Zig, the shader translator), so every host decision below has this one branch.
+pub fn native_game() -> bool {
+    cfg!(target_os = "macos")
+}
+
+/// The game executable in `dir`: `pkp` on macOS, `pkp.exe` everywhere else.
+pub fn game_exe(dir: &Path) -> PathBuf {
+    dir.join(if native_game() { "pkp" } else { "pkp.exe" })
+}
+
+/// macOS: the shader cache is built by the C# harness in `tools/shaders`, not by the release's Windows tools. Runs it over
+/// the corpus the game dumped (`[nvn] dump_missing`) into `<game>/shader_corpus`, writing `<game>/shader_cache/spirv`.
+/// Returns the harness's last line, or None when there is nothing to translate or no harness to run.
+pub fn macos_translate_shaders(game_dir: &Path) -> Result<Option<String>, String> {
+    let corpus = game_dir.join("shader_corpus");
+    if !corpus.join("manifest.tsv").is_file() {
+        return Ok(None);
+    }
+    let cache = game_dir.join("shader_cache").join("spirv");
+    let dll = std::env::var_os("PKP_SPIRV_HARNESS")
+        .map(PathBuf::from)
+        .or_else(|| {
+            let local = game_dir.join("tools").join("spirv_harness.dll");
+            local.is_file().then_some(local)
+        })
+        .or_else(|| {
+            // a development tree: the launcher sits in work/play, the harness in tools/shaders/build
+            let mut dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+            for _ in 0..6 {
+                let p = dir.join("tools").join("shaders").join("build").join("bin").join("Release").join("net10.0").join("spirv_harness.dll");
+                if p.is_file() {
+                    return Some(p);
+                }
+                if !dir.pop() {
+                    break;
+                }
+            }
+            None
+        });
+    let Some(dll) = dll else {
+        return Err("the shader translator (spirv_harness.dll) was not found: set PKP_SPIRV_HARNESS or put it in <game>/tools".into());
+    };
+    // Two jobs and the workstation collector: the harness allocates heavily per worker and the server GC grows its heap with
+    // the worker count (six workers measured 751 MiB; the point is to stay far below the game's own footprint on a 16 GB host).
+    // Into a scratch folder, never straight into the cache: the harness writes results.tsv for the blocks it was given, so a
+    // translation of the dumped shaders alone would replace the cache's table with just those (it did: a full 99,012-row
+    // table became 6,064 after one Play). The new rows are merged below.
+    let scratch = game_dir.join("shader_cache").join(".translate");
+    let _ = std::fs::remove_dir_all(&scratch);
+    std::fs::create_dir_all(&scratch).map_err(|e| format!("cannot create {}: {}", scratch.display(), e))?;
+    let out = command("dotnet")
+        .arg(&dll)
+        .arg("--batch")
+        .arg(&corpus)
+        .arg("--out")
+        .arg(&scratch)
+        .args(["--jobs", "2", "--host", "moltenvk", "--no-val"])
+        .env("DOTNET_gcServer", "0")
+        .env("DOTNET_GCHeapHardLimit", "0x60000000")   // 1.5 GiB ceiling for the translation
+        .output()
+        .map_err(|e| format!("could not run the shader translator: {}", e))?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let last = text.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").to_string();
+    if !out.status.success() {
+        let _ = std::fs::remove_dir_all(&scratch);
+        return Err(format!("the shader translator failed: {}", last));
+    }
+    let merged = merge_translation(&scratch, &cache);
+    let _ = std::fs::remove_dir_all(&scratch);
+    merged.map(|n| Some(if n > 0 { format!("{}: {} new shaders merged into the cache", last, n) } else { last }))
+}
+
+/// Moves what `scratch` translated into `cache` without losing the rows the cache already had: the .spv files are copied
+/// (a hash already there is left alone) and the new rows are appended to results.tsv.
+fn merge_translation(scratch: &Path, cache: &Path) -> Result<usize, String> {
+    use std::collections::HashSet;
+    let table = cache.join("results.tsv");
+    let header = "hash\tgroup\tstage\tstages_using\tstatus\tms\tspv_bytes\tresources\ttranslator_messages\terror\tdraw_time_queries\tglslc_reflection";
+    let existing_text = std::fs::read_to_string(&table).unwrap_or_default();
+    let mut known: HashSet<String> = HashSet::new();
+    for line in existing_text.lines().skip(1) {
+        if let Some(h) = line.split('\t').next() {
+            if !h.is_empty() {
+                known.insert(h.to_string());
+            }
+        }
+    }
+    let fresh = std::fs::read_to_string(scratch.join("results.tsv")).map_err(|e| format!("the translator wrote no results.tsv: {}", e))?;
+    let mut added_rows = String::new();
+    let mut n = 0usize;
+    for line in fresh.lines().skip(1) {
+        let h = line.split('\t').next().unwrap_or("");
+        if h.is_empty() || !known.insert(h.to_string()) {
+            continue;
+        }
+        let src = scratch.join(format!("{}.spv", h));
+        if src.is_file() {
+            let _ = std::fs::copy(&src, cache.join(format!("{}.spv", h)));
+        }
+        added_rows.push_str(line);
+        added_rows.push('\n');
+        n += 1;
+    }
+    if n > 0 {
+        use std::io::Write;
+        let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&table).map_err(|e| format!("cannot write {}: {}", table.display(), e))?;
+        if existing_text.is_empty() {
+            f.write_all(format!("{}\n", header).as_bytes()).map_err(|e| e.to_string())?;
+        }
+        f.write_all(added_rows.as_bytes()).map_err(|e| format!("cannot write {}: {}", table.display(), e))?;
+    }
+    Ok(n)
+}
+
+/// The tools the macOS setup runs: the repository's Python (with lz4) and the C# shader harness.
+pub struct SetupTools {
+    pub python: PathBuf,
+    pub extract: PathBuf,
+    pub harness: PathBuf,
+}
+
+/// A path relative to the development tree, searched upward from the launcher (the release layout puts the same files
+/// under <game>/tools instead).
+fn find_up(rel: &str) -> Option<PathBuf> {
+    let mut dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    for _ in 0..6 {
+        let p = dir.join(rel);
+        if p.exists() {
+            return Some(p);
+        }
+        if !dir.pop() {
+            break;
+        }
+    }
+    None
+}
+
+pub fn macos_setup_tools(game_dir: &Path) -> Result<SetupTools, String> {
+    let local = |rel: &str| {
+        let p = game_dir.join("tools").join(rel);
+        p.exists().then_some(p)
+    };
+    let python = std::env::var_os("PKP_SETUP_PYTHON")
+        .map(PathBuf::from)
+        .or_else(|| local("python3"))
+        .or_else(|| find_up("tools/.venv/bin/python3"))
+        .unwrap_or_else(|| PathBuf::from("python3"));
+    let extract = std::env::var_os("PKP_EXTRACT_CORPUS")
+        .map(PathBuf::from)
+        .or_else(|| local("extract_corpus.py"))
+        .or_else(|| find_up("tools/shaders/ampere/extract_corpus.py"))
+        .ok_or("extract_corpus.py was not found (set PKP_EXTRACT_CORPUS, or put it in <game>/tools)")?;
+    let harness = std::env::var_os("PKP_SPIRV_HARNESS")
+        .map(PathBuf::from)
+        .or_else(|| local("spirv_harness.dll"))
+        .or_else(|| find_up("tools/shaders/build/bin/Release/net10.0/spirv_harness.dll"))
+        .ok_or("spirv_harness.dll was not found (set PKP_SPIRV_HARNESS, or put it in <game>/tools)")?;
+    Ok(SetupTools { python, extract, harness })
+}
+
+/// The whole macOS setup, what Set up does on Windows and Linux with their own tools: extract the game's shader corpus
+/// from its RomFS (extract_corpus.py) and translate every block (spirv_harness), then mark the cache complete. The game
+/// itself is the CMake build next to the launcher, so there is no build step.
+pub fn macos_set_up(
+    game_dir: &Path,
+    cancel: &std::sync::atomic::AtomicBool,
+    progress: &mut dyn FnMut(&str, u64, u64, &str),
+) -> Result<usize, String> {
+    use std::sync::atomic::Ordering;
+    let cfg = crate::settings::read(game_dir);
+    let get = |k: &str| cfg.pkp.get(k).map(String::as_str).filter(|v| !v.is_empty()).map(str::to_string);
+    let romfs = get("fs.romfs").ok_or("pkp.ini has no [fs] romfs")?;
+    let exefs = get("fs.exefs").ok_or("pkp.ini has no [fs] exefs")?;
+    let t = macos_setup_tools(game_dir)?;
+    let cache = crate::shaders::cache_dir(game_dir);
+    let corpus = cache.join("corpus");
+    let spirv = cache.join("spirv");
+    std::fs::create_dir_all(&corpus).map_err(|e| format!("cannot make {}: {}", corpus.display(), e))?;
+    std::fs::create_dir_all(&spirv).map_err(|e| format!("cannot make {}: {}", spirv.display(), e))?;
+
+    progress("extract", 0, 0, "Finding the game's shaders in its RomFS...");
+    let out = command(&t.python)
+        .arg("-I")
+        .arg(&t.extract)
+        .arg("--romfs")
+        .arg(&romfs)
+        .arg("--main")
+        .arg(Path::new(&exefs).join("main"))
+        .arg("--out")
+        .arg(&corpus)
+        .args(["--jobs", "4"])
+        .output()
+        .map_err(|e| format!("could not run the corpus extractor: {}", e))?;
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr);
+        return Err(format!("the corpus extractor failed: {}", err.lines().last().unwrap_or("")));
+    }
+    let blocks = std::fs::read_to_string(corpus.join("unique.tsv"))
+        .map(|t| t.lines().count().saturating_sub(1))
+        .unwrap_or(0);
+    if blocks == 0 {
+        return Err("the corpus extractor found no shader blocks".into());
+    }
+
+    // A cache that already holds a translation for every block (a finished run, or one made before the marker was written)
+    // is not translated again: Set up is then the extraction plus the marker.
+    let have = std::fs::read_to_string(spirv.join("results.tsv")).map(|t| t.lines().count().saturating_sub(1)).unwrap_or(0);
+    if have >= blocks {
+        progress("translate", blocks as u64, blocks as u64, "Every shader is translated already.");
+        crate::shaders::mark_complete(game_dir, &romfs, blocks)?;
+        return Ok(blocks);
+    }
+
+    progress("translate", 0, blocks as u64, &format!("Translating {} shaders...", blocks));
+    let mut child = command("dotnet")
+        .arg(&t.harness)
+        .arg("--batch")
+        .arg(&corpus)
+        .arg("--out")
+        .arg(&spirv)
+        .args(["--jobs", "6", "--host", "moltenvk", "--no-val"])   // as the Windows setup
+        .env("DOTNET_gcServer", "0")
+        .env("DOTNET_GCHeapHardLimit", "0x60000000")
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("could not run the shader translator: {}", e))?;
+    // The harness prints "  <n>/<total>  <s> s" every 500 blocks: that is the progress (counting .spv files stalls while a
+    // second run overwrites the ones a stopped run left behind).
+    let now = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let reader = {
+        let now = now.clone();
+        let out = child.stdout.take();
+        std::thread::spawn(move || {
+            use std::io::BufRead;
+            if let Some(out) = out {
+                for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {
+                    if let Some((n, _)) = line.trim().split_once('/') {
+                        if let Ok(v) = n.trim().parse::<u64>() {
+                            now.store(v, Ordering::Relaxed);
+                        }
+                    }
+                }
+            }
+        })
+    };
+    loop {
+        if cancel.load(Ordering::SeqCst) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("cancelled".into());
+        }
+        match child.try_wait() {
+            Ok(Some(st)) => {
+                if !st.success() {
+                    return Err(format!("the shader translator failed ({})", st));
+                }
+                break;
+            }
+            Ok(None) => {}
+            Err(e) => return Err(format!("lost track of the shader translator: {}", e)),
+        }
+        let done = now.load(Ordering::Relaxed).min(blocks as u64);
+        progress("translate", done, blocks as u64, &format!("Translating shaders: {} of {}...", done, blocks));
+        std::thread::sleep(std::time::Duration::from_secs(2));
+    }
+    let _ = reader.join();
+    crate::shaders::mark_complete(game_dir, &romfs, blocks)?;
+    Ok(blocks)
+}
+
+/// macOS: the share of physical memory that is free (free + inactive + speculative pages), 0..1. None elsewhere. The
+/// launcher stops the game below 10 %: on a 16 GB host the game's world load reaches ~7 GB and macOS must keep room to
+/// compress and swap, or the whole machine stops responding (a hard reboot, twice).
+#[cfg(target_os = "macos")]
+pub fn free_memory_ratio() -> Option<f64> {
+    unsafe {
+        let mut memsize: u64 = 0;
+        let mut len = std::mem::size_of::<u64>();
+        if libc::sysctlbyname(c"hw.memsize".as_ptr(), &mut memsize as *mut _ as *mut _, &mut len, std::ptr::null_mut(), 0) != 0
+            || memsize == 0
+        {
+            return None;
+        }
+        let mut page_size: u64 = 0;
+        let mut plen = std::mem::size_of::<u64>();
+        if libc::sysctlbyname(c"hw.pagesize".as_ptr(), &mut page_size as *mut _ as *mut _, &mut plen, std::ptr::null_mut(), 0) != 0 {
+            page_size = 16384;
+        }
+        let mut stats: libc::vm_statistics64 = std::mem::zeroed();
+        let mut count = libc::HOST_VM_INFO64_COUNT;
+        if libc::host_statistics64(libc::mach_host_self(), libc::HOST_VM_INFO64, &mut stats as *mut _ as *mut _, &mut count)
+            != libc::KERN_SUCCESS
+        {
+            return None;
+        }
+        let pages = stats.free_count as u64 + stats.inactive_count as u64 + stats.speculative_count as u64;
+        Some((pages.saturating_mul(page_size)) as f64 / memsize as f64)
+    }
+}
+
+/// The kernel's memory-pressure level on macOS: 1 normal, 2 warning, 4 critical (kern.memorystatus_vm_pressure_level).
+/// The free ratio alone missed a crash: the game sat at 7.8 GB with a few GB of inactive file cache (so the ratio read ~25 %)
+/// while the kernel was already refusing to fault pages in, and the GPU driver took a SIGBUS inside vkQueueSubmit.
+#[cfg(target_os = "macos")]
+pub fn memory_pressure_level() -> Option<i32> {
+    let mut level: i32 = 0;
+    let mut len = std::mem::size_of::<i32>();
+    let rc = unsafe {
+        libc::sysctlbyname(c"kern.memorystatus_vm_pressure_level".as_ptr(), &mut level as *mut _ as *mut _, &mut len, std::ptr::null_mut(), 0)
+    };
+    (rc == 0).then_some(level)
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn memory_pressure_level() -> Option<i32> {
+    None
+}
+
+/// True when the game must be stopped to keep the machine alive. Critical pressure, or under 6 % free: the game needs
+/// ~9 GB and a 16 GB host has to compress/swap the rest, so a warning-level stop would kill it every time it loads the
+/// world (the disk has room for swap; the kernel's critical level is the real danger sign).
+pub fn memory_is_short() -> bool {
+    let ratio = free_memory_ratio();
+    let level = memory_pressure_level();
+    level.is_some_and(|l| l >= 4) || ratio.is_some_and(|f| f < 0.06)
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn free_memory_ratio() -> Option<f64> {
+    None
+}
+
+/// What to call the game in messages.
+pub fn game_exe_name() -> &'static str {
+    if native_game() {
+        "pkp"
+    } else {
+        "pkp.exe"
+    }
+}
+
 /// The Python that runs the release's scripts (pkp_build.py, extract_corpus.py, fetch_dlss.py).
 pub fn python(tools_dir: &Path) -> PathBuf {
     if cfg!(windows) {
@@ -72,11 +414,11 @@ fn appimage_env_fixes(appdir: &str, vars: impl Iterator<Item = (String, String)>
 
 /// A command that runs the Windows program `exe`: itself on Windows, through `runner` on Linux.
 pub fn windows_program(exe: &Path) -> Result<Command, String> {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     {
         Ok(Command::new(exe))
     }
-    #[cfg(not(windows))]
+    #[cfg(all(not(windows), not(target_os = "macos")))]
     {
         let r = runner()?;
         let mut cmd = command(&r.argv[0]);
@@ -496,4 +838,51 @@ pub fn sync_runtime_files(src: &Path, game_dir: &Path) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn merge_keeps_the_rows_the_cache_had() {
+        let base = std::env::temp_dir().join(format!("pkp_merge_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let scratch = base.join("scratch");
+        let cache = base.join("cache");
+        fs::create_dir_all(&scratch).unwrap();
+        fs::create_dir_all(&cache).unwrap();
+        fs::write(cache.join("results.tsv"), "hash\tgroup\nold\t.\n").unwrap();
+        fs::write(cache.join("old.spv"), b"OLD").unwrap();
+        // the scratch table repeats "old" (it was in the dumped corpus too): only the new hashes are merged
+        fs::write(scratch.join("results.tsv"), "hash\tgroup\nold\t.\nnew\t.\nnewer\t.\n").unwrap();
+        fs::write(scratch.join("new.spv"), b"NEW").unwrap();
+        fs::write(scratch.join("newer.spv"), b"NEWER").unwrap();
+
+        let n = merge_translation(&scratch, &cache).unwrap();
+
+        assert_eq!(n, 2);
+        let table = fs::read_to_string(cache.join("results.tsv")).unwrap();
+        assert_eq!(table.lines().count(), 4, "header, old, new, newer: {}", table);
+        assert_eq!(fs::read(cache.join("old.spv")).unwrap(), b"OLD", "an existing translation must not be touched");
+        assert_eq!(fs::read(cache.join("new.spv")).unwrap(), b"NEW");
+        let _ = fs::remove_dir_all(&base);
+    }
+}
+
+#[cfg(test)]
+mod pressure_tests {
+    use super::*;
+
+    #[test]
+    fn short_memory_follows_pressure_and_ratio() {
+        // the real machine: these read live sysctls, so only sanity bounds are asserted
+        if let Some(level) = memory_pressure_level() {
+            assert!([1, 2, 4].contains(&level) || level >= 1, "level {level} outside the documented values");
+        }
+        if let Some(ratio) = free_memory_ratio() {
+            assert!((0.0..=1.0).contains(&ratio), "ratio {ratio} outside 0..1");
+        }
+    }
 }
