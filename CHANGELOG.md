@@ -34,6 +34,7 @@ This Testing build adds logging and a few device checks, and changes no frame-ra
 - On a Legion Go, Go 2, ROG Xbox Ally or MSI Claw A8: check that `pkp.log` says `host: handheld: yes`, and tell us whether the picture size, the controller prompts and the frame rate feel right compared with the previous build
 - If the frame rate falls partway through a session: send the `pkp.log` lines that contain `waited on the GPU` and say how long into the session it began
 - If Set up stops on a Steam Deck or another Linux handheld: send `shader_cache/harness_error.txt` and `setup.log`
+- If you own a Steam Controller (2026): follow the 15-minute check in `docs/steam-controller-check.md` (which grip is which, whether the small View and Menu buttons are the right way round, the trackpad clicks) and send the table with the exported logs
 
 ### Controller log
 - `pkp.log` now lists what a connected controller offers: trackpads (and their fingers), rumble, lights, battery, extra buttons (grips, trackpad clicks, touch sensors) and its USB ids; the motion sensors are on the line before it. It is a note for bug reports; nothing about how controllers behave changes
