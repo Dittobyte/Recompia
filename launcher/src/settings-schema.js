@@ -711,6 +711,7 @@ export const SECTIONS = [
             actions: [
               { act: 'logs-send', label: 'Export and report', icon: 'upload' },
               { act: 'logs-view', label: 'View logs', icon: 'file-text' },
+              { act: 'logs-handheld', label: 'Copy handheld report', icon: 'copy' },
               { act: 'logs-folder', label: 'Open folder', icon: 'folder-open' },
             ],
           },

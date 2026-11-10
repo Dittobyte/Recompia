@@ -9,11 +9,28 @@ of the game (version 2.0.1a): the download contains no game files.
 **Update:** press **Update**, then **Set up again** once (new game hook for Story co-op; your saves and shaders are kept).
 
 
+### Regressions and known problems
+- The Lenovo Legion Go, Go 2, ROG Xbox Ally and MSI Claw A8 now start in handheld mode (picture size, the game's lighter handheld graphics settings, controller prompts, short waits under Proton). This has not been confirmed on those devices yet; if it looks worse than before, set `[am] operation_mode = docked` or `[host] handheld = off` in `pkp.ini`
+- Under Proton the memory limit cannot trigger yet (the reading it compares is 0 there); this build only shows both readings in `pkp.log`
+- The Steam Controller (2026) is still not detected under Proton; use another pad there
+
+### What to test
+- On any AMD handheld (Steam Deck, ROG Ally, Legion Go, Legion Go S, Xbox Ally, Claw A8), under Proton or Windows: play 10 minutes, then send the lines of `pkp.log` that contain `host: handheld`, `pool_copy`, `footprint` and `gamepad`. Say which BIOS GPU-memory setting you use if you changed it. They show which handheld rule matched, why pool copy is on or off with the graphics memory size, and the two memory readings
+- On a Legion Go, Go 2, ROG Xbox Ally or MSI Claw A8: check that `pkp.log` says `host: handheld: yes`, and tell us whether the picture size, the controller prompts and the frame rate feel right compared with the previous build
+- If the frame rate falls partway through a session: send the `pkp.log` lines that contain `waited on the GPU` and say how long into the session it began
+- If Set up stops on a Steam Deck or another Linux handheld: send `shader_cache/harness_error.txt` and `setup.log`
+
 ### Memory limit
 - `pkp.log` now shows both memory readings (private commit and pagefile usage) in its `footprint` line and in the 75% warning, and says once when the private-commit reading is 0
   - Before: only the footprint was shown, so on Linux (Proton) a log reading `footprint 0.00 GB` could not tell whether the game used no memory or the reading was blind
   - Now: the log names both readings; the limit itself is checked exactly as before
   - Still not: the memory limit compares private commit, so it cannot trigger while that reading is 0; this only makes that visible in a log
+
+### Launcher layout
+- Added a **Layout** button in the launcher's sidebar, beside Colours and Hide sidebar. It opens a panel where you choose how the launcher is arranged: the sidebar on the left, right, top or bottom, or icons only; the order of the sidebar items, and which of them to hide (Home and Settings always stay); comfortable or compact spacing; and whether the news cards and the chips under the Play button (profile, Link Play and Discord) show on Home. Changes show at once, **Reset to default** puts everything back, and your choice is kept on your PC
+  - Before: the launcher had one fixed arrangement
+  - Now: the arrangement is yours, and the pad, keyboard and touch screen all work in every position. Notices about a problem, such as a crash or a failed update, are never hidden
+  - Still not: you cannot drag parts around freely yet, and the sections of Home other than the news cards and those chips cannot be moved or hidden
 
 ### Bug reports from Linux handhelds
 - `pkp.log` now starts with a `host facts:` line on Linux (Steam Deck, Legion Go, ROG Ally and other handhelds under Proton): kernel, board and BIOS version, CPU, power governor, the graphics memory split (VRAM, GTT, TTM limit), RAM, swap, zram and whether it runs in Gamescope
@@ -70,6 +87,10 @@ of the game (version 2.0.1a): the download contains no game files.
 - **Story co-op** (experimental, `[pkp] link_story_coop`): the host's own story no longer stops while friends are visiting. Before, any Link Play session turned the host's story talks into "Bring <host> here to say hi!" and paused its requests. From pokopia-native 1.4.0
 
 ### Launcher
+- Added **Copy handheld report** to Settings > Testing (Testing channel only)
+  - Before: a tester on an AMD handheld had to send the whole `pkp.log`, which holds names and paths, and say by hand what mattered
+  - Now: one press copies a short block with only the useful lines of `pkp.log` (handheld detection, graphics card and driver, memory, the frame summaries and any graphics reset or crash), with user names, home folders, addresses and room codes removed, ready to paste into a bug report. Add your device, system, power mode and what you were doing
+  - Still not: it does not send anything and does not replace **Export and report** when a full log is asked for
 - Added **arrow-key** navigation to the launcher, for a handheld whose d-pad reaches it as keys
   - Before: Steam's default layout for a non-Steam shortcut sends the d-pad as arrow keys, and the launcher ignored them
   - Now: the arrow keys move between controls, Enter presses, Escape goes back (closes a question, or returns Home), the same as the pad

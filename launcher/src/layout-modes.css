@@ -1,0 +1,171 @@
+/* Layout options: where the sidebar sits (data-nav on <html>), how tight things are (data-density) and which Home sections show.
+   With no attributes set none of this applies and the launcher looks as it always did. Colours and sizes come from theme.css tokens.
+   Specificity note: each position rule is scoped to body:not([data-shell="full"]) so the first-run setup (no sidebar) is never changed. */
+
+/* ---------- sidebar items: the brand first, the pages in the player's order, the fixed buttons last; a hidden page really hides ---------- */
+#nav > .brand { order: 0; }
+#nav > :not(.brand):not([data-page]) { order: 10; }
+#nav [data-page][hidden] { display: none !important; }
+
+/* ---------- compact spacing: the same tokens, smaller ---------- */
+html[data-density="compact"] {
+  --space-1: 3px;
+  --space-2: 6px;
+  --space-3: 9px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 20px;
+  --space-7: 24px;
+  --space-8: 32px;
+  --space-9: 44px;
+  --gutter: 10px;
+  --titlebar-h: 38px;
+  --control-h: 32px;
+  --control-sm: 26px;
+  --control-lg: 44px;
+}
+html[data-density="compact"] .brand { height: 36px; margin-bottom: var(--space-2); }
+html[data-density="compact"] .nav-item { height: 32px; }
+html[data-density="compact"] .task-pill { padding-block: 7px; }
+html[data-density="compact"] .win-btn { height: 24px; }
+
+/* ---------- Home sections ---------- */
+html[data-hide-news] [data-block="news"] { display: none; }
+html[data-hide-link] [data-block="link"], html[data-hide-link] .home-actions #link[data-block="link"] { display: none; }   /* the second form beats home.css (.home-actions #link) */
+
+/* ---------- Hide sidebar (the attribute may sit on <html> or <body>); wins over every position below ---------- */
+:is(html, body)[data-sidebar="hide"] #app#app { display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); padding: 0; }
+:is(html, body)[data-sidebar="hide"] #nav#nav { display: none; }
+:is(html, body)[data-sidebar="hide"] #view#view { grid-row: auto; margin-block: 0; }
+:is(html, body)[data-sidebar="hide"] #titlebar#titlebar { top: 0; left: 0; right: 0; height: var(--titlebar-h); }
+:is(html, body)[data-sidebar="hide"] .page.page { padding-top: calc(var(--titlebar-h) + var(--space-3)); }
+#show-sidebar { position: fixed; top: calc((var(--titlebar-h) - var(--control-sm)) / 2); left: var(--space-2); z-index: 6; }
+
+/* top bar + Hide sidebar: the bar is gone, so the title bar gets its normal height back (the window buttons and the Show sidebar button would be clipped at 8px) */
+html[data-nav="top"][data-sidebar="hide"] body:not([data-shell="full"]) { --titlebar-h: 44px; }
+/* top and bottom bars: the three footer buttons (Colours, Layout, Hide sidebar) are icon-only so the bar never runs into the window buttons; the tooltip names them */
+html:is([data-nav="top"], [data-nav="bottom"]) :is(#theme-btn, #layout-btn, #ui-hide-btn) .nav-label { display: none; }
+html:is([data-nav="top"], [data-nav="bottom"]) :is(#theme-btn, #layout-btn, #ui-hide-btn) { width: var(--control-lg); padding: 0; justify-content: center; }
+
+/* ---------- right: the sidebar on the right; the window buttons sit just left of it ---------- */
+html[data-nav="right"] body:not([data-shell="full"]) #app {
+  grid-template-columns: minmax(0, 1fr) var(--sidebar-w);
+  padding: var(--gutter) var(--gutter) var(--gutter) 0;
+}
+html[data-nav="right"] body:not([data-shell="full"]) #nav { grid-column: 2; grid-row: 1; }
+html[data-nav="right"] body:not([data-shell="full"]) #view { grid-column: 1; grid-row: 1; }
+html[data-nav="right"] body:not([data-shell="full"]) #titlebar { left: 0; right: calc(var(--sidebar-w) + var(--gutter) * 2); }
+html[data-nav="right"] .nav-item { text-align: left; }
+@media (max-width: 999.98px) {
+  html[data-nav="right"] .nav-item:is(:hover, :focus-visible) .nav-tip { left: auto; right: calc(100% + var(--space-4)); }
+}
+
+/* ---------- top and bottom: a horizontal bar of icons (labels when the window is wide enough, tooltips otherwise) ---------- */
+html:is([data-nav="top"], [data-nav="bottom"]) body:not([data-shell="full"]) {
+  --bar-h: calc(var(--control-lg) + var(--space-3));
+  --winbtns-w: calc(3 * 32px + 2 * var(--space-1) + var(--space-4));
+}
+html:is([data-nav="top"], [data-nav="bottom"]) body:not([data-shell="full"]) #app {
+  grid-template-columns: minmax(0, 1fr);
+  padding: 0;
+  column-gap: 0;
+}
+html:is([data-nav="top"], [data-nav="bottom"]) body:not([data-shell="full"]) #view { margin-block: 0; }
+html:is([data-nav="top"], [data-nav="bottom"]) body:not([data-shell="full"]) #nav {
+  flex-direction: row;
+  align-items: center;
+  height: var(--bar-h);
+  margin-inline: var(--gutter);
+  padding: var(--space-2) var(--space-3);
+  gap: var(--space-1);
+}
+html:is([data-nav="top"], [data-nav="bottom"]) .brand { flex: none; width: auto; height: var(--control-lg); margin: 0; padding-inline: var(--space-2); }
+html:is([data-nav="top"], [data-nav="bottom"]) .brand-name,
+html:is([data-nav="top"], [data-nav="bottom"]) .brand-tag { display: none !important; }
+html:is([data-nav="top"], [data-nav="bottom"]) .brand-mark { display: block; }
+html:is([data-nav="top"], [data-nav="bottom"])[data-channel="testing"] .brand-mark { display: none; }
+html:is([data-nav="top"], [data-nav="bottom"]) .nav-item { flex: none; width: auto; height: calc(var(--control-lg) - 4px); padding-inline: var(--space-3); }
+html:is([data-nav="top"], [data-nav="bottom"]) .nav-dot { margin-left: var(--space-1); }
+html:is([data-nav="top"], [data-nav="bottom"]) .task-pill { flex: none; width: auto; max-width: 220px; margin-left: var(--space-2); padding: 6px var(--space-3); }
+html:is([data-nav="top"], [data-nav="bottom"]) .task-name { max-width: 110px; }
+
+/* top: the bar and the window buttons share the top edge; the title bar only reserves room at the bar's right end */
+html[data-nav="top"] body:not([data-shell="full"]) { --titlebar-h: var(--space-2); }
+html[data-nav="top"] body:not([data-shell="full"]) #app { grid-template-rows: auto minmax(0, 1fr); }
+html[data-nav="top"] body:not([data-shell="full"]) #nav { margin-top: var(--gutter); padding-right: calc(var(--winbtns-w) + var(--space-3)); }
+html[data-nav="top"] body:not([data-shell="full"]) #titlebar {
+  top: var(--gutter);
+  right: var(--gutter);
+  left: auto;
+  height: var(--bar-h);
+  padding-inline: var(--space-3);
+}
+html[data-nav="top"] body:not([data-shell="full"]) .page { padding-top: var(--space-4); }
+
+/* bottom: the bar is the last row; the title bar stays a strip at the top right of the page */
+html[data-nav="bottom"] body:not([data-shell="full"]) #app { grid-template-rows: minmax(0, 1fr) auto; }
+html[data-nav="bottom"] body:not([data-shell="full"]) #view { grid-row: 1; }
+html[data-nav="bottom"] body:not([data-shell="full"]) #nav { grid-row: 2; margin-block: var(--gutter); }
+html[data-nav="bottom"] body:not([data-shell="full"]) #titlebar { left: 0; }
+
+/* Home fills the page area, not the whole window: with a bar on top or bottom the page area is shorter than 100vh (home.css), so the
+   Play button would sit below the fold or behind the bottom bar. */
+html[data-nav="top"] body:not([data-shell="full"]) .home { min-height: calc(100vh - var(--gutter) - var(--bar-h)); }
+html[data-nav="bottom"] body:not([data-shell="full"]) .home { min-height: calc(100vh - var(--gutter) * 2 - var(--bar-h)); }
+
+/* a narrow bar is icons only: the rail look, with the tooltip above or below instead of beside */
+@media (max-width: 999.98px) {
+  html:is([data-nav="top"], [data-nav="bottom"]) .nav-item { width: var(--control-lg); padding: 0; }
+  html:is([data-nav="top"], [data-nav="bottom"]) .nav-item:is(:hover, :focus-visible) .nav-tip { left: 50%; right: auto; transform: translateX(-50%); }
+  html[data-nav="top"] .nav-item:is(:hover, :focus-visible) .nav-tip { top: calc(100% + var(--space-2)); }
+  html[data-nav="bottom"] .nav-item:is(:hover, :focus-visible) .nav-tip { top: auto; bottom: calc(100% + var(--space-2)); }
+  html:is([data-nav="top"], [data-nav="bottom"]) .task-pill { width: var(--control-lg); height: var(--control-lg); margin-left: var(--space-1); }
+}
+
+/* ---------- icons: the narrow rail at any width (the same rules as the under-1000px rail in components.css) ---------- */
+html[data-nav="icons"] { --sidebar-w: var(--rail-w); }
+html[data-nav="icons"] .page { padding-inline: var(--space-6); }
+html[data-nav="icons"] #nav { align-items: center; padding-inline: var(--space-2); }
+html[data-nav="icons"] .brand { justify-content: center; width: 100%; padding: 0; }
+html[data-nav="icons"] .brand-name,
+html[data-nav="icons"] .brand-tag,
+html[data-nav="icons"] .nav-label { display: none !important; }
+html[data-nav="icons"] .brand-mark { display: block; }
+html[data-nav="icons"][data-channel="testing"] .brand-mark { display: none; }
+html[data-nav="icons"] .nav-item { justify-content: center; width: 44px; height: 44px; padding: 0; border-radius: var(--radius-sm); }
+html[data-nav="icons"] .nav-dot { position: absolute; top: 8px; right: 8px; margin: 0; }
+html[data-nav="icons"] .nav-item:is(:hover, :focus-visible) .nav-tip {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + var(--space-4));
+  z-index: 10;
+  display: block;
+  padding: var(--space-1) 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  background: var(--color-solid-raised);
+  box-shadow: var(--shadow-md);
+  color: var(--color-text);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+html[data-nav="icons"] .task-pill { display: grid; width: 44px; height: 44px; padding: 0; place-items: center; grid-template-columns: 1fr; border-radius: var(--radius-pill); background: conic-gradient(var(--color-accent) var(--pct), var(--surface-2) var(--pct)); }
+html[data-nav="icons"] .task-pill::before { content: ""; position: absolute; inset: 3px; border-radius: inherit; background: var(--color-solid); }
+html[data-nav="icons"] .task-pill .icon { position: relative; }
+html[data-nav="icons"] .task-pill[data-indeterminate] { background: var(--surface-2); }
+html[data-nav="icons"] .task-name,
+html[data-nav="icons"] .task-pct,
+html[data-nav="icons"] .task-track { display: none; }
+
+/* a short window (the 900x440 minimum): a tighter sidebar column so every item stays on screen */
+@media (max-height: 520px) {
+  html[data-nav="left"] #nav, html[data-nav="right"] #nav, html[data-nav="icons"] #nav { gap: 2px; }
+  html:is([data-nav="left"], [data-nav="right"], [data-nav="icons"]) .brand { height: 34px; margin-bottom: var(--space-1); }
+  html:is([data-nav="left"], [data-nav="right"], [data-nav="icons"]) .nav-item { height: 34px; }
+}
+
+@media (pointer: coarse) {
+  html:is([data-nav="top"], [data-nav="bottom"]) body:not([data-shell="full"]) { --winbtns-w: calc(3 * 44px + 2 * var(--space-1) + var(--space-4)); }
+}

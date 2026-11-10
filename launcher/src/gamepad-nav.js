@@ -86,7 +86,7 @@ function back() {
 
 function switchPage(step) {
   if (document.querySelector('dialog[open]')) return;
-  const items = [...document.querySelectorAll('#nav [data-page]')];
+  const items = [...document.querySelectorAll('#nav [data-page]')].filter((b) => !b.hidden);   // a page the player hid is skipped
   const at = items.findIndex((b) => b.hasAttribute('aria-current'));
   const to = cycle(at, items.length, step);
   if (to >= 0 && to !== at) items[to].click();
