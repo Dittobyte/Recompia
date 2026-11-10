@@ -60,8 +60,8 @@ function infoControl(r, e) {
 
 const rowHtml = (r, cls, label, control) => row(label, control).replace('class="row-item"', `class="row-item ${cls}" data-row="${r.id}"`);
 
-function noteHtml(r, e) {
-  const n = r.note(e);
+function noteHtml(r, e, values) {
+  const n = r.note(e, values);
   return `<div class="row-item set-note ${n.kind ?? ''}" data-row="${r.id}">
     ${n.kind ? icon(n.kind === 'danger' ? 'circle-x' : 'circle-check') : ''}
     <p>${esc(n.text)}${n.path ? ` <span class="path selectable">${esc(n.path)}</span>` : ''}</p>
@@ -69,7 +69,7 @@ function noteHtml(r, e) {
 }
 
 function rowOf(st, r, values, e) {
-  if (r.type === 'note') return noteHtml(r, e);
+  if (r.type === 'note') return noteHtml(r, e, values);
   if (r.type === 'keycap') return rowHtml(r, '', r.label, `<kbd class="set-key">${esc(r.key)}</kbd>`);
   if (r.type === 'info') return rowHtml(r, 'set-info', r.label, infoControl(r, e));
   const off = !isEnabled(r, st.src, e);
