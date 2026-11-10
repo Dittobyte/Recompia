@@ -27,7 +27,7 @@ of the game (version 2.0.1a): the download contains no game files.
 - Added **Test connection**, **Check my setup** and **Friends on my Tailscale** to the Link Play page: they say in plain words whether an address answers, what may block friends from joining (firewall, a Public network, client isolation), and which of your Tailscale devices are hosting, with a Join button. They only look and never change anything
 
 ### More handhelds recognised
-- The Lenovo Legion Go, Go 2, the ASUS ROG Xbox Ally and Ally X, and the MSI Claw A8 are now treated as handhelds, like the Steam Deck, Legion Go S and ROG Ally
+- The Lenovo Legion Go, Go 2, the ASUS ROG Xbox Ally and the MSI Claw A8 (the ROG Ally X was already recognised) are now treated as handhelds, like the Steam Deck, Legion Go S and ROG Ally
   - Before: only the Deck, Legion Go S and ROG Ally were recognised; on the others the game was told it was docked and the picture size and short waits were chosen for a desktop PC
   - Now: on these devices the game is told it is in handheld mode and picks its own lighter handheld graphics settings, a window smaller than 1080p is no longer rendered at 1080p, controller prompts stay for the trackpad and touch screen, and (under Proton) short waits sleep instead of spinning. `pkp.log` shows which board rule matched in the `host: handheld` line
   - Still not: AYANEO, GPD and OneXPlayer, whose board names are not reliably known (OneXPlayer's also cover Intel models); set `[host] handheld = on` in `pkp.ini` for those. If the handheld graphics settings do not suit your device, set `[am] operation_mode = docked` (that alone), or `[host] handheld = off` (all of it)
