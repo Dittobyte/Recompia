@@ -98,7 +98,7 @@ void nvnDeviceGetInteger(const NVNdevice* device, NVNdeviceInfo info, int* out) 
     if (!out) return;
     (void)device;   // the values do not depend on the device (the game asks before and after nvnDeviceInitialize)
     if (game::info().platform == game::Platform::Switch2) {
-        // NVN2 (Switch 2 SDK 20.5, docs/nvn2_abi.md section 1): the values that differ from NVN1; the rest keep NVN1's numbering.
+        // NVN2 (Switch 2 SDK 20.5, the local nvn2 notes section 1): the values that differ from NVN1; the rest keep NVN1's numbering.
         switch (static_cast<int>(info)) {
             case 0x00: *out = 231; return;          // API_MAJOR_VERSION
             case 0x01: *out = 30; return;           // API_MINOR_VERSION

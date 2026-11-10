@@ -3,9 +3,6 @@
 CHANGELOG.md
 recomp/docs/debug/008.md
 runtime/docs/CONFIG.md
-runtime/docs/hid_mouse_sw2.md
-runtime/docs/IPC_ANSWERS.md
-runtime/docs/nvn2_abi.md
 runtime/include/nxrt/hooks.h
 runtime/src/diag/trace_sites.cpp
 runtime/src/services/acc.cpp
