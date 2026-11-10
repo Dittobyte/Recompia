@@ -30,3 +30,6 @@ obj/
 __pycache__/
 /export/
 /saves/
+
+# macOS Finder metadata (the port builds on macOS)
+.DS_Store
