@@ -38,7 +38,7 @@
 namespace nxrt::services::ldn_impl {
 
 // =============================================================================================================================================
-// [net] protocol = native (the default): ldn:u on pokopia-native's co-op module (third_party/pokopia-coop, MIT @035bd9c), so this build
+// [net] protocol = native (the default): ldn:u on pokopia-native's co-op module (third_party/pokopia-coop, MIT @9cb7f07), so this build
 // and pokopia-native builds of the same main meet in one Link Play session. The module owns the nn::ldn state machine, the 0x480
 // NetworkInfo, discovery (DNS-SD on the LAN), the transport (TCP control links in a star around the host, UDP for game datagrams) and the
 // game's UDP sockets on 169.254.S.0/24 (bsd: network.cpp routes descriptors 0x100.. to coop_vnet_*). Each IPC command is one coop_ldn_*
@@ -48,7 +48,8 @@ namespace nxrt::services::ldn_impl {
 // while the game hosts, find LAN hosts with DNS-SD while it scans; without DNS-SD, Wine / Proton, a LAN sweep and mDNS answers: lan_sweep =
 // auto | off), internet (0/1: internet play, every link proves the room code),
 // room_code (the host's code; a host without one gets a new one, logged and written to room-code.txt; a visitor needs the host's),
-// relay (<IPv4>[:<port>], a pokopia-native coop relay; mode auto only), uid (32 hex digits; default: the install's persistent uid,
+// relay (<IPv4>[:<port>], a pokopia-native coop relay; mode auto only), port_forward (0/1, default 1: a host over the internet asks
+// the router to forward its port), uid (32 hex digits; default: the install's persistent uid,
 // coop_uid_load). mode = off or an invalid setting: local wireless off (the Link Play backend's answers with no lobby).
 // What peers compare before a join: main's build id (first 16 hex digits) and a mods fingerprint. The fingerprint is
 // coop_mods_add(0, name) of the session variant's name (services_api.h ldnapi; Pokopia's "Interact everywhere" while armed, the same
@@ -228,6 +229,10 @@ coop_node* native_node() {
     const std::string sweep = text::lower(config_get_str("net", "lan_sweep", "auto"));
     if (sweep != "auto" && sweep != "off") NXLOG_W("net", "ldn: [net] lan_sweep = \"%s\" is not auto or off: auto", sweep.c_str());
     c.x_lan_sweep_off = sweep == "off";
+    // [net] port_forward (default on): hosting over the internet asks the router to forward the hosting port (NAT-PMP, PCP or UPnP IGD,
+    // coop_nat.c), with a one-hour lease renewed while hosting and given back when hosting ends. The process ends with TerminateProcess
+    // (play_startup.cpp), so a quit while hosting leaves the lease to run out
+    c.nat = config_get_bool("net", "port_forward", true) ? 1 : 0;
     c.hooks.user = nullptr;
     c.hooks.log = &coop_hook_log;
     c.hooks.sleep_ns = nullptr;   // a plain host sleep: ldn and bsd commands run on host threads
@@ -254,7 +259,8 @@ coop_node* native_node() {
             std::fprintf(f, "%s\n", shown);
             std::fclose(f);
         }
-        NXLOG_I("net", "ldn: internet play room code %s%s", shown, c.room_new ? " (new: visitors need it)" : "");
+        // only the first group: players attach pkp.log to public bug reports; the launcher reads the whole code from room-code.txt
+        NXLOG_I("net", "ldn: internet play room code %.4s-****-****-****%s (the rest stays out of the log)", shown, c.room_new ? ", new: visitors need it" : "");
     } else {
         std::remove(code_file.c_str());
     }

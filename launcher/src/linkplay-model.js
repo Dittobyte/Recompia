@@ -65,6 +65,7 @@ export function readIni(pkp) {
     code: ini('net.room_code'),
     interact: truthy(ini('pkp.link_interact_everywhere')),
     story: truthy(ini('pkp.link_story_coop')),
+    portForward: truthy(ini('net.port_forward', 'true')),   // the runtime's default: on
   };
 }
 
@@ -103,6 +104,7 @@ export function uiFrom(pkp, mem = {}) {
     visitCode: internet && role === 'visit' ? n.code : (through ? mem.visitCode : mem.joinCode) || '',
     interact: n.interact || n.story,
     story: n.story,
+    portForward: n.portForward,
   };
 }
 
@@ -120,6 +122,9 @@ export const visitEdits = (addr, code, through) => choice(net('mode', through ? 
 export const codeEdits = (code) => choice(net('room_code', code));
 
 export const protocolEdits = () => choice();
+
+/** A host over the internet asks the router to forward its port (UPnP, NAT-PMP or PCP) while it hosts. */
+export const portForwardEdits = (on) => [net('port_forward', on ? 'true' : 'false')];
 
 export const interactEdits = (on) => [pkpKey('link_interact_everywhere', on ? 'true' : 'false')];
 

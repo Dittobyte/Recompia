@@ -8,7 +8,7 @@ import { store } from '../store.js';
 import { gamePhase } from '../action.js';
 import {
   HOST_PORT, RELAY_PORT, addrProblem, addressRows, applyEdits, codeEdits, editsFor, hostsOverInternet, interactEdits, internetShare, pathParts,
-  protocolEdits, readIni, relayPort, shownCode, storyEdits, uiFrom,
+  portForwardEdits, protocolEdits, readIni, relayPort, shownCode, storyEdits, uiFrom,
 } from '../linkplay-model.js';
 
 const LS = 'pkp.linkplay';
@@ -127,7 +127,11 @@ export async function render(el, ctx) {
       : [];
     const links = relay ? [row('Links', `<span class="num" id="lp-links">${esc(relay.clients)}</span>`)] : [];
     const how = `Visitors pick Visit and type this address and the room code, with Through a relay ${share.through ? 'on' : 'off'}.`;
-    const router = share.own ? ` Your router must forward port ${share.port} (TCP and UDP) to this PC.` : '';
+    // without a relay the game asks the router itself ([net] port_forward); this PC's relay listens on its own port, which it does not
+    const auto = share.own && !share.through && ui.portForward;
+    const router = !share.own ? ''
+      : auto ? ` While you host, the game asks your router to forward port ${share.port} (TCP and UDP) to this PC. If the router does not allow it, the game's log says why: forward the port by hand then.`
+      : ` Your router must forward port ${share.port} (TCP and UDP) to this PC.`;
     return group('Share with visitors', [internet, ...local, ...links])
       + `<div class="banner info">${icon('info')}<div class="grow">${how}${router} Never give out 127.0.0.1: on a visitor's PC it means their own PC.</div></div>`;
   }
@@ -146,6 +150,7 @@ export async function render(el, ctx) {
           row('Room code', `<code class="selectable" id="lp-code"></code>${copyButton('')}<button class="btn sm" data-act="new-code">${icon('refresh-cw')}New code</button>`),
           row('Relay address', fieldAt('lp-relay', 'No relay')),
           row('Run a relay on this PC', toggle('lp-run-relay', !!relay)),
+          row('Ask the router to open the port', toggle('lp-forward', ui.portForward)),
         ])}
         <div class="lp-part" id="lp-share"></div>`;
     }
@@ -346,6 +351,17 @@ export async function render(el, ctx) {
     patch(part('lp-shared'), sharedHtml());
   });
 
+  const setForward = (on, input) => inOrder(async () => {
+    try {
+      await save(portForwardEdits(on));
+      ui.portForward = readIni(pkp).portForward;
+    } catch (e) {
+      input.checked = !input.checked;
+      throw e;
+    }
+    patch(part('lp-share'), shareHtml());
+  });
+
   async function copy(text) {
     try {
       await navigator.clipboard.writeText(text);
@@ -384,6 +400,7 @@ export async function render(el, ctx) {
     if (t.name === 'view') changeView(t.value);
     else if (t.name === 'role') changeRole(t.value);
     else if (t.id === 'lp-run-relay') setRelay(t.checked);
+    else if (t.id === 'lp-forward') setForward(t.checked, t);
     else if (t.id === 'lp-interact') setShared(interactEdits(t.checked), t);
     else if (t.id === 'lp-story') setShared(storyEdits(t.checked), t);
     else if (t.id === 'lp-through') {
