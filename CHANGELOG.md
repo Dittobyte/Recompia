@@ -9,6 +9,17 @@ of the game (version 2.0.1a): the download contains no game files.
 **Update:** press **Update**, then **Set up again** once (new game hook for Story co-op; your saves and shaders are kept).
 
 
+### Regressions and known problems
+- The Lenovo Legion Go, Go 2, ROG Xbox Ally and MSI Claw A8 now start in handheld mode (picture size, the game's lighter handheld graphics settings, controller prompts, short waits under Proton). This has not been confirmed on those devices yet; if it looks worse than before, set `[am] operation_mode = docked` or `[host] handheld = off` in `pkp.ini`
+- Under Proton the memory limit cannot trigger yet (the reading it compares is 0 there); this build only shows both readings in `pkp.log`
+- The Steam Controller (2026) is still not detected under Proton; use another pad there
+
+### What to test
+- On any AMD handheld (Steam Deck, ROG Ally, Legion Go, Legion Go S, Xbox Ally, Claw A8), under Proton or Windows: play 10 minutes, then send the lines of `pkp.log` that contain `host: handheld`, `pool_copy`, `footprint` and `gamepad`. Say which BIOS GPU-memory setting you use if you changed it. They show which handheld rule matched, why pool copy is on or off with the graphics memory size, and the two memory readings
+- On a Legion Go, Go 2, ROG Xbox Ally or MSI Claw A8: check that `pkp.log` says `host: handheld: yes`, and tell us whether the picture size, the controller prompts and the frame rate feel right compared with the previous build
+- If the frame rate falls partway through a session: send the `pkp.log` lines that contain `waited on the GPU` and say how long into the session it began
+- If Set up stops on a Steam Deck or another Linux handheld: send `shader_cache/harness_error.txt` and `setup.log`
+
 ### Controller log
 - `pkp.log` now lists what a connected controller offers: trackpads (and their fingers), rumble, lights, battery, extra buttons (grips, trackpad clicks, touch sensors) and its USB ids; the motion sensors are on the line before it. It is a note for bug reports; nothing about how controllers behave changes
 
@@ -23,6 +34,12 @@ of the game (version 2.0.1a): the download contains no game files.
   - Before: the launcher had one fixed arrangement
   - Now: the arrangement is yours, and the pad, keyboard and touch screen all work in every position. Notices about a problem, such as a crash or a failed update, are never hidden
   - Still not: you cannot drag parts around freely yet, and the sections of Home other than the news cards and those chips cannot be moved or hidden
+
+### Bug reports from Linux handhelds
+- `pkp.log` now starts with a `host facts:` line on Linux (Steam Deck, Legion Go, ROG Ally and other handhelds under Proton): kernel, board and BIOS version, CPU, power governor, the graphics memory split (VRAM, GTT, TTM limit), RAM, swap, zram and whether it runs in Gamescope
+  - Before: reports did not say how the memory was split or how the power was set, so the performance questions could not be answered from the log
+  - Now: the line holds those facts, read only; it never includes serial numbers, your user name, your computer's name or folder paths, and a value the device does not have is left out
+  - Still not: it changes nothing about how the game runs; it only helps reports. Not shown on Windows
 
 ### Graphics driver resets
 - `pkp.log` now says when every frame of a run waits on the graphics card from the start, which is what a driver reset on a Linux handheld looks like. The game cannot fix it: reboot the device. The README's common problems say so too
