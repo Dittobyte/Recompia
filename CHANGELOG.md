@@ -10,6 +10,12 @@ of the game (version 2.0.1a): the download contains no game files.
 
 **Testing build:** the gameplay extras (Camera aim, Running jump, Sort, Search, Quit Game) are now **off by default**; players coming from 0.9.0 who never set them lose them until they switch them on in Settings. A value already in `pkp.ini` is kept.
 
+### Bug reports from Linux handhelds
+- `pkp.log` now starts with a `host facts:` line on Linux (Steam Deck, Legion Go, ROG Ally and other handhelds under Proton): kernel, board and BIOS version, CPU, power governor, the graphics memory split (VRAM, GTT, TTM limit), RAM, swap, zram and whether it runs in Gamescope
+  - Before: reports did not say how the memory was split or how the power was set, so the performance questions could not be answered from the log
+  - Now: the line holds those facts, read only; it never includes serial numbers, your user name, your computer's name or folder paths, and a value the device does not have is left out
+  - Still not: it changes nothing about how the game runs; it only helps reports. Not shown on Windows
+
 ### Graphics driver resets
 - `pkp.log` now says when every frame of a run waits on the graphics card from the start, which is what a driver reset on a Linux handheld looks like. The game cannot fix it: reboot the device. The README's common problems say so too
 - It also notices a run that starts fine and then slows down: when frames wait on the graphics card for three summary windows in a row, `pkp.log` says when it began (before, it only looked at the start of a run). It is a note for bug reports, not a fix

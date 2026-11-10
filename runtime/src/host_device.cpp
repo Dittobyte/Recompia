@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <condition_variable>
 #include <cstdio>
 #include <deque>
@@ -195,6 +196,88 @@ void queue_url(std::string url) {
 }
 
 }  // namespace
+
+// ---- The facts a bug report needs -----------------------------------------------------------------------------------------------------
+
+namespace {
+
+// The first line of a unix file through Wine's Z: drive, trimmed; empty when the file is missing. Read only, one small virtual file.
+std::string first_line(const std::string& unix_path) {
+    std::string win = "Z:";
+    for (const char c : unix_path) win += c == '/' ? '\\' : c;
+    std::ifstream f(win);
+    std::string s;
+    return f && std::getline(f, s) ? text::trim(s) : std::string();
+}
+
+// " name=value" when the value is not empty, else nothing: a missing file leaves its field out.
+void add(std::string& out, const char* name, const std::string& value) {
+    if (!value.empty()) out += std::string(" ") + name + "=" + value;
+}
+
+// A byte count as MiB (a sysfs value in bytes, or in pages of page_bytes); empty when it is not a number.
+std::string mib(const std::string& v, unsigned long long unit = 1) {
+    char* end = nullptr;
+    const unsigned long long n = std::strtoull(v.c_str(), &end, 10);
+    return v.empty() || end == v.c_str() ? std::string() : std::to_string(n * unit / (1024 * 1024)) + "MiB";
+}
+
+// "Key:   value kB" in /proc/meminfo as MiB.
+std::string meminfo_mib(const char* key) {
+    std::ifstream f("Z:\\proc\\meminfo");
+    std::string line;
+    const std::string k = std::string(key) + ":";
+    while (std::getline(f, line))
+        if (line.rfind(k, 0) == 0) return mib(text::trim(line.substr(k.size())), 1024);
+    return {};
+}
+
+}  // namespace
+
+// One line, Wine/Linux only; every field is omitted when its file is missing or empty. No serial, uuid, user name, hostname or path.
+void host_log_facts() {
+    if (!host_is_wine()) return;
+    std::string o;
+    add(o, "kernel", first_line("/proc/sys/kernel/osrelease"));
+    static const char* const kDmi[][2] = {{"vendor", "sys_vendor"}, {"product", "product_name"}, {"family", "product_family"},
+                                          {"board", "board_name"}, {"bios", "bios_version"}};
+    for (const auto& d : kDmi) add(o, d[0], first_line(std::string("/sys/class/dmi/id/") + d[1]));
+    {   // the first "model name" line, and how many "processor" lines
+        std::ifstream f("Z:\\proc\\cpuinfo");
+        std::string line, model;
+        int cpus = 0;
+        for (int i = 0; i < 20000 && std::getline(f, line); ++i) {
+            if (line.rfind("processor", 0) == 0) ++cpus;
+            else if (model.empty() && line.rfind("model name", 0) == 0 && line.find(':') != std::string::npos) model = text::trim(line.substr(line.find(':') + 1));
+        }
+        add(o, "cpu", model);
+        if (cpus) add(o, "cpus", std::to_string(cpus));
+    }
+    const std::string cpu0 = "/sys/devices/system/cpu/cpu0/cpufreq/";
+    add(o, "governor", first_line(cpu0 + "scaling_governor"));
+    add(o, "epp", first_line(cpu0 + "energy_performance_preference"));
+    add(o, "pstate", first_line("/sys/devices/system/cpu/amd_pstate/status"));
+    add(o, "boost", first_line("/sys/devices/system/cpu/cpufreq/boost"));
+    for (int i = 0; i < 8; ++i) {   // the GPU: the first card whose PCI vendor is AMD
+        const std::string d = "/sys/class/drm/card" + std::to_string(i) + "/device/";
+        if (first_line(d + "vendor") != "0x1002") continue;
+        add(o, "gpu", first_line(d + "vendor") + ":" + first_line(d + "device"));
+        add(o, "vram", mib(first_line(d + "mem_info_vram_total")));
+        add(o, "vis_vram", mib(first_line(d + "mem_info_vis_vram_total")));
+        add(o, "gtt", mib(first_line(d + "mem_info_gtt_total")));
+        break;
+    }
+    add(o, "ttm_pages_limit", mib(first_line("/sys/module/ttm/parameters/pages_limit"), 4096));   // pages of 4 KiB
+    add(o, "ram", meminfo_mib("MemTotal"));
+    add(o, "swap", meminfo_mib("SwapTotal"));
+    add(o, "swappiness", first_line("/proc/sys/vm/swappiness"));
+    add(o, "zram0", mib(first_line("/sys/block/zram0/disksize")));
+    add(o, "gamescope", GetEnvironmentVariableA("GAMESCOPE_WAYLAND_DISPLAY", nullptr, 0) ? "yes" : "no");
+    add(o, "steamdeck_env", env_lower("SteamDeck"));
+    add(o, "desktop", env_lower("XDG_CURRENT_DESKTOP"));
+    add(o, "proton", GetEnvironmentVariableA("STEAM_COMPAT_DATA_PATH", nullptr, 0) ? "yes" : "no");
+    NXLOG_I("host", "host facts:%s", o.c_str());
+}
 
 bool host_steam_keyboard_wanted() {
     static const bool want = [] {

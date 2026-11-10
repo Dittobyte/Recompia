@@ -19,6 +19,10 @@ bool host_is_steam_deck();
 
 // Running under Wine (Proton, SteamOS): ntdll exports wine_get_version. Read once; any thread.
 bool host_is_wine();
+// Logs one `host facts:` line (kernel, board, CPU, power governor, GPU memory split, RAM, swap, session) for bug reports. Wine/Linux only:
+// reads files through Z:\\ (read only, a missing one leaves its field out); logs no serial, user name, host name or path. Call once at start.
+void host_log_facts();
+
 // Steam's on-screen keyboard for text the game asks for (the software keyboard applet). Wanted under Wine (Proton) on a Steam Deck
 // (host_is_steam_deck), on SteamOS (SteamOS=1) and in Steam's gamepad UI (SteamGamepadUI=1); [applet] steam_keyboard = auto (default)
 // | on | off overrides it. Not on Windows by default: a steam:// URL there would start the Steam client if it is not running.
