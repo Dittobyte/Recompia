@@ -12,6 +12,11 @@ of the game (version 2.0.1a): the download contains no game files.
 
 ### Graphics driver resets
 - `pkp.log` now says when every frame of a run waits on the graphics card from the start, which is what a driver reset on a Linux handheld looks like. The game cannot fix it: reboot the device. The README's common problems say so too
+- It also notices a run that starts fine and then slows down: when frames wait on the graphics card for three summary windows in a row, `pkp.log` says when it began (before, it only looked at the start of a run). It is a note for bug reports, not a fix
+
+### Shader setup
+- When the shader translator stops, setup now writes what it said to `shader_cache/harness_error.txt` and shows it in `setup.log` and in the error (on Linux, Proton hid it, so the log said only that it stopped)
+- Setup checks that the translator's files are whole before it starts and names what is missing or too short
 
 ### Screens narrower than 16:9
 - Added **4:3 Fix**, a very experimental option in Settings > Testing (Testing channel only, off by default) for 4:3, 16:10 and 3:2 screens: full-screen backgrounds, fades and dimming fill the whole picture instead of stopping at a 16:9 strip in the middle. Menus, text and buttons stay where they were. If you have a 4:3 or 16:10 screen, please try it and send `pkp.log` with what looked wrong. It needs a restart of the game to take effect

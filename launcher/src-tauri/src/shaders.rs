@@ -300,6 +300,42 @@ fn on_path(exe: &str) -> Vec<PathBuf> {
     std::env::var_os("PATH").map(|p| std::env::split_paths(&p).map(|d| d.join(exe)).filter(|f| f.is_file()).collect()).unwrap_or_default()
 }
 
+/// The translator is a self-contained .NET publish: the apphost (about 160 KB) next to its managed assembly and the runtime. A copy
+/// that stopped half way leaves a short or missing file, which Windows or Proton reports as a start failure or a bare exit code
+/// (#366). Some(what is wrong) when the folder cannot be a whole publish.
+fn harness_damage(exe: &Path) -> Option<String> {
+    const MIN_EXE_BYTES: u64 = 50_000;
+    let len = fs::metadata(exe).map(|m| m.len()).unwrap_or(0);
+    if len < MIN_EXE_BYTES {
+        return Some(format!("the program is {} bytes, a whole one is about 160000", len));
+    }
+    let dir = exe.parent()?;
+    ["spirv_harness.dll", "System.Private.CoreLib.dll"].iter().find(|f| !dir.join(f).is_file()).map(|f| format!("{} is missing beside it", f))
+}
+
+/// Where the translator writes the text of what stopped it (`--error-file`): Console.Error does not reach the log under Proton (#366).
+fn harness_error_file(game_dir: &Path) -> PathBuf {
+    cache_dir(game_dir).join("harness_error.txt")
+}
+
+/// Starts a translator run with a clean error file and tells the translator where to write it.
+fn with_error_file(cmd: &mut Command, game_dir: &Path) {
+    let file = harness_error_file(game_dir);
+    let _ = fs::remove_file(&file);
+    cmd.arg("--error-file").arg(crate::host::win_path(&file));
+}
+
+/// What the translator wrote to its error file in the run that just failed (the last 1500 characters), if anything.
+fn harness_error(game_dir: &Path) -> Option<String> {
+    let text = fs::read_to_string(harness_error_file(game_dir)).ok()?;
+    let text = text.trim();
+    if text.is_empty() {
+        return None;
+    }
+    let skip = text.chars().count().saturating_sub(1500);
+    Some(text.chars().skip(skip).collect())
+}
+
 /// Finds the tools in `tools_dir` (the launcher's `tools/` folder). Python: `tools/python/python.exe` (Linux:
 /// `tools/linux/python/bin/python3`), else the first python.exe (python3) on PATH that has `lz4`. Every missing piece is named
 /// in the error.
@@ -308,6 +344,8 @@ pub fn find_tools(tools_dir: &Path) -> Result<Tools, String> {
     let harness = tools_dir.join("spirv_harness").join("spirv_harness.exe");
     if !harness.is_file() {
         missing.push(format!("the shader translator ({})", harness.display()));
+    } else if let Some(why) = harness_damage(&harness) {
+        missing.push(format!("the shader translator ({}) is damaged: {}", harness.display(), why));
     }
     let extract = tools_dir.join("shaders").join("extract_corpus.py");
     if !extract.is_file() {
@@ -529,9 +567,13 @@ pub fn translate_missing(game_dir: &Path, tools_dir: &Path) -> Result<usize, Str
     let jobs = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2).to_string();
     let mut cmd = crate::host::windows_program(&tools_dir.join("spirv_harness").join("spirv_harness.exe"))?;
     cmd.arg("--batch").arg(crate::host::win_path(&input)).arg("--out").arg(crate::host::win_path(&stage)).args(["--jobs", &jobs, "--no-val"]);
+    with_error_file(&mut cmd, game_dir);
     cmd.env("DOTNET_gcServer", "1");
     if !run_tool(cmd, &AtomicBool::new(false), false, None, None, |_| {})? {
-        return Err("the shader translator stopped".into());
+        return Err(match harness_error(game_dir) {
+            Some(why) => format!("the shader translator stopped: {}", why),
+            None => "the shader translator stopped".into(),
+        });
     }
     let n = commit_stage(&stage, &spirv)?;
     let _ = fs::remove_dir_all(&stage);
@@ -712,6 +754,7 @@ pub fn run(job: &Job, tools: &Tools, cancel: &AtomicBool, mut report: impl FnMut
         let _ = fs::remove_dir_all(&stage);
         let mut cmd = crate::host::windows_program(&tools.harness)?;
         cmd.arg("--batch").arg(crate::host::win_path(&corpus)).arg("--out").arg(crate::host::win_path(&stage)).args(["--jobs", &jobs, "--no-val"]);
+        with_error_file(&mut cmd, &job.game_dir);
         // server GC: with the default workstation GC each collection stops every worker (about 4x slower)
         cmd.env("DOTNET_gcServer", "1");
         let base = finished;
@@ -722,6 +765,9 @@ pub fn run(job: &Job, tools: &Tools, cancel: &AtomicBool, mut report: impl FnMut
             }
         })?;
         if !ok {
+            if let (Some(l), Some(why)) = (&job.log, harness_error(&job.game_dir)) {
+                l(&format!("the shader translator wrote: {}", why));
+            }
             return Ok(false);
         }
         commit_stage(&stage, &spirv)?;
