@@ -36,7 +36,8 @@
         {"key": "craft_search", "type": "bool", "default": "1", "env": "NXRT_PKP_CRAFT_SEARCH", "group": "gameplay", "doc": "A Search button in the crafting screen's key guide. Next start."},
         {"key": "title_quit", "type": "bool", "default": "1", "env": "NXRT_PKP_TITLE_QUIT", "group": "gameplay", "doc": "A Quit Game key guide on the title screen. Next start."},
         {"key": "options_menu", "type": "bool", "default": "1", "env": "NXRT_PKP_OPTIONS_MENU", "doc": "The PC settings as tabs and rows of the game's own Settings screen. Next start."},
-        {"key": "pokemon_cap_50", "type": "bool", "default": "1", "env": "NXRT_PKP_POKEMON_CAP_50", "group": "gameplay", "doc": "Raise the simultaneous resident limit from 25 to 50 (object limit 30 to 55). Next start."}
+        {"key": "pokemon_cap_50", "type": "bool", "default": "1", "env": "NXRT_PKP_POKEMON_CAP_50", "group": "gameplay", "doc": "Enable the configurable resident Pokemon limit (default 31). Next start."},
+        {"key": "pokemon_cap_limit", "type": "int", "default": "31", "min": 25, "max": 50, "clamped": true, "env": "NXRT_PKP_POKEMON_CAP_LIMIT", "doc": "Maximum simultaneous resident Pokemon; object limit is five higher. Next start."}
     ]}
   ],
   "retired": []
