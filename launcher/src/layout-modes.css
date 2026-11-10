@@ -102,6 +102,11 @@ html[data-nav="bottom"] body:not([data-shell="full"]) #view { grid-row: 1; }
 html[data-nav="bottom"] body:not([data-shell="full"]) #nav { grid-row: 2; margin-block: var(--gutter); }
 html[data-nav="bottom"] body:not([data-shell="full"]) #titlebar { left: 0; }
 
+/* Home fills the page area, not the whole window: with a bar on top or bottom the page area is shorter than 100vh (home.css), so the
+   Play button would sit below the fold or behind the bottom bar. */
+html[data-nav="top"] body:not([data-shell="full"]) .home { min-height: calc(100vh - var(--gutter) - var(--bar-h)); }
+html[data-nav="bottom"] body:not([data-shell="full"]) .home { min-height: calc(100vh - var(--gutter) * 2 - var(--bar-h)); }
+
 /* a narrow bar is icons only: the rail look, with the tooltip above or below instead of beside */
 @media (max-width: 999.98px) {
   html:is([data-nav="top"], [data-nav="bottom"]) .nav-item { width: var(--control-lg); padding: 0; }
