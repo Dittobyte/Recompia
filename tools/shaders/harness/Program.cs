@@ -59,6 +59,7 @@ namespace SpirvHarness
             NoRetry = args.Contains("--no-retry");
             StaticGpuAccessor.DesktopHost = Opt(args, "--host", "desktop") != "moltenvk";
             Debug = args.Contains("--debug-mode");
+            string errorFile = Opt(args, "--error-file", null);
             try
             {
                 if (args.Length >= 2 && args[0] == "--batch") return Batch(args);
@@ -67,10 +68,25 @@ namespace SpirvHarness
             catch (ArgumentException e)
             {
                 Console.Error.WriteLine(e.Message);
+                NoteError(errorFile, e.Message);
             }
+            catch (Exception e) when (NoteError(errorFile, e.ToString()))
+            {
+                throw;   // never entered: the filter only records the text and the exception stays unhandled, as before
+            }
+            NoteError(errorFile, "usage rejected, arguments: " + string.Join(" ", args));
             Console.Error.WriteLine("usage: spirv_harness <code.bin> <ctrl.bin> [-o out.spv] [--glsl] [--glslc <GLSLC output, NVN2>]\n" +
                                     "       spirv_harness --batch <extracted dir> --out <dir> [--jobs N] [--limit N] [--no-val] [--no-retry] [--debug-mode] [--target-env E] [--host desktop|moltenvk] [--spirv-val PATH] [--reflect <Ampere corpus>]");
             return 2;
+        }
+
+        // --error-file <path>: the text of what stopped the run, for a host that does not show Console.Error (the launcher under Proton, #366).
+        // Always false, so it can sit in an exception filter.
+        static bool NoteError(string file, string text)
+        {
+            if (file == null) return false;
+            try { File.AppendAllText(file, DateTime.UtcNow.ToString("u") + " " + text + "\n"); } catch { }
+            return false;
         }
 
         // spirv-val: $VULKAN_SDK\Bin, else the PATH.
