@@ -15,6 +15,7 @@
 #include "nxrt/host_device.h"
 #include "nxrt/input.h"
 #include "nxrt/log.h"
+#include "pad_caps.h"
 
 namespace nxrt::platform {
 namespace {
@@ -175,6 +176,7 @@ void gamepad_opened(SDL_JoystickID id, uint64_t ts) {
     read_face_labels(pad, labels);
     NXLOG_I(kTag, "gamepad %u sensors: accel=%d gyro=%d labels=%d%d%d%d", static_cast<unsigned>(id), accel_on ? 1 : 0,
             gyro_on ? 1 : 0, labels[0], labels[1], labels[2], labels[3]);
+    log_pad_caps(id, pad);
 
     input::Event e = make_event(input::EventType::GamepadAdded, ts);
     e.u.gamepad.id = id;

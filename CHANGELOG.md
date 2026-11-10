@@ -9,6 +9,9 @@ of the game (version 2.0.1a): the download contains no game files.
 **Update:** press **Update**, then **Set up again** once (new game hook for Story co-op; your saves and shaders are kept).
 
 
+### Controller log
+- `pkp.log` now lists what a connected controller offers: trackpads (and their fingers), rumble, lights, battery, extra buttons (grips, trackpad clicks, touch sensors) and its USB ids; the motion sensors are on the line before it. It is a note for bug reports; nothing about how controllers behave changes
+
 ### Memory limit
 - `pkp.log` now shows both memory readings (private commit and pagefile usage) in its `footprint` line and in the 75% warning, and says once when the private-commit reading is 0
   - Before: only the footprint was shown, so on Linux (Proton) a log reading `footprint 0.00 GB` could not tell whether the game used no memory or the reading was blind
