@@ -39,6 +39,12 @@ export function localAddr(s) {
   return x === 127 || x === 10 || (x === 172 && y >= 16 && y <= 31) || (x === 192 && y === 168) || (x === 169 && y === 254);
 }
 
+/** 100.64.0.0/10: Tailscale's range (and carrier-grade NAT's). The game counts it as internet, so it needs internet play and the host's room code. */
+export function tailscaleAddr(s) {
+  const a = parseAddr(s);
+  return !!a && a.ip[0] === 100 && a.ip[1] >= 64 && a.ip[1] <= 127;
+}
+
 /** 127.x: this PC itself. */
 export const loopbackAddr = (s) => parseAddr(s)?.ip[0] === 127;
 
@@ -51,6 +57,7 @@ export function addrProblem(s, { port = HOST_PORT, lan = false, remote = false }
   if (!v) return '';
   if (!validAddr(v)) return `Type an address like 192.0.2.10 or 192.0.2.10:${port}`;
   if (remote && loopbackAddr(v)) return 'That is your own PC. Type the address the host shares with you.';
+  if (lan && tailscaleAddr(v)) return 'That is a Tailscale address. Paste the host\'s invite below, or use Internet, then Visit, with their room code.';
   return lan && !localAddr(v) ? 'Not on your network. Use Internet for this address.' : '';
 }
 
