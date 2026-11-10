@@ -1,12 +1,12 @@
 # Changelog
 
 Parent project: [pokopia-native](https://github.com/xFractals/pokopia-native); each of its releases is reviewed and what applies is brought over
-(last reviewed: pokopia-native 1.3.3, `035bd9c`). This fork builds on [the original Pokopia Recomp](https://github.com/drakolordx7/pokopia-recomp) 0.1.1. You still need your own copy
+(last reviewed: pokopia-native 1.4.0, `9cb7f07a`). This fork builds on [the original Pokopia Recomp](https://github.com/drakolordx7/pokopia-recomp) 0.1.1. You still need your own copy
 of the game (version 2.0.1a): the download contains no game files.
 
 ## Unreleased
 
-**Update:** press **Update**, then **Set up again** once (new game hooks for the crafting Search button; your saves and shaders are kept).
+**Update:** press **Update**, then **Set up again** once (new game hooks for the crafting Search button and Story co-op; your saves and shaders are kept).
 
 ### The Testing tab
 - Added a **Testing** tab to Settings, shown only on the Testing channel: send logs, read them, and switch the features still being tried on or off
@@ -26,6 +26,7 @@ of the game (version 2.0.1a): the download contains no game files.
 
 ### Game
 - NVIDIA graphics cards no longer risk a crash (device lost) in three of the game's compute shaders when a loop count is not the game's: the count is held to the size of the table the loop walks (on other cards, to 16384). From pokopia-native 1.4.0; `[nvn] loop_guard = off` turns it off
+- **Story co-op** (experimental, `[pkp] link_story_coop`): the host's own story no longer stops while friends are visiting. Before, any Link Play session turned the host's story talks into "Bring <host> here to say hi!" and paused its requests. From pokopia-native 1.4.0
 - **Joy-Con 2 mouse mode** is switched off for now: it aimed at the wrong blocks on PC. The middle mouse button no longer turns it on and the **Mouse Mode Key** row is gone from **Settings > Mouse**. Camera aim is not affected
 
 ### Launcher
