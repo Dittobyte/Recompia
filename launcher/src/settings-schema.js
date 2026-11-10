@@ -720,7 +720,7 @@ export const SECTIONS = [
         rows: [
           { id: 'experimental_note', type: 'note', note: () => ({ text: 'Features still being tried, on by default: switch one off here if it causes trouble. They take effect the next time the game starts. Tell us what you find.' }) },
           ...onTesting(EXPERIMENTAL_ROWS),
-          { id: 'experimental_off_note', type: 'note', when: isTesting, note: () => ({ text: 'Very experimental and off by default. 4:3 Fix is for screens narrower than 16:9 (4:3, 16:10): full-screen backgrounds, fades and dimming fill the whole picture. It is only tested by people with a native 4:3 screen so far. If you try it, send us pkp.log (Export and report above) and tell us what looked wrong.' }) },
+          { id: 'experimental_off_note', type: 'note', when: isTesting, note: () => ({ text: 'Very experimental and off by default. 4:3 Fix is for screens narrower than 16:9 (4:3, 16:10): full-screen backgrounds, fades and dimming fill the whole picture. If you have a 4:3 or 16:10 screen and try it, please send us pkp.log (Export and report above) and tell us what looked wrong.' }) },
           ...onTesting(EXPERIMENTAL_OFF_ROWS),
         ],
       },
