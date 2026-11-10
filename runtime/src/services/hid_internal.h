@@ -36,7 +36,7 @@ struct VibValue {
 };
 
 // ---- Joy-Con 2 mouse (Nmouse / Jcms) ------------------------------------------------------------------------------------------------
-// Layout from the SDK 20.5 client (sdk nn::hid::detail::NmouseTransferMemoryAccessor, GetJcmsStates); docs/hid_mouse_sw2.md has the
+// Layout from the SDK 20.5 client (sdk nn::hid::detail::NmouseTransferMemoryAccessor, GetJcmsStates); the local Joy-Con 2 mouse notes have the
 // addresses. Both blocks are the game's own buffers, lent as transfer memory (InitializeNmouse 3139, InitializeJcms 3110); the server
 // owns their contents and the game reads them directly.
 constexpr uint32_t kNmSlots = 17;              // handle table entries, info entries and rings
