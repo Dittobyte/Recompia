@@ -68,7 +68,7 @@ function drawNav() {
   nav.innerHTML = `
     <div class="brand" data-tauri-drag-region><img class="brand-mark" src="${markUrl}" alt="" /><img class="brand-mark-testing" src="${markTestingUrl}" alt="Testing" /><img class="brand-name brand-logo" src="${logoUrl}" alt="Pokopia" /><span class="brand-tag">Testing</span></div>
     ${items.join('')}
-    <div class="nav-spacer"></div>
+    <div class="nav-spacer" data-tauri-drag-region></div>
     <button class="nav-item" id="theme-btn" aria-label="Change colours">${icon('palette')}<span class="nav-label"></span><span class="nav-tip" aria-hidden="true"></span></button>
     <button class="nav-item" id="layout-btn" aria-label="Change layout">${icon('layout-dashboard')}<span class="nav-label">Layout</span><span class="nav-tip" aria-hidden="true">Layout</span></button>
     <button class="task-pill" id="task-pill" hidden>
