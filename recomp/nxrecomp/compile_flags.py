@@ -25,4 +25,5 @@ CLANG_CL = ['/w', '/EHs-c-', '/GR-'] + SEMANTIC + ['-mcx16']
 CLANG = ['-O1', '-w', '-fno-exceptions', '-fno-rtti'] + SEMANTIC + ['-mcx16']
 ZIG_MINGW = (['-target', 'x86_64-windows-gnu', '-mcpu=x86_64+cx16', '-std=c++20', '-O1', '-w', '-fno-exceptions', '-fno-rtti']
              + SEMANTIC + ['-fno-threadsafe-statics'])
-ZIG_LINUX = ['-target', 'x86_64-linux-gnu'] + ZIG_MINGW[2:]
+# glibc 2.38 (2023: Ubuntu 24.04, Fedora 39, SteamOS 3.6, Bazzite) is what libpkp_rt.so, built on such a system, needs as well.
+ZIG_LINUX = ['-target', 'x86_64-linux-gnu.2.38'] + ZIG_MINGW[2:]

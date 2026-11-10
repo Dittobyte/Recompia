@@ -586,8 +586,9 @@ def link(runner, lib, game, env):
     if T.name == 'windows':
         cmd = common + [os.path.join(SDK, 'pkp.rc')] + libs + [T.runtime, '-o', tmp, '-Wl,--stack,134217728', '-Wl,--subsystem,windows']
     else:
-        # the runtime is found next to pkp at run time ($ORIGIN); the 128 MiB main stack is the runtime's (pkp_host_stack_linux.cpp)
-        cmd = common + libs + [T.runtime, '-Wl,-rpath,$ORIGIN', '-o', tmp]
+        # the runtime is found next to pkp at run time ($ORIGIN); the 128 MiB main stack is the runtime's (pkp_host_stack_linux.cpp).
+        # What libpkp_rt.so needs from the system is checked by the system's loader when pkp starts, not against zig's glibc here.
+        cmd = common + libs + [T.runtime, '-Wl,-rpath,$ORIGIN', '-Wl,--allow-shlib-undefined', '-o', tmp]
     rc, tail = runner.run(cmd, env=env, cwd=SDK)
     if rc != 0:
         raise Fail('Linking %s failed (exit %d):\n%s' % (T.exe, rc, tail))
