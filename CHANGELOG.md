@@ -57,6 +57,9 @@ of the game (version 2.0.1a): the download contains no game files.
   - Now: on these devices the game is told it is in handheld mode and picks its own lighter handheld graphics settings, a window smaller than 1080p is no longer rendered at 1080p, controller prompts stay for the trackpad and touch screen, and (under Proton) short waits sleep instead of spinning. `pkp.log` shows which board rule matched in the `host: handheld` line
   - Still not: AYANEO, GPD and OneXPlayer, whose board names are not reliably known (OneXPlayer's also cover Intel models); set `[host] handheld = on` in `pkp.ini` for those. If the handheld graphics settings do not suit your device, set `[am] operation_mode = docked` (that alone), or `[host] handheld = off` (all of it)
 
+### Steam Controller on Linux
+- Settings > Controls now explains, on Linux only, how to get a Steam Controller or other pad working: add the game to Steam and keep Steam Input on for it, and what that means for the grips and trackpads
+
 ### Gameplay mods
 - Settings > Gameplay and `pkp.log` now show which gameplay mods and experimental features are on, so you can see at a glance what a start will use
 

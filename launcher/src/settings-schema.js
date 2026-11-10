@@ -448,6 +448,10 @@ export const SECTIONS = [
             ],
           },
           { id: 'f1_bindings', label: 'Change bindings in game', type: 'keycap', key: 'F1' },
+          {
+            id: 'steam_input_note', type: 'note', when: (_v, env) => env.linux,
+            note: () => ({ text: 'Steam Controller or other pad on Linux: add the game to Steam (Game tab, Steam) and keep Steam Input on for it. That is the way known to work. With Steam Input on, the game sees an Xbox style pad, so the Steam Controller rows (back grips, trackpad clicks) only react if your Steam layout sends them. With Steam Input off, the Steam Controller is reported to work as a basic pad, without its trackpads and back grips.' }),
+          },
         ],
       },
     ],
