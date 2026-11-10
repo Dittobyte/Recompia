@@ -53,6 +53,15 @@ Instead of typing an address and a room code, the host can **copy an invite** an
   skips VPN adapters), so the address always travels in the invite.
 - An invite is plain text and carries the room code: share it only with the people you want to play with.
 
+Three read-only helpers on the same page (they change nothing on your PC):
+
+- **Test connection** (Visit and Same network): tries to reach the address you typed and says what happened in words: reached,
+  the PC answered but no game is hosting yet, no answer (a firewall may block the port, or it is on another network), or not an address.
+- **Check my setup:** looks at this PC's addresses, the Windows network profile and, on Linux, what the firewall says, and lists what may
+  stop friends from joining, with a short fix for each. It never changes a firewall or network setting.
+- **Friends on my Tailscale** (Visit): if Tailscale is installed, lists your devices and which of them are hosting right now; **Join**
+  fills in that device's address, then paste the host's invite (or type the room code) to finish.
+
 ## Ports and firewall
 
 | Port | Who | What |
