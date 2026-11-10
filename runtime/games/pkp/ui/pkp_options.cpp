@@ -35,6 +35,7 @@
 #include "nxrt/log.h"
 #include "nxrt/memory.h"
 #include "nxrt/platform.h"
+#include "pad_choices.h"
 #include "play_game.h"
 #include "play_types.h"
 
@@ -304,6 +305,17 @@ const Row kMouse[] = {
 #endif
 };
 
+// The pad button remap, two rows at the end of the Controller tab (they use the last two of its 13 slots): "Controller Button" picks one of
+// the controller's buttons, "Presses" what it presses on the Switch pad (Default, Nothing, A ...). Both are sliders in the middle of a wide
+// range whose text the rows draw themselves, as the parked Mouse Mode Key row: each left/right press or click moves the slider by one and
+// hook_store turns the move into one step through the row's list (pad_row_moved). The second row so follows the first without the screen
+// rebuilding its rows. Edits are kept per button in g.pad_cur (a choice index, kPadChoiceCount = a mask the file holds) and reach Settings with
+// the other rows when the screen commits. A slider has 2 * kPadMid presses left in each direction before it stops at its end.
+constexpr int kPadMid = 127;
+int pad_cycle_max() { return 2 * kPadMid; }
+const char* pad_button_text(int, char* out, size_t n);
+const char* pad_press_text(int, char* out, size_t n);
+
 const Row kController[] = {
     choice("Face Buttons", "Switch keeps the buttons by position, Xbox by their letters.", {"Switch", "Xbox"}, 2, ROW_BOOL(pad.label_abxy)),
     number("Left Stick Dead Zone", "Ignores small movements of the left stick.", 0, 50, "%.0f%%", 0, 1, ROW_PCT(pad.stick_deadzone)),
@@ -316,6 +328,10 @@ const Row kController[] = {
     choice("Motion Sensor", "Pass the controller's gyro to the game.", kOffOn, 2, ROW_BOOL(pad.gyro)),
     number("Motion Strength", "Scales the gyro.", 0, 78, "%.2fx", 0.1, 0.05, ROW_STEP(pad.gyro_scale, 0.1, 0.05)),
     number("Rumble Strength", "Scales the vibration.", 0, 200, "%.0f%%", 0, 1, ROW_PCT(pad.rumble_scale)),
+    dynamic("Controller Button", "Pick a controller button, then set what it presses on the next row.",
+            pad_button_text, pad_cycle_max, [](const S&) { return kPadMid; }, [](S&, int) {}),
+    dynamic("Presses", "What the controller button above presses on the Switch pad. Default keeps the built-in layout.",
+            pad_press_text, pad_cycle_max, [](const S&) { return kPadMid; }, [](S&, int) {}),
 };
 // clang-format on
 
@@ -341,7 +357,7 @@ const Tab kTabs[] = {
     tab("Graphics", 6, kGraphics),
     tab("Picture", 7, kPicture),
     tab("Mouse", 8, kMouse),
-    tab("Controller", 9, kController),
+    tab("Controller", 9, kController),   // the last tab: the pad rows end it (pad_sync_last)
 };
 constexpr int kTabCount = static_cast<int>(std::size(kTabs));
 constexpr int kGameTabs = 3;
@@ -355,7 +371,42 @@ struct State {
     int tab = 0;
     int cur[kTabCount][kSlots] = {}, orig[kTabCount][kSlots] = {};
     uint8_t* rec[kSlots] = {};
+    int pad_sel = 0;                                              // the controller button the pad rows show (a PadSrc)
+    int pad_cur[play::kPadSrcCount] = {}, pad_orig[play::kPadSrcCount] = {};   // per button: its choice index in play::kPadChoiceNames
+    int pad_last[2] = {kPadMid, kPadMid};                         // where the two pad sliders were last seen: a move is the step from here
 } g;
+
+const char* pad_button_text(int, char* out, size_t n) {
+    std::snprintf(out, n, "%s", play::kPadSrcLabels[g.pad_sel]);
+    return out;
+}
+const char* pad_press_text(int, char* out, size_t n) {
+    const int c = g.pad_cur[g.pad_sel];
+    std::snprintf(out, n, "%s", c < play::kPadChoiceCount ? play::kPadChoiceNames[c] : play::kPadCustomLabel);
+    return out;
+}
+bool is_pad_row(const Row& r) { return r.text == &pad_button_text || r.text == &pad_press_text; }
+
+// A pad slider went to `value`: the step from where it was is a step through the buttons (row 0) or through the choices of the shown
+// button (row 1). The "Custom" entry is a mask only the file can make: it is offered while the file holds one, never written back.
+void pad_row_moved(int row, int value) {
+    const int delta = value - g.pad_last[row];
+    g.pad_last[row] = value;
+    const auto wrap = [](int v, int n) { return ((v % n) + n) % n; };
+    if (row == 0) {
+        g.pad_sel = wrap(g.pad_sel + delta, play::kPadSrcCount);
+    } else {
+        int& c = g.pad_cur[g.pad_sel];
+        c = wrap(c + delta, g.pad_orig[g.pad_sel] == play::kPadChoiceCount ? play::kPadChoiceCount + 1 : play::kPadChoiceCount);
+    }
+}
+
+// The sliders' positions in the value vector are the screen's own: after the values were reset, the next move starts from there.
+void pad_sync_last() {
+    const int rows = kTabs[kTabCount - 1].count;           // the pad rows end the last tab, the Controller tab
+    g.pad_last[0] = g.cur[kTabCount - 1][rows - 2];
+    g.pad_last[1] = g.cur[kTabCount - 1][rows - 1];
+}
 
 using guest::rd;
 using guest::wr;
@@ -440,6 +491,11 @@ bool build_settings(S& s) {
                 kTabs[t].rows[i].set(s, g.cur[t][i]);
                 changed = true;
             }
+    for (int i = 0; i < play::kPadSrcCount; ++i)
+        if (g.pad_cur[i] != g.pad_orig[i] && g.pad_cur[i] < play::kPadChoiceCount) {
+            s.pad.remap[i] = play::pad_choice_value(g.pad_cur[i]);
+            changed = true;
+        }
     return changed;
 }
 
@@ -484,6 +540,12 @@ int hook_open(::Ctx* c, uint64_t, void*) {
         for (int t = 0; t < kTabCount; ++t)
             for (int i = 0; i < kTabs[t].count; ++i)
                 g.cur[t][i] = g.orig[t][i] = std::clamp(kTabs[t].rows[i].get(s), static_cast<int>(kTabs[t].rows[i].lo), row_hi(kTabs[t].rows[i]));
+        g.pad_sel = 0;
+        for (int i = 0; i < play::kPadSrcCount; ++i) {
+            const int c = play::pad_choice_of(s.pad.remap[i]);
+            g.pad_cur[i] = g.pad_orig[i] = c < 0 ? play::kPadChoiceCount : c;
+        }
+        pad_sync_last();
     }
     write_records(g.tab);
     return 0;
@@ -503,8 +565,11 @@ int hook_commit(::Ctx* c, uint64_t, void*) {
         S s = play::current_settings();
         if (build_settings(s)) play::apply_settings(s);   // main thread, next frame; also writes controls.ini
         std::memcpy(g.orig, g.cur, sizeof g.orig);
+        std::memcpy(g.pad_orig, g.pad_cur, sizeof g.pad_orig);
     } else if (rd<int>(g.child + 0x354) != 0) {      // "discard" (the game's other call with 0 only redraws)
         std::memcpy(g.cur, g.orig, sizeof g.cur);
+        std::memcpy(g.pad_cur, g.pad_orig, sizeof g.pad_cur);
+        pad_sync_last();
         extras::set_picture_live(play::current_settings().extras.picture);   // the colour rows preview live
     }
     store_to_vector();
@@ -520,6 +585,10 @@ int hook_store(::Ctx* c, uint64_t, void*) {
             g_mm_redraw = true;
             NXLOG_I(kTag, "options: Mouse Mode Key: waiting for a key");
         }
+        return 0;
+    }
+    if (r && is_pad_row(*r)) {                       // a pad slider moved: a step through its list (the rows draw their own text)
+        pad_row_moved(r->text == &pad_button_text ? 0 : 1, static_cast<int>(c->x[2]));
         return 0;
     }
     if (!r || !r->live) return 0;
@@ -608,17 +677,26 @@ int hook_value_names(::Ctx* c, uint64_t, void*) {
 
 uint64_t text_pane(::Ctx* c, uint64_t widget, uint32_t slot);
 
+// The slider's text box is sized for a short number: room for the longest value name.
+void widen_slider_text(::Ctx* c, uint64_t row) {
+    if (const uint64_t pane = text_pane(c, row, kSliderSlot)) {
+        if (rd<int16_t>(pane + kPaneWidth) < kSliderTextWidth) wr<int16_t>(pane + kPaneWidth, kSliderTextWidth);
+    }
+}
+
 void hook_row_drawn(::Ctx* c, uint64_t, void*) {
     const Row* r = shown_row(rd<uint8_t>(c->x[19] + kRowId));
     if (!r) return;
     set_text(c, c->x[19], kLabelSlot, r->label);
     if (r->text == &mouse_mode_text && g_mm_redraw) {   // the capture started or ended: the key text, not the slider's number
         g_mm_redraw = false;
-        if (const uint64_t pane = text_pane(c, c->x[19], kSliderSlot)) {
-            if (rd<int16_t>(pane + kPaneWidth) < kSliderTextWidth) wr<int16_t>(pane + kPaneWidth, kSliderTextWidth);
-        }
+        widen_slider_text(c, c->x[19]);
         char buf[128];
         set_text(c, c->x[19], kSliderSlot, mouse_mode_text(0, buf, sizeof buf));
+    } else if (is_pad_row(*r)) {                        // the pad rows' text is the state, whichever row moved last
+        widen_slider_text(c, c->x[19]);
+        char buf[128];
+        set_text(c, c->x[19], kSliderSlot, r->text(0, buf, sizeof buf));
     }
 }
 
@@ -639,10 +717,7 @@ uint64_t text_pane(::Ctx* c, uint64_t widget, uint32_t slot) {
 void hook_slider_text(::Ctx* c, uint64_t, void*) {
     const Row* r = shown_row(rd<uint8_t>(c->x[19] + kRowId));
     if (!r || r->choices) return;
-    // The box is sized for a short number: "Match Display" came out at half size.
-    if (const uint64_t pane = text_pane(c, c->x[19], kSliderSlot)) {
-        if (rd<int16_t>(pane + kPaneWidth) < kSliderTextWidth) wr<int16_t>(pane + kPaneWidth, kSliderTextWidth);
-    }
+    widen_slider_text(c, c->x[19]);   // "Match Display" came out at half size
     char buf[128];
     set_text(c, c->x[19], kSliderSlot, value_text(*r, static_cast<int>(c->x[20]), buf, sizeof buf));
 }
