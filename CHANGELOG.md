@@ -89,6 +89,10 @@ of the game (version 2.0.1a): the download contains no game files.
 - Fixed the **Mouse Mode Key** row in **Settings > Mouse** (#367)
   - Before: pressing a key on the row did nothing, and after one change the row got stuck at the end of its bar
   - Now: press left or right on the row (or click it), the row says "Press the new key", then press any key, mouse button or wheel notch. Esc cancels. It works every time, and F1 can't be picked by mistake
+- Added **Controller Button** and **Presses** rows to the game's own Settings > **Controller** tab: remap any controller button without the F1 page
+  - Before: giving a rear grip, a trackpad click or another controller button a Switch button was only possible in Settings (F1) > Controller, or in `controls.ini`
+  - Now: on Settings > Controller, press left or right on **Controller Button** to pick a button (for example Right grip R4), then on **Presses** pick what it presses on the Switch pad (Default, Nothing, A, B ...). Save as with any other row; Cancel keeps the old layout. A button the file maps to several buttons at once shows **Custom** and is left as it is
+  - Still not: it shows one button at a time; the F1 page still lists them all
 - Added two more bindable controller buttons: the **Steam button** and the **extra button** (the Steam Controller (2026)'s and the Steam Deck's quick-access "...", an Xbox Share, a PlayStation 5 microphone button) (Settings F1 > Controller > Pad buttons, or `guide` and `misc1` in `[padmap]` of `controls.ini`)
   - Before: they pressed nothing and could not be given a Switch button
   - Now: each has a row and can press any Switch button; with the Steam icons on, a prompt for a button you gave them shows an **S** or three dots. They press nothing until you pick one
