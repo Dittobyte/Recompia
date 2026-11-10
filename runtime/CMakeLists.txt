@@ -14,8 +14,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_C_STANDARD 11)
 
-if(NOT WIN32)
-    message(FATAL_ERROR "nxrt targets native Windows x64 only")
+# Windows x64 is the main target. Linux x86-64 builds through compat/linux: the Win32 subset the runtime uses, on POSIX.
+if(WIN32)
+    set(NXRT_LINUX OFF)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+    set(NXRT_LINUX ON)
+else()
+    message(FATAL_ERROR "nxrt targets Windows x64 and Linux x86-64")
 endif()
 
 # The generated-code ABI header (Ctx, call_indirect, ...) lives in the recompiler (recomp/include/nxrecomp/).
@@ -26,11 +31,15 @@ if(NOT EXISTS "${NXRT_RECOMP_INCLUDE}/nxrecomp/ctx.h" AND EXISTS "${CMAKE_CURREN
     set(NXRT_RECOMP_INCLUDE "${_nxrt_ri}" CACHE PATH "Directory that holds nxrecomp/" FORCE)
 endif()
 
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT NXRT_LINUX)
     add_compile_options(/W3 -Wno-unused-parameter -Wno-missing-field-initializers -Wno-cast-function-type-mismatch
                         -Wno-cast-function-type-strict -Wno-language-extension-token)
 endif()
-add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS _WIN32_WINNT=0x0A00)
+if(NXRT_LINUX)
+    add_compile_options(-Wall -Wno-unused-parameter -Wno-missing-field-initializers)
+else()
+    add_compile_definitions(NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS _WIN32_WINNT=0x0A00)
+endif()
 
 option(NXRT_BUILD_GFX "Build the graphics shell (SDL3 + Vulkan + NVN front end, src/gfx, cmake/gfx.cmake)" ON)
 # Game modules (games/<id>/, docs/GAME_BOUNDARY.md): the title-specific code a game exe links.
@@ -54,7 +63,14 @@ target_compile_definitions(nxrt PUBLIC NXRT_TESTTOOLS=$<BOOL:${NXRT_TESTTOOLS}>)
 if(EXISTS "${NXRT_RECOMP_INCLUDE}")
     target_include_directories(nxrt PUBLIC "${NXRT_RECOMP_INCLUDE}")
 endif()
-target_link_libraries(nxrt PUBLIC psapi)
+if(NXRT_LINUX)
+    target_include_directories(nxrt PUBLIC compat/linux)
+    target_sources(nxrt PRIVATE compat/linux/win32_compat.cpp)
+    find_package(Threads REQUIRED)
+    target_link_libraries(nxrt PUBLIC Threads::Threads ${CMAKE_DL_LIBS} rt)
+else()
+    target_link_libraries(nxrt PUBLIC psapi)
+endif()
 add_subdirectory(third_party/pokopia-coop)   # [net] protocol = native: pokopia-native's Link Play (MIT, C11)
 target_link_libraries(nxrt PRIVATE pokopia_coop)
 add_subdirectory(third_party/miniz)   # zlib streams (MIT): the Pokopia save repair, games/pkp/core/pkp_save_uuid.cpp
