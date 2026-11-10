@@ -9,6 +9,12 @@ of the game (version 2.0.1a): the download contains no game files.
 **Update:** press **Update**, then **Set up again** once (new game hook for Story co-op; your saves and shaders are kept).
 
 
+### Memory limit
+- `pkp.log` now shows both memory readings (private commit and pagefile usage) in its `footprint` line and in the 75% warning, and says once when the private-commit reading is 0
+  - Before: only the footprint was shown, so on Linux (Proton) a log reading `footprint 0.00 GB` could not tell whether the game used no memory or the reading was blind
+  - Now: the log names both readings; the limit itself is checked exactly as before
+  - Still not: the memory limit compares private commit, so it cannot trigger while that reading is 0; this only makes that visible in a log
+
 ### Graphics driver resets
 - `pkp.log` now says when every frame of a run waits on the graphics card from the start, which is what a driver reset on a Linux handheld looks like. The game cannot fix it: reboot the device. The README's common problems say so too
 - It also notices a run that starts fine and then slows down: when frames wait on the graphics card for three summary windows in a row, `pkp.log` says when it began (before, it only looked at the start of a run). It is a note for bug reports, not a fix

@@ -59,12 +59,30 @@ void raise_peak(uint64_t f) {
     }
 }
 
+// The process memory counters, read once for the footprint, the limit report and the log. All zero when the call fails. Under Wine
+// PrivateUsage stays 0 (only the base fields are filled in, PagefileUsage among them), which is why the log shows both.
+bool read_process_memory(PROCESS_MEMORY_COUNTERS_EX* pmc) {
+    *pmc = PROCESS_MEMORY_COUNTERS_EX{};
+    pmc->cb = sizeof *pmc;
+    return GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(pmc), sizeof *pmc) != 0;
+}
+
+// "private commit X GB, pagefile usage Y GB" for the log, each reading marked when it is 0. The footprint the guard compares is the
+// private commit minus the video memory counted as the GPU's.
+std::string commit_readings_text() {
+    PROCESS_MEMORY_COUNTERS_EX pmc;
+    read_process_memory(&pmc);
+    char b[160];
+    std::snprintf(b, sizeof b, "private commit %.2f GB%s, pagefile usage %.2f GB%s", static_cast<double>(pmc.PrivateUsage) / kBytesPerGb,
+                  pmc.PrivateUsage ? "" : " (reads 0)", static_cast<double>(pmc.PagefileUsage) / kBytesPerGb, pmc.PagefileUsage ? "" : " (reads 0)");
+    return b;
+}
+
 // The memory-limit report: same file as the crash report. The core of it (reason, footprint, frame times) is written first; the gauges follow
 // once read, on a helper thread because a gauge callback takes the lock of the thing it counts and that lock may be held by a stuck thread.
 void write_limit_report(uint64_t footprint, uint64_t limit) {
-    PROCESS_MEMORY_COUNTERS_EX pmc{};
-    pmc.cb = sizeof pmc;
-    GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&pmc), sizeof pmc);
+    PROCESS_MEMORY_COUNTERS_EX pmc;
+    read_process_memory(&pmc);
     const uint64_t priv = static_cast<uint64_t>(pmc.PrivateUsage);
     char b[512];
     std::string text;
@@ -138,6 +156,7 @@ void guard_loop(Settings s) {
     const double limit_gb = static_cast<double>(s.limit) / kBytesPerGb;
     auto next_log = Clock::now() + std::chrono::seconds(30);
     bool warned = false;
+    bool blind_noted = false;
     std::unique_lock<std::mutex> lk(g_mu);
     for (;;) {
         // Returns true as soon as g_stop is set (memguard_stop notifies), so stop is prompt.
@@ -150,13 +169,20 @@ void guard_loop(Settings s) {
 
         if (Clock::now() >= next_log) {
             next_log = Clock::now() + std::chrono::seconds(30);
-            NXLOG_I("memory", "footprint %.2f GB (peak %.2f GB, limit %.1f GB)", gb,
-                    static_cast<double>(g_peak.load()) / kBytesPerGb, limit_gb);
+            PROCESS_MEMORY_COUNTERS_EX pmc;
+            read_process_memory(&pmc);
+            NXLOG_I("memory", "footprint %.2f GB (peak %.2f GB, limit %.1f GB); %s", gb,
+                    static_cast<double>(g_peak.load()) / kBytesPerGb, limit_gb, commit_readings_text().c_str());
+            if (!blind_noted && pmc.PrivateUsage == 0 && pmc.PagefileUsage != 0) {
+                blind_noted = true;
+                NXLOG_W("memory", "private commit reads 0 while pagefile usage does not: the memory limit compares private commit, so it cannot trigger on this system");
+            }
         }
 
         if (!warned && f > s.limit / 4 * 3) {
             warned = true;
-            NXLOG_W("memory", "footprint %.2f GB is past 75%% of the %.1f GB limit ([memory] limit_gb): at the limit the game is stopped with a report", gb, limit_gb);
+            NXLOG_W("memory", "footprint %.2f GB is past 75%% of the %.1f GB limit ([memory] limit_gb): at the limit the game is stopped with a report (%s)", gb, limit_gb,
+                    commit_readings_text().c_str());
         }
 
         if (f > s.limit && !g_tripped.exchange(true)) {
@@ -177,11 +203,8 @@ void guard_loop(Settings s) {
 }  // namespace
 
 uint64_t memguard_footprint() {
-    PROCESS_MEMORY_COUNTERS_EX pmc{};
-    pmc.cb = sizeof pmc;
-    if (!GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&pmc), sizeof pmc))
-        return 0;
-    return static_cast<uint64_t>(pmc.PrivateUsage);
+    PROCESS_MEMORY_COUNTERS_EX pmc;
+    return read_process_memory(&pmc) ? static_cast<uint64_t>(pmc.PrivateUsage) : 0;
 }
 
 void memguard_set_discount(uint64_t (*gpu_bytes)()) { g_discount.store(gpu_bytes); }
