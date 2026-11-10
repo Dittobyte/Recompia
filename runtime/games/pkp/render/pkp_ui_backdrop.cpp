@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Pokémon Pokopia: full-screen UI backdrops on pictures narrower than 16:9 (4:3, 16:10, 3:2).
 //
+// Goal of the 4:3 work: proper native 4:3 (and other narrower-than-16:9) support. The game renders natively at the screen's aspect, with the 3D
+// view, the UI layout and the game's elements adjusted to it, instead of the 16:9 picture being squeezed or stretched into it. This file is only
+// the first step, the full-screen backdrops, fades and dim panels; menus, text and the HUD are still a 16:9 layout centred on the canvas, and
+// the textured backdrops, the letterboxed talking scenes and the studio logo screens are not covered.
+//
 // On a narrower picture the 3D view is taller (pkp_aspect.cpp) but the UI keeps its 1920x1080 canvas, centred, so every pane authored to fill
 // the canvas (a backdrop, a dim or frame filter, a fade square, the title's photo) ends at the 16:9 strip and the taller scene shows above
 // and below it. A pane that exactly fills the canvas (rectangle 0,0..1920,1080 from its world matrix, size and anchor) is scaled
