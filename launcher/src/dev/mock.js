@@ -396,6 +396,22 @@ function handle(cmd, args) {
       if (relay) relay = { ...relay, clients: Math.floor(Date.now() / 8000) % 4 };
       return relay;
     case 'lan_report': return lanReport;
+    case 'link_probe': {   // ?probe=refused|timed_out|bad_address picks the answer; an address ending in .99 is a host that is not there
+      const want = params.get('probe');
+      if (want === 'refused' || want === 'timed_out') return { kind: want };
+      if (want === 'bad_address') return { kind: 'bad_address', message: 'Type an address like 192.0.2.10 or 192.0.2.10:47600' };
+      return /\.99(:\d+)?$/.test(args.addr) ? { kind: 'timed_out' } : { kind: 'answered', ms: 14 };
+    }
+    case 'setup_facts': return params.get('firewall') === 'strict'
+      ? { firewalld: { state: 'running', zones: ['FedoraServer'], ports: [] } }
+      : params.get('firewall') === 'none' ? { firewalld: { state: 'absent', zones: [], ports: [] } }
+      : { firewalld: { state: 'running', zones: ['FedoraWorkstation'], ports: ['1025-65535/tcp', '1025-65535/udp'] } };
+    case 'tailscale_peers': return params.get('tailscale') === 'none'
+      ? { found: false, error: 'Tailscale is not installed on this PC.', self: [], peers: [] }
+      : { found: true, self: ['100.64.0.5'], peers: [
+        { name: 'deck', dns_name: 'deck.tail1234.ts.net', ips: ['100.64.0.9'], online: true, hosting: true },
+        { name: 'laptop', dns_name: 'laptop.tail1234.ts.net', ips: ['100.64.0.12'], online: true, hosting: false },
+        { name: 'old-pc', dns_name: '', ips: ['100.64.0.20'], online: false, hosting: null }] };
     case 'public_ip': return params.get('public') === 'none' ? null : '198.51.100.23';
     case 'room_code_new': return Array.from({ length: 4 }, () => Array.from({ length: 4 }, () => '0123456789ABCDEFGHJKMNPQRSTVWXYZ'[Math.floor(Math.random() * 32)]).join('')).join('-');
     case 'room_code_check': {
