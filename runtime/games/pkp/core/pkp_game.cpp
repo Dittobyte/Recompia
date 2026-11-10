@@ -11,6 +11,7 @@
 #include "core/pkp_linkplay.h"
 #include "core/pkp_mods_notice.h"
 #include "ui/pkp_menu.h"
+#include "render/pkp_ui_backdrop.h"
 #if NXRT_TESTTOOLS
 #include "test/pkp_movie_test.h"
 #include "test/pkp_taa_probe.h"
@@ -50,6 +51,7 @@ constexpr uint64_t kFrameUpdate = 0x1fdcde4;
 //                       order
 //   key_guide           after its clients: its install registers the hooks they need
 //   options             after title: title's frame callback runs first
+//   ui_backdrop         after menu: it registers a client of the menu's pane draw hooks (pkp_menu.h) and holds no hook of its own
 //   mods_notice         any position: it only logs which gameplay mods are on, at install
 // No other two features hook the same address.
 constexpr const Feature* kFeatures[] = {
@@ -57,7 +59,7 @@ constexpr const Feature* kFeatures[] = {
 #if NXRT_TESTTOOLS
     &kMovieTestFeature,
 #endif
-    &kMenuFeature, &kQualityFeature,
+    &kMenuFeature, &kUiBackdropFeature, &kQualityFeature,
     &kTaaFeature,
 #if NXRT_TESTTOOLS
     &kTaaProbeFeature,

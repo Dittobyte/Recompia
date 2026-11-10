@@ -110,8 +110,10 @@ void install_render(uint64_t base, const play::DisplaySettings& d, int window_w,
         }
         else scale = static_cast<float>(std::clamp(d.render_scale, 25, 400)) / 100.0f;
         gfx::tuning().render_scale.store(scale);
-        NXLOG_I(kTag, "aspect %.4f (%s, window %dx%d): %dx%d game targets at scale %.3f, 3D view %s, UI kept 16:9 and centred, dynamic resolution %s",
-                wd.aspect, d.aspect > 0 ? "[display] aspect" : "auto", window_w, window_h, gw, gh, scale,
+        // what the shape costs: pixels per frame against the same scale at 16:9 (a taller picture draws more of the world, so more pixels)
+        const double mp = static_cast<double>(gw) * gh * scale * scale / 1e6, mp169 = static_cast<double>(kTableW) * kTableH * scale * scale / 1e6;
+        NXLOG_I(kTag, "aspect %.4f (%s, window %dx%d): %dx%d game targets at scale %.3f (%.1f MP a frame, 16:9 at this scale %.1f MP), 3D view %s, UI kept 16:9 and centred, dynamic resolution %s",
+                wd.aspect, d.aspect > 0 ? "[display] aspect" : "auto", window_w, window_h, gw, gh, scale, mp, mp169,
                 wd.aspect > kAspect169 ? "Hor+ (same vertical FOV, wider horizontal)" : wd.taller_fov ? "16:9 width kept, taller (camera FOV and aspect, [pkp] taller_fov)" : "16:9 width kept, taller", d.dynamic_resolution ? "on" : "off");
         s.render_installed = true;
         return;

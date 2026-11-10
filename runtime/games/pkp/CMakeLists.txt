@@ -42,6 +42,7 @@ if(TARGET nxrt_gfx)
         "${_pkp}/render/pkp_gfx_heap.cpp"
         "${_pkp}/render/pkp_quality.cpp"
         "${_pkp}/render/pkp_taa.cpp"
+        "${_pkp}/render/pkp_ui_backdrop.cpp"
         # input
         "${_pkp}/input/pkp_play.cpp"
         "${_pkp}/input/pkp_mouse_camera.cpp"
