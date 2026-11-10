@@ -18,6 +18,7 @@
 #include "input/pkp_play.h"
 #include "render/pkp_quality.h"
 #include "core/pkp_save_uuid.h"
+#include "core/pkp_pokemon_cap.h"
 #include "ui/pkp_sort.h"
 #include "render/pkp_taa.h"
 #include "ui/pkp_title.h"
@@ -51,7 +52,7 @@ constexpr uint64_t kFrameUpdate = 0x1fdcde4;
 //   options             after title: title's frame callback runs first
 // No other two features hook the same address.
 constexpr const Feature* kFeatures[] = {
-    &kSaveUuidFeature, &kLinkplayFeature, &kPlayFeature, &kKbmFeature,
+    &kSaveUuidFeature, &kPokemonCapFeature, &kLinkplayFeature, &kPlayFeature, &kKbmFeature,
 #if NXRT_TESTTOOLS
     &kMovieTestFeature,
 #endif

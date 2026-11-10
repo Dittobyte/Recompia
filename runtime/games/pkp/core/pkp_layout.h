@@ -13,6 +13,7 @@ constexpr uint64_t kSaveRoot = 0x3561930;        // the save data (the save/opti
 constexpr uint64_t kInputMgr = 0x3561718;        // the input manager
 constexpr uint64_t kTables = 0x35618f0;          // the data-table manager (the sprite sheet lookups read it too)
 constexpr uint64_t kUiMgr = 0x35aebf8;           // the UI manager (UI resource manager: holds the loaded sprite sheets and the layout pools)
+constexpr uint64_t kPokemonParamsRoot = 0x36ca678;  // -> holder -> (+0x20) resident parameter object
 constexpr uint64_t kLanguage = 0x36ca680;        // -> u32 language 0..8
 
 // ---- the data-table manager: table i at +0x10 + its offset (pkp_tables.h looks a row up) ----

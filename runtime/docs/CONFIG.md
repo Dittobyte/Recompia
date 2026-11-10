@@ -385,6 +385,7 @@ Pokopia's own keys, in the `[pkp]` section of the game ini (`pkp.ini`; `nxrt.ini
 | `pkp` | `craft_search` | `1` | `1` `0` | `NXRT_PKP_CRAFT_SEARCH` | A Search button in the crafting screen's key guide. Next start. |
 | `pkp` | `title_quit` | `1` | `1` `0` | `NXRT_PKP_TITLE_QUIT` | A Quit Game key guide on the title screen. Next start. |
 | `pkp` | `options_menu` | `1` | `1` `0` | `NXRT_PKP_OPTIONS_MENU` | The PC settings as tabs and rows of the game's own Settings screen. Next start. |
+| `pkp` | `pokemon_cap_50` | `1` | `1` `0` | `NXRT_PKP_POKEMON_CAP_50` | Raise the simultaneous resident limit from 25 to 50 (object limit 30 to 55). Next start. |
 
 <!-- end of the generated game ini keys -->
 
