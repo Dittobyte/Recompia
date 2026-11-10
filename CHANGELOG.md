@@ -10,6 +10,9 @@ of the game (version 2.0.1a): the download contains no game files.
 
 **Testing build:** the gameplay extras (Camera aim, Running jump, Sort, Search, Quit Game) are now **off by default**; players coming from 0.9.0 who never set them lose them until they switch them on in Settings. A value already in `pkp.ini` is kept.
 
+### Gameplay mods
+- Settings > Gameplay and `pkp.log` now show which gameplay mods and experimental features are on, so you can see at a glance what a start will use
+
 ### The Testing tab
 - Added a **Testing** tab to Settings, shown only on the Testing channel: send logs, read them, and switch the features still being tried on or off
   - **Export and report** makes one zip of `pkp.log`, `pkp.log.prev`, the crash files, `setup.log` and `pkp.ini`, opens its folder (`testing-logs` next to `pkp.exe`) and the bug report form. Drag the zip into the form: the launcher has no GitHub login, so nothing is uploaded for you
