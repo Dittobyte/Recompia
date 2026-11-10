@@ -15,6 +15,12 @@ of the game (version 2.0.1a): the download contains no game files.
   - Now: the log names both readings; the limit itself is checked exactly as before
   - Still not: the memory limit compares private commit, so it cannot trigger while that reading is 0; this only makes that visible in a log
 
+### Launcher layout
+- Added a **Layout** button in the launcher's sidebar, beside Colours and Hide sidebar. It opens a panel where you choose how the launcher is arranged: the sidebar on the left, right, top or bottom, or icons only; the order of the sidebar items, and which of them to hide (Home and Settings always stay); comfortable or compact spacing; and whether the news cards and the chips under the Play button (profile, Link Play and Discord) show on Home. Changes show at once, **Reset to default** puts everything back, and your choice is kept on your PC
+  - Before: the launcher had one fixed arrangement
+  - Now: the arrangement is yours, and the pad, keyboard and touch screen all work in every position. Notices about a problem, such as a crash or a failed update, are never hidden
+  - Still not: you cannot drag parts around freely yet, and the sections of Home other than the news cards and those chips cannot be moved or hidden
+
 ### Graphics driver resets
 - `pkp.log` now says when every frame of a run waits on the graphics card from the start, which is what a driver reset on a Linux handheld looks like. The game cannot fix it: reboot the device. The README's common problems say so too
 - It also notices a run that starts fine and then slows down: when frames wait on the graphics card for three summary windows in a row, `pkp.log` says when it began (before, it only looked at the start of a run). It is a note for bug reports, not a fix
