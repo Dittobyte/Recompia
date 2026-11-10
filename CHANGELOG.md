@@ -6,6 +6,12 @@ of the game (version 2.0.1a): the download contains no game files.
 
 ## Unreleased
 
+### Your own launcher background
+- The launcher can use a picture from your PC as its background (Testing channel)
+  - Before: the launcher always showed its built-in pictures
+  - Now: open **Layout** in the sidebar, then **Appearance > Choose picture...**; pick a PNG, JPEG or WebP, set **Dim** so the text stays easy to read, and **Reset to default** brings the built-in picture back; the picture stays on this PC and is never uploaded
+  - Still not: no animated pictures, and no different picture for each page
+
 **Update:** press **Update**, then **Set up again** once (new game hook for Story co-op; your saves and shaders are kept).
 
 

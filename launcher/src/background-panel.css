@@ -1,0 +1,9 @@
+/* The Appearance section of the Layout panel (background-panel.js). Uses the launcher's tokens, so it follows every palette. */
+.bg-help { margin: 0; color: var(--color-text-2); font-size: var(--text-sm); }
+.bg-preview { display: flex; align-items: center; justify-content: center; width: 100%; max-width: 220px; aspect-ratio: 16 / 10; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-md, 14px); }
+.bg-preview img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.bg-preview.is-empty { color: var(--color-text-2); font-size: var(--text-sm); }
+.bg-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.bg-dimrow { justify-content: space-between; flex-wrap: nowrap; }
+.bg-sec .btn { min-height: 44px; }
+.bg-status { min-height: 1.4em; margin: 0; color: var(--color-text-2); font-size: var(--text-sm); }
