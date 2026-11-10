@@ -1,6 +1,7 @@
 // The Testing tab's log tools: send (export a redacted zip, open the folder and the bug form) and the viewer. The Rust side is testlogs.rs.
 import { api } from '../api.js';
 import { confirm, errText, esc, icon, toast } from '../ui.js';
+import { extractReport, formatReport } from '../handheld-report-model.js';
 import { REPORT_URL, fileLabel, filterLines, sizeText, zipName } from '../testing-model.js';
 
 const open = (url) => api.openReleaseUrl({ url });
@@ -68,4 +69,20 @@ export async function viewLogs() {
       load();
     },
   });
+}
+
+/** Copies one block with the lines of pkp.log a handheld bug report needs (handheld-report-model.js), read through the redacting viewer command. */
+export async function copyHandheldReport(version, channel) {
+  let tail;
+  try {
+    tail = await api.testingLogRead({ name: 'pkp.log' });
+  } catch (e) {
+    toast(errText(e), 'error');
+    return;
+  }
+  const block = formatReport(extractReport(tail.text, tail.truncated), { version, channel });
+  try {
+    await navigator.clipboard.writeText(block);
+    toast('Report copied. Paste it into your bug report.', 'ok');
+  } catch { toast('Cannot copy here', 'error'); }
 }

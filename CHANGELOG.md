@@ -64,6 +64,10 @@ of the game (version 2.0.1a): the download contains no game files.
 - **Story co-op** (experimental, `[pkp] link_story_coop`): the host's own story no longer stops while friends are visiting. Before, any Link Play session turned the host's story talks into "Bring <host> here to say hi!" and paused its requests. From pokopia-native 1.4.0
 
 ### Launcher
+- Added **Copy handheld report** to Settings > Testing (Testing channel only)
+  - Before: a tester on an AMD handheld had to send the whole `pkp.log`, which holds names and paths, and say by hand what mattered
+  - Now: one press copies a short block with only the useful lines of `pkp.log` (handheld detection, graphics card and driver, memory, the frame summaries and any graphics reset or crash), with user names, home folders, addresses and room codes removed, ready to paste into a bug report. Add your device, system, power mode and what you were doing
+  - Still not: it does not send anything and does not replace **Export and report** when a full log is asked for
 - Added **arrow-key** navigation to the launcher, for a handheld whose d-pad reaches it as keys
   - Before: Steam's default layout for a non-Steam shortcut sends the d-pad as arrow keys, and the launcher ignored them
   - Now: the arrow keys move between controls, Enter presses, Escape goes back (closes a question, or returns Home), the same as the pad
