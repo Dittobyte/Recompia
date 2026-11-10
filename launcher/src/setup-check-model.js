@@ -1,6 +1,6 @@
 // Link Play setup check: turns what this PC reports (lan_report, setup_facts) and a connection test (link_probe) into plain findings
 // for a player. Pure: no DOM, no Tauri, no fetch. It only builds text; a command in a fix is shown to the player, never run.
-import { HOST_PORT } from './linkplay-model.js';
+import { HOST_PORT, RELAY_PORT, parseAddr } from './linkplay-model.js';
 
 const ORDER = { problem: 0, tip: 1, ok: 2 };
 
@@ -20,7 +20,9 @@ export function setupFindings({ lan, facts, port = HOST_PORT } = {}) {
   const lans = lan?.lan ?? [];
   const overlays = lan?.overlay ?? [];
 
-  if (!lans.length && !overlays.length) {
+  if (!lan) {
+    add('lan-unknown', 'tip', "Could not read this PC's network addresses", 'The launcher could not look up the addresses of this PC, so this check cannot say whether it is connected.', 'Try again in a moment.');
+  } else if (!lans.length && !overlays.length) {
     add('no-address', 'problem', 'This PC has no network address to share',
       'No connected network was found, so nobody can reach this PC.',
       'Connect to Wi-Fi or plug in a network cable, then check again.');
@@ -69,10 +71,14 @@ export function probeMessage(result, addr) {
   switch (result?.kind) {
     case 'answered':
       return { level: 'ok', text: `Reached ${addr} in ${result.ms} ms. A game is listening there.` };
-    case 'refused':
-      return { level: 'tip', text: 'The PC answered, but no game is hosting on that port. Start the game as host, then test again.' };
-    case 'timed_out':
-      return { level: 'problem', text: `No answer from ${addr}. A firewall may block port ${HOST_PORT}, the PC may be on another network, or it is switched off.` };
+    case 'refused': {
+      const relay = parseAddr(addr)?.port === RELAY_PORT;
+      return { level: 'tip', text: relay ? 'The PC answered, but no relay is running there. Turn on the relay first, then test again.' : 'The PC answered, but no game is hosting on that port. Start the game as host, then test again.' };
+    }
+    case 'timed_out': {
+      const port = parseAddr(addr)?.port ?? HOST_PORT;
+      return { level: 'problem', text: `No answer from ${addr}. A firewall may block port ${port}, the PC may be on another network, or it is switched off.` };
+    }
     case 'bad_address':
       return { level: 'problem', text: result.message || 'That does not look like an address. Type something like 192.168.1.20.' };
     default:

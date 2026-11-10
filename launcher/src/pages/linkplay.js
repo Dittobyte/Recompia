@@ -154,7 +154,7 @@ export async function render(el, ctx) {
   const checkIcon = { ok: 'circle-check', tip: 'info', problem: 'triangle-alert' };
   const checkTone = { ok: 'ok', tip: 'info', problem: 'warn' };
   const checkBanner = (level, title, detail, fix) => `<div class="banner ${checkTone[level]}">${icon(checkIcon[level])}<div class="grow">${title ? `<strong>${esc(title)}</strong>` : ''}<div>${esc(detail)}</div>${fix ? `<div>${esc(fix)}</div>` : ''}</div></div>`;
-  const checkButton = (act, label, ico) => `<button class="btn sm" data-act="${act}" ${busy ? 'disabled' : ''}>${icon(ico)}${busy === act ? 'Working\u2026' : label}</button>`;
+  const checkButton = (act, label, ico) => `<button class="btn sm" id="lp-btn-${act}" data-act="${act}" ${busy ? 'disabled' : ''}>${icon(ico)}${busy === act ? 'Working\u2026' : label}</button>`;
 
   /** The address Test connection tries: the one typed on this page, with the relay's port when the visit goes through a relay. */
   function probeTarget() {
@@ -170,7 +170,7 @@ export async function render(el, ctx) {
     rows.push(row('Check my setup', checkButton('setup-check', 'Check', 'wrench')));
     if (isVisit()) rows.push(row('Friends on my Tailscale', checkButton('friends', 'Look', 'users')));
     let out = '';
-    if (probeOut && (ui.view === 'lan' || isVisit())) out += checkBanner(probeOut.level, '', probeOut.text);
+    if (probeOut && probeOut.addr === probeTarget() && (ui.view === 'lan' || isVisit())) out += checkBanner(probeOut.level, '', probeOut.text);   // only for the address it tried
     if (setupOut) out += setupOut.map((f) => checkBanner(f.level, f.title, f.detail, f.fix)).join('');
     if (friendsOut && isVisit()) {
       out += friendsOut.ok
@@ -181,44 +181,47 @@ export async function render(el, ctx) {
     return group('Check the connection', rows) + out;
   }
 
+  const drawChecks = () => patch(part('lp-checks'), checksHtml());
+
   const probe = () => inOrder(async () => {
     const addr = probeTarget();
     if (!addr) {
       probeOut = { level: 'tip', text: 'Type or paste the host\'s address first, then test.', addr };
-      draw();
+      drawChecks();
       return;
     }
     busy = 'probe';
-    draw();
+    drawChecks();
     try {
       probeOut = { ...probeMessage(await api.linkProbe({ addr }), addr), addr };
     } finally {
       busy = '';
-      draw();
+      drawChecks();
     }
   });
 
   const runSetupCheck = () => inOrder(async () => {
     busy = 'setup-check';
-    draw();
+    drawChecks();
     try {
       const [facts, report] = await Promise.all([api.setupFacts().catch(() => null), api.lanReport().catch(() => null)]);
       lan = report || lan;
-      setupOut = setupFindings({ lan, facts });
+      // the port a friend needs: this PC's relay while it runs, else the host port
+      setupOut = setupFindings({ lan, facts, port: relay ? relayPort(relay) : HOST_PORT });
     } finally {
       busy = '';
-      draw();
+      drawChecks();
     }
   });
 
   const runFriends = () => inOrder(async () => {
     busy = 'friends';
-    draw();
+    drawChecks();
     try {
       friendsOut = friendRows(await api.tailscalePeers().catch(() => null));
     } finally {
       busy = '';
-      draw();
+      drawChecks();
     }
   });
 
@@ -268,9 +271,14 @@ export async function render(el, ctx) {
     if (!node || node.dataset.html === html) return false;
     const a = document.activeElement;
     const key = node.contains(a) ? (a.id ? `#${a.id}` : a.name ? `input[name="${a.name}"]:checked` : null) : null;
+    const caret = key && typeof a.selectionStart === 'number' ? [a.selectionStart, a.selectionEnd] : null;
     node.innerHTML = html;
     node.dataset.html = html;
-    if (key) node.querySelector(key)?.focus();
+    if (key) {
+      const back = node.querySelector(key);
+      back?.focus();
+      if (caret) { try { back?.setSelectionRange(...caret); } catch { /* not a text field */ } }
+    }
     return true;
   }
 
@@ -483,6 +491,8 @@ export async function render(el, ctx) {
     draw();
     enter();
     await commit();
+    if (Object.values(problems).some(Boolean)) return;   // the field shows what is wrong: no "applied" on top of it
+    input.value = '';   // done: leaving the box must not apply the same text twice
     toast(inviteNote(r.invite), 'ok');
   });
 

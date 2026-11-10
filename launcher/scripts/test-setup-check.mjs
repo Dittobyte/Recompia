@@ -43,11 +43,13 @@ fs = setupFindings({ lan: LAN, facts: null });
 assert.ok(!fs.some((x) => x.id.startsWith('firewall')));
 
 // no address
-fs = setupFindings({ lan: null, facts: null });
+fs = setupFindings({ lan: { lan: [], overlay: [] }, facts: null });
 assert.equal(fs[0].id, 'no-address');
 assert.equal(fs[0].level, 'problem');
 assert.match(fs[0].title, /no network address/);
-assert.equal(setupFindings({ lan: { lan: [], overlay: [] }, facts: null })[0].id, 'no-address');
+// a report that could not be read is not "no address": the check says it could not look
+fs = setupFindings({ lan: null, facts: null });
+assert.ok(fs.some((x) => x.id === 'lan-unknown') && !fs.some((x) => x.id === 'no-address'));
 
 // Public network comes from lan.warning
 const warn = 'Windows treats this network as Public, so other PCs may not reach you.';
@@ -101,5 +103,11 @@ assert.match(p.text, /port 47600/);
 p = probeMessage({ kind: 'bad_address', message: 'Type an address like 192.0.2.10' }, 'x');
 assert.deepEqual(p, { level: 'problem', text: 'Type an address like 192.0.2.10' });
 for (const k of [{ kind: 'answered', ms: 1 }, { kind: 'refused' }, { kind: 'timed_out' }]) assert.ok(!/[–—]/.test(probeMessage(k, 'a').text));
+
+// the probe message names the port that was tried, and a refused relay is a relay problem
+assert.match(probeMessage({ kind: 'timed_out' }, '192.0.2.10:47610').text, /port 47610/);
+assert.match(probeMessage({ kind: 'timed_out' }, '192.0.2.10').text, /port 47600/);
+assert.match(probeMessage({ kind: 'refused' }, '192.0.2.10:47610').text, /relay/);
+assert.match(probeMessage({ kind: 'refused' }, '192.0.2.10:47600').text, /hosting/);
 
 console.log('setup check ok');
