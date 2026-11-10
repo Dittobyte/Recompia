@@ -298,11 +298,7 @@ const Row kMouse[] = {
     choice("Invert Horizontal", "Moving the mouse left looks right.", kOffOn, 2, ROW_BOOL(mouse.invert_x)),
     choice("Mouse Pointer in Menus", "Use the mouse as a pointer: hover, click, right click, wheel.", kOffOn, 2, ROW_BOOL(mouse.menu_cursor)),
     names("Button Icons", "The button icons in prompts. Automatic follows the last device used.", kPromptNames, static_cast<uint8_t>(std::size(kPromptNames)), ROW_ENUM(prompts.style, play::PromptStyle)),
-    // parked with the Joy-Con 2 mouse mode (pkp_mouse_mode.cpp kMouseModeParked): put the row back when the mode returns
-#if 0
-    dynamic("Mouse Mode Key", "Turns the Joy-Con 2 mouse mode on and off (point and click to place and break). To change it, press left or right on this row (or click it), then press the new key or mouse button. Esc cancels.",
-            mouse_mode_text, mouse_mode_max, [](const S&) { return kMmMid; }, [](S&, int) {}),
-#endif
+    // The Joy-Con 2 "Mouse Mode Key" row is parked with the mode (pkp_mouse_mode.cpp kMouseModeParked): its helpers below stay, the row is in the git history (commit b3581ea) and goes back here when the mode returns
 };
 
 // The pad button remap, two rows at the end of the Controller tab (they use the last two of its 13 slots): "Controller Button" picks one of
