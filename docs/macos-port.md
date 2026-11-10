@@ -602,6 +602,11 @@ launcher/scripts/make-app.sh <play folder>   # optional: PokopiaLauncher.app aro
 opens a white window — it is ~650 KB smaller and has no `index-<hash>.js` in its `strings`.
 
 Put the binary in the game folder; the launcher looks for the game next to itself (`pkp`, `pkp.ini`, `shader_cache`).
+**Launch it as the `.app`** (`open PokopiaLauncher.app` or a double click): a bare Unix executable double-clicked in Finder
+opens Terminal around it, which is where its output and the game's would show. The game's stdout and stderr are discarded
+when the launcher starts it (Windows spawns it with `CREATE_NO_WINDOW`); its log, crash report and freeze dump are files in
+the game folder either way.
+
 `--play` starts the game without the window, `--setup` runs Set up without it (extract the shader corpus and translate
 it), `--preflight` prints the checks and `--readiness` prints what Play would see. The window's Play starts `pkp` in that
 folder with `--log pkp.log`; the shader steps of the Windows release are skipped (the game is native, the tools are not).
