@@ -19,6 +19,7 @@ This Testing build adds logging and a few device checks, and changes no frame-ra
   - Still not: nothing else changes; the texture preparation behaves exactly as before (the 480 unknown-proc lines at startup stay as they are for now)
 
 ### Memory limit under Proton
+- The settings reference now says the memory limit defaults to 16 GB for Pokopia (it said 8 GB, which is the default for other games)
 - The game's memory limit ([memory] limit_gb) now works under Proton
   - Before: under Proton the reading the limit compares (private commit) can be 0, so the limit never triggered even when the game used many gigabytes; `pkp.log` showed `footprint 0.00 GB` next to a real pagefile usage
   - Now: when the private commit reads 0, the limit compares the pagefile usage (resident anonymous memory plus swap), so `footprint` shows the real figure and the limit can trigger before the device runs out of memory; the first time it happens `pkp.log` says so
