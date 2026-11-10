@@ -118,7 +118,7 @@ struct State {
     // answers
     std::string names[kIconCount];
     bool any_name = false;
-    bool logged_names = false;   // the resolved icon names, logged once (a wrong style or a missing pack shows here)
+
     PromptStyle effective = PromptStyle::Switch;
     // the inputs of the last update
     bool have_inputs = false;
@@ -240,25 +240,6 @@ void prompts_update(const Settings& settings, const PromptInputs& in) {
             s.effective = eff;
         }
         s.any_name = any;
-        if (!any && !s.logged_names) {
-            s.logged_names = true;
-            // A game without a PromptGame (pkp: it draws the keyboard icons into its own atlas, games/pkp/pkp_kbm.cpp) has no icon
-            // textures to replace; saying so once per style is enough.
-            if (prompt_game()) {
-                int with_buttons = 0;
-                for (int a = 1; a < kActCount; ++a)
-                    if (settings.out[a].buttons) ++with_buttons;
-                NXLOG_W(kTag, "no icon name resolved (%s): %zu bindings, %d of %d actions carry a button", prompt_style_name(eff),
-                        settings.bindings.size(), with_buttons, kActCount - 1);
-            }
-        }
-        if (any && !s.logged_names) {
-            s.logged_names = true;
-            std::string all;
-            for (int i = 0; i < kIconCount; ++i)
-                if (!s.names[i].empty()) all += std::string(icon_asset_name(static_cast<Icon>(i))) + "=" + s.names[i] + " ";
-            NXLOG_I(kTag, "icon names (%s): %s", prompt_style_name(eff), all.c_str());
-        }
         if (any && !s.hook_set) {
             s.hook_set = true;
             install = true;

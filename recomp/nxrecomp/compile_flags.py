@@ -10,7 +10,7 @@ were when the tables were merged (the player build and the developer build each 
   * optimisation: clang-cl /O1 is clang's -Os (size), the player build uses -O1;
   * the player build adds -fno-threadsafe-statics (clang-cl keeps the MSVC thread-safe local statics);
   * target: the developer build is the MSVC ABI (static CRT /MT from cmake/clang-cl.cmake), the player build mingw;
-    -mcx16 and -mcpu=x86_64+cx16 both turn on cmpxchg16b on the x86-64 baseline.
+    -mcx16 and -mcpu=x86_64+cx16 both turn on cmpxchg16b on the x86-64 baseline (added only for x86-64 targets: see for_arch).
 Changing ZIG_MINGW changes the players' build stamp and object cache keys (every unit compiles again).
 """
 
@@ -18,8 +18,24 @@ Changing ZIG_MINGW changes the players' build stamp and object cache keys (every
 # not be fused or reordered (smo-recomp's flags)
 SEMANTIC = ['-fno-strict-aliasing', '-ffp-contract=off']
 
+# -mcx16 asks for the 128-bit cmpxchg the lifted code's exclusive-monitor emulation needs on x86-64 (docs/GAPS.md). It is an
+# x86 option: on AArch64 a 128-bit __atomic_compare_exchange is a CASP instruction pair and clang rejects the flag, so it is
+# added only when the lifted code is built for x86-64.
+ARCH_FLAGS = {'x86_64': ['-mcx16'], 'amd64': ['-mcx16']}
+
+
+def _arch_flags(arch):
+    return ARCH_FLAGS.get((arch or '').lower(), [])
+
+
 CLANG_CL_OPT = '/O1'
-CLANG_CL = ['/w', '/EHs-c-', '/GR-'] + SEMANTIC + ['-mcx16']
-CLANG = ['-O1', '-w', '-fno-exceptions', '-fno-rtti'] + SEMANTIC + ['-mcx16']
+CLANG_CL = ['/w', '/EHs-c-', '/GR-'] + SEMANTIC
+CLANG = ['-O1', '-w', '-fno-exceptions', '-fno-rtti'] + SEMANTIC
+
+
+def for_arch(arch, kind):
+    """The flags of one build of the lifted code: kind 'clang_cl' or 'clang', arch the target processor (CMAKE_SYSTEM_PROCESSOR)."""
+    base = CLANG_CL if kind == 'clang_cl' else CLANG
+    return base + _arch_flags(arch)
 ZIG_MINGW = (['-target', 'x86_64-windows-gnu', '-mcpu=x86_64+cx16', '-std=c++20', '-O1', '-w', '-fno-exceptions', '-fno-rtti']
              + SEMANTIC + ['-fno-threadsafe-statics'])

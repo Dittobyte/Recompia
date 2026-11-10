@@ -338,10 +338,17 @@ pub fn memory_pressure_level() -> Option<i32> {
 /// True when the game must be stopped to keep the machine alive. Critical pressure, or under 6 % free: the game needs
 /// ~9 GB and a 16 GB host has to compress/swap the rest, so a warning-level stop would kill it every time it loads the
 /// world (the disk has room for swap; the kernel's critical level is the real danger sign).
+#[cfg(target_os = "macos")]
 pub fn memory_is_short() -> bool {
     let ratio = free_memory_ratio();
     let level = memory_pressure_level();
     level.is_some_and(|l| l >= 4) || ratio.is_some_and(|f| f < 0.06)
+}
+
+/// Windows and Linux: nothing to watch here -- the game's own memguard ([memory] limit_gb) is the guard.
+#[cfg(not(target_os = "macos"))]
+pub fn memory_is_short() -> bool {
+    false
 }
 
 #[cfg(not(target_os = "macos"))]

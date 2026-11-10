@@ -184,6 +184,12 @@ fn game_command(exe: &Path, dir: &Path, clock: Option<crate::events::ClockOverri
     if crate::host::native_game() && dir.join(crate::settings::PKP_INI).is_file() {
         cmd.args(["--ini", crate::settings::PKP_INI]);
     }
+    if crate::host::native_game() {
+        // The game writes its log to pkp.log and tees it to stdout. Windows spawns it with CREATE_NO_WINDOW and a GUI-subsystem
+        // exe, so nothing shows; on macOS it would inherit the launcher's terminal (or the .app's stderr). Nothing is lost: the
+        // log file and the crash/freeze reports are next to the game.
+        cmd.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+    }
     if let Some(clock) = clock {
         clock.apply_to(&mut cmd);
     }

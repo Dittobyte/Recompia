@@ -473,22 +473,6 @@ void dump_atlas(State& s, uint64_t tex) {
 }
 #endif
 
-// NXRT_PKP_KBM_DUMP=<folder>: the atlas after the glyphs were drawn (<folder>/atlas_<id>_<w>x<h>_after.bc7, once per texture).
-void dump_atlas_after(uint64_t tex, const char* dir) {
-    gfx::GuestTexInfo ti;
-    std::vector<uint8_t> blocks;
-    uint32_t w = 0, h = 0;
-    if (!gfx::guest_texture_info(reinterpret_cast<const void*>(tex), &ti) || !gfx::texture_read_bc7_level(reinterpret_cast<const void*>(tex), 0, &blocks, &w, &h))
-        return;
-    char path[512];
-    std::snprintf(path, sizeof path, "%s/atlas_%u_%ux%u_after.bc7", dir, ti.id, w, h);
-    if (FILE* f = std::fopen(path, "wb")) {
-        std::fwrite(blocks.data(), 1, blocks.size(), f);
-        std::fclose(f);
-        NXLOG_I(kTag, "kbm: the patched atlas #%u written to %s", ti.id, path);
-    }
-}
-
 // Looks up the sprite of a glyph code (through an action that shows it) and, for a code with a slot, where it is in the atlas. Caller holds s.mu.
 // False: the sprite sheet is not loaded yet (the code stays unknown, to be looked up again).
 bool resolve_code(::Ctx* c, State& s, uint32_t code, uint32_t action) {
@@ -623,7 +607,6 @@ void sync_glyphs_locked(State& s) {
                 g.shown = target;
                 s.patches.fetch_add(1, std::memory_order_relaxed);
                 NXLOG_I(kTag, "kbm prompt %s: icon %s", kSlotName[i], target.c_str());
-                if (const char* dir = std::getenv("NXRT_PKP_KBM_DUMP"); dir && *dir) dump_atlas_after(reinterpret_cast<uint64_t>(tex), dir);
             } else {
                 gfx::GuestTexInfo fi;
                 if (gfx::guest_texture_info(tex, &fi))

@@ -54,7 +54,7 @@ file(GLOB NX_LIFTER_SOURCES CONFIGURE_DEPENDS
 function(_nxrecomp_info game out)
   get_property(json GLOBAL PROPERTY NXRECOMP_INFO_${game})
   if(NOT json)
-    execute_process(COMMAND "${NX_PYTHON}" -m nxrecomp build-info --game ${game} WORKING_DIRECTORY "${NXRECOMP_ROOT}"
+    execute_process(COMMAND "${NX_PYTHON}" -m nxrecomp build-info --game ${game} --arch "${CMAKE_SYSTEM_PROCESSOR}" WORKING_DIRECTORY "${NXRECOMP_ROOT}"
                     OUTPUT_VARIABLE json RESULT_VARIABLE rc ERROR_VARIABLE err)
     if(NOT rc EQUAL 0)
       message(FATAL_ERROR "nxrecomp build-info --game ${game} failed (${NX_PYTHON}): ${err}")
@@ -192,11 +192,6 @@ function(nxrecomp_add_module target)
     target_compile_options(${target} PRIVATE ${opt} ${flags})
   else()
     _nxrecomp_info_list("${info}" clang flags)
-    # -mcx16 asks for the 128-bit cmpxchg the lifted code's exclusive-monitor emulation needs (docs/GAPS.md). It is an x86 option: on
-    # AArch64 a 128-bit __atomic_compare_exchange is a plain instruction pair (CAS + CASP), and clang rejects the flag there.
-    if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
-      list(FILTER flags EXCLUDE REGEX "^-mcx16$")
-    endif()
     target_compile_options(${target} PRIVATE ${flags})
   endif()
   if(NX_USE_LAUNCHER)

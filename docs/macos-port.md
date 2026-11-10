@@ -498,259 +498,43 @@ Counts are files that reference the API (of the 80 coupled files).
 
 ## 7. Implementation status
 
-What is in the tree now, and what the evidence for it is. "Compiles" means it was checked, not assumed.
+What is in the tree and what the evidence for it is. Everything below was run on the target (macOS 27.2, Apple M3,
+16 GB, Apple clang 17), not cross-checked.
 
-### Verified on Apple Silicon (macOS 27.2, Apple M3, Apple clang 17)
-
-Everything below was run on the target, not cross-checked:
-
-- **Build**: `cmake --preset macos-arm64` + `cmake --build` produce `libnxrt.a`, `libnxrt_gfx.a`, `nxrt_gfx_demo`,
-  `nxrt_memprobe` and (from `game-build/`) `pkp`. First configure downloads the pinned deps into
-  `~/Library/Caches/nxrt/deps`; MoltenVK comes from Homebrew (`/opt/homebrew/lib`).
-- **M1**: `nxrt_memprobe` reserves the layout, creates the 6 GiB heap section, commits, aliases at `0x7300000000`,
-  writes through the alias, and reserves/commits/writes every page of the four module images at their real bases
-  (main 0x3d20000, sdk 0xff0000, subsdk0 0x140000, rtld 0x20000 bytes). 5/5 runs, 0 failures.
-- **M2**: `nxrt_gfx_demo --headless --frames 300` → `gpu="Apple M3" frames=300 fps≈4400 … validation_errors=0`; the
-  windowed `--overlay --frames 600` run presents 600 frames with the ImGui overlay; `--screenshot` writes a 1280x720
-  RGBA PNG of the scene. The ASTC passthrough, the `pool_copy` default and the three feature degradations are in the
-  log.
-- **M3**: `pkp` loads all four lifted modules (149,924 + 47,943 + 2,730 + 37 functions), runs rtld, starts `sm:` and
-  the services, creates the 12 GiB heap section, brings up the NVN/Vulkan back end on the M3, places the game's five
-  GPU pools, and submits one NVN command buffer. It then stops inside the game's own initialisation (see §8).
-
-The rest of this section is the pre-Mac evidence: what was checked before an Apple Silicon machine was available.
-
-### The address space macOS already owns — measured on the target
-
-The layout below was designed against Windows, and on macOS it collided with system reservations:
-
-- a **385 GiB `GUARD` region at `0xfc0000000`–`0x7000000000`** exists in every process (tag 31, `VM_MEMORY_GUARD`),
-  covering the old `kAliasBase` (`0x6000000000`);
-- libmalloc's xzone allocator reserves **two ~12 GiB `PROT_NONE` ranges at random addresses in
-  `0x7000000000`–`0x8000000000`** during dyld/libSystem start-up. Over 30 runs they hit the SDK/subsdk0/rtld bases in
-  17–23 runs, the heap window in 32, the stack in 11 and the kernel region in 4.
-
-The fix is the executable's own **`__GUEST` Mach-O segment** (`runtime/cmake/guest_segment.py`): the kernel maps
-`0x7000000000` + 72 GiB `PROT_NONE` at exec, before dyld, and `os_posix_mem.cpp` replaces parts of it with `MAP_FIXED`.
-The xzone ranges then land elsewhere (observed at `0x3600000000`). `kAliasBase` moved to `0x7300000000` (inside the
-guest's 512 GiB user space, between the remote region and the SDK slot) and `kHleBase` to `0x7F00000000`; the module
-bases did not move, so the lifted code and `main.sites` are unchanged. `mem::init` verifies the layout lies inside the
-segment and refuses to start otherwise (a dyld slide above 4 GiB would break it; the measured slide is 0–84 MB).
-
-Two shim bugs surfaced with it, both fixed in `os_posix_mem.cpp`:
-
-- **Host-page protection union.** Guest runs applied one by one let a later read-only run downgrade a 16 KiB host page
-  shared with read-write guest pages; the first sdk bring-up died with `SIGBUS` writing to its bss (on Darwin a
-  protection fault is `SIGBUS`/`0xC0000006`, not an access violation). `apply_host_protect` now recomputes each touched
-  host page as the union of its guest pages.
-- **`VirtualQuery` `RegionSize`.** It reported the rest of the region from the query address instead of the whole
-  region from `BaseAddress`, which broke every `base + size` walk (including the freeze dump's frame walk).
-
-### The memory budget of a run on a 16 GB host — measured
-
-Two force-quit episodes on a 16 GiB Mac made this the first thing to get right. `vmmap` at 1.6 s into a run shows where
-the memory actually goes — and it is not the images:
-
-| Item | Cost | Knob |
-|---|---|---|
-| The guest heap | told 10.5 GiB the game sets an **11.1 GiB heap and touches ~6.6 GB in 1.6 s** (3.8 G resident, 2.8 G swapped) | `[memory] app_memory_mb` |
-| The four guest module images | 8.7 GB reserved, ~5.6 GB resident once loaded | — (the floor) |
-| Graphics pools | copies (shadows) on macOS, ~16–40 MiB in the first second | `[nvn] pool_copy_mb` |
-| VMA / MoltenVK blocks | ~0.5 GB | — |
-
-**`[memory] app_memory_mb = 8192` is the lever.** Told 8 GiB the game sizes its heap to 7.9 GiB and the same point of
-the boot is at **2.3 GB resident** instead of 6.3 GB. The guard (`[memory] limit_gb`, `phys_footprint`) is the
-backstop, not the fix.
-
-Three things had to be fixed for the guard to see the right number and for the map calls to work at all:
-
-- `GetProcessMemoryInfo` returned `getrusage`'s `ru_maxrss`: a *peak* of resident pages, blind to the IOKit/Metal
-  memory the pools hold. It now returns `task_vm_info.phys_footprint` (what the OS charges the process, Activity
-  Monitor's "Memory"), so `[memory] limit_gb` measures the right number.
-- `GetInfo(AslrRegionAddress/Size)` reported `0x8000000`+512 GiB, which is the kernel's 385 GiB guard plus our own
-  image at 4–4.5 GB. The SDK maps its per-thread stack guards at random addresses in that region; all three attempts
-  (`0x10564e6000`, `0x224f4c6000`, `0x529d636000`, identical every run) failed with `0xD401`. The region is now the
-  guest-owned slot `0x7000000000`–`0x7100000000` (4 GiB, inside `__GUEST`, below the main module), and they succeed.
-- `VirtualAlloc` at a fixed address outside `__GUEST` used mmap hint-and-verify, which macOS ignores (it answers with
-  its own preferred address), so *every* exact reservation in the low 512 GiB failed. It uses
-  `mach_vm_allocate(VM_FLAGS_FIXED)` now; `VirtualFree` releases at VM level.
-
-Memory hygiene on the 16 GB host (the two hard reboots were pressure, not a leak: the shader translator peaks at 751 MiB
-with six jobs):
-
-- `work/.noindex` keeps Spotlight out of the game data, the 1.5 GB shader cache and the build output — mdworker storms on
-  every rebuild were part of the pressure;
-- the launcher stops the game when the host's free memory (free + inactive + speculative) falls under 10 %, for Play and
-  `--play` alike: the world load reaches ~7 GB and macOS stops responding before it swaps;
-- the translator runs with 2 jobs and a 1.5 GiB .NET heap limit; `work/run/run.sh` guards direct runs the same way.
-
-macOS has **no swap-size setting**: `dynamic_pager` only takes a file-name prefix, and the kernel grows swap in
-`/System/Volumes/VM` on demand up to the free disk. A hard hang is memory pressure, so `work/run/run.sh` keeps one run
-at a time and stops it when the system's free memory falls under 12 %.
-
-### M3 — the game runs
-
-What it took after the address space and the guard, in the order the boot hit them (2026-11-10):
-
-- **Named mutexes** started with `signaled == false` and nothing ever set it, so the first `WaitForSingleObject` on one
-  blocked forever: the fs save-root lock held the main thread inside `nn::fs::MountSaveData`. The shim now gives them
-  proper semantics — available when unowned, recursive for their owner, released back to signaled with a `wait_note()`
-  broadcast (the condition variable is the only wake-up path).
-- **`save_dir()`** built a Windows path; on POSIX `std::filesystem` treats `\` as a literal character while the shim's
-  `CreateFileW` converts it to a separator, so `create_directories` made `.\PokopiaRecompPC\save` and the open looked
-  in `./PokopiaRecompPC/save`. Every save create failed with ENOENT, the transaction was tainted, and the guest crashed
-  in `nn::fs::detail::FileAccessor::Write` (null accessor at +0x24). The POSIX default is
-  `$HOME/Library/Application Support/<save_folder>/save`; a configured Windows path is normalized.
-- **The save Volume's work folder** was per process, so a second Volume over the same save (a read-only open is not
-  cached) wiped the first one's files while they were open. Each instance has its own, and a file keeps its Volume alive.
-- **`nxos_guard`'s thunk** cast the `GuardThunk*` to the callable type, so the by-reference lambda in `seh_copy` read
-  `fn` plus two words past the 8-byte struct as its captured pointers: the pool-copy land thread copied to its own stack
-  top and died on the guard page.
-
-Result: the game boots through NVN, audio and save-data init and runs — ~400-600 fps headless on the M3, 5,800 frames in
-the first 15 s, a 60 s run with no fault.
-
-### M0 — done
-
-| Piece | Where |
+| what | how it was checked |
 |---|---|
-| Platform branch (`WIN32` / `APPLE` / else `FATAL_ERROR`), arm64 guard, `CMAKE_OSX_DEPLOYMENT_TARGET` 13.0, MSVC-runtime and `NOMINMAX`/`psapi`/`/W3` behind `WIN32`, `os_posix*.cpp` excluded on Windows and the Windows-only SDK backends excluded on macOS | `runtime/CMakeLists.txt` |
-| `macos-arm64` / `macos-arm64-debug` presets (Ninja, arm64, `Darwin`-conditioned) | `runtime/CMakePresets.json` |
-| The shim: 380 Win32 names, ~200 implemented | `runtime/src/os/nx_os.h`, `nx_os_internal.h`, `os_posix.cpp`, `os_posix_file.cpp`, `os_posix_mem.cpp`, `os_posix_net.cpp`, `os_posix_misc.cpp` |
-| `<windows.h>`, `<psapi.h>`, `<tlhelp32.h>`, `<dbghelp.h>`, `<bcrypt.h>`, `<intrin.h>`, `<emmintrin.h>`, `<immintrin.h>`, `<winsock2.h>`, `<ws2tcpip.h>`, `<mstcpip.h>`, `<iphlpapi.h>`, `<objbase.h>`, `<shlobj.h>`, `<shellapi.h>`, `<mmreg.h>`, `<avrt.h>`, `<mmsystem.h>` resolve to the shim on non-Windows only | `runtime/src/os/compat/` |
-| `NXRT_DEPS_DIR` = `~/Library/Caches/nxrt/deps`, `VK_USE_PLATFORM_METAL_EXT`, MoltenVK located from `$VULKAN_SDK`/`NXRT_MOLTENVK_DIR` and copied next to each executable as `libvulkan.1.dylib` (volk's `dlopen` name on Apple) | `runtime/cmake/gfx_deps.cmake`, `runtime/cmake/gfx.cmake` |
-| `-mcx16` only when `CMAKE_SYSTEM_PROCESSOR` is x86-64 | `recomp/cmake/NxRecomp.cmake` |
+| build | `cmake --preset macos-arm64` + `cmake --build` produce `libnxrt.a`, `libnxrt_gfx.a`, `nxrt_gfx_demo`; `game-build/` produces `pkp`. Deps are fetched into `~/Library/Caches/nxrt/deps`, MoltenVK comes from Homebrew. |
+| M1, address space | `nxrt_gfx_demo --selftest`: the layout reserves, a 6 GiB heap section commits, the alias at `0x7300000000` is written through, and every page of the four module images (main 0x3d20000, sdk 0xff0000, subsdk0 0x140000, rtld 0x20000 bytes) is written at its real base. 5/5 runs, 0 failures. |
+| M2, graphics | `nxrt_gfx_demo --headless --frames 300` → `gpu="Apple M3" frames=300 fps≈4400 … validation_errors=0`; `--overlay --frames 600` presents 600 frames with the ImGui overlay; `--screenshot` writes a 1280x720 PNG. |
+| M3, the game | `pkp` loads all four lifted modules (149,924 + 47,943 + 2,730 + 37 functions), runs rtld, starts `sm:` and the services, creates the heap section, brings up NVN on MoltenVK, places the game's five GPU pools, and plays: ~300 fps headless, audio at 48 kHz with no underruns, save data mounted, the world loaded. |
+| M5, diagnostics | the crash report is written by a helper thread with host stacks; `SuspendThread`/`GetThreadContext` stop a thread on its mach port (the sampler reads 2,688 stacks across main, the render thread and 40+ guest threads); `tools/symbolize.py` names both host and guest frames. |
+| M6, launcher | the Tauri launcher runs natively: Set up extracts and translates the shader corpus, Play starts `pkp` with `--ini`, `--setup`/`--preflight`/`--readiness`/`--play` work without the window, `make-app.sh` builds an ad-hoc-signed `.app`, and 102 Rust tests pass. |
 
-### M1 — the pre-Mac evidence (compile-level, shim harness)
+### What macOS had already taken (measured on the target)
 
-Every runtime source that is in the macOS build compiles against the shim: **87 files, 0 errors**, checked with
-`g++ -std=c++20 -fsyntax-only` against the shim's include path. That covers `src/core`, `src/diag`, `src/eh`,
-`src/kernel`, `src/mem`, `src/net`, `src/os`, `src/services` (minus the excluded backends) and `src/timestep`.
+The layout was designed against Windows and collided with system reservations:
 
-The shim's own semantics are verified by a behavioural test (not committed: a throwaway harness) that passes:
+- a **385 GiB `GUARD` region at `0xfc0000000`–`0x7000000000`** (tag 31, `VM_MEMORY_GUARD`) exists in every process and
+  covers the old `kAliasBase` (`0x6000000000`);
+- libmalloc's xzone allocator reserves **two ~12 GiB `PROT_NONE` ranges at random addresses inside
+  `0x7000000000`–`0x8000000000`** during dyld/libSystem start-up; over 30 runs they hit the SDK/subsdk0/rtld bases,
+  which is why those regions are reserved in the executable's Mach-O header instead of at run time;
+- the SDK's stack-guard `mmap` asks for a **512 GiB ASLR region**; the guest gets `0x7000000000`–`0x7100000000` for it.
 
-- the `block_on_wake` protocol — 3 waiters and 1 signaller, 9000 wakeups, no lost wakeup and no deadlock;
-- SRWLOCK shared vs exclusive — 4 readers and 4 writers, 80000 increments, no lost update;
-- auto-reset events, and a 5 ms `CreateWaitableTimerExW`/`SetWaitableTimer` deadline measured at 5.07 ms;
-- `CreateThread(CREATE_SUSPENDED)` + `ResumeThread` + `WaitForSingleObject` on the thread handle;
-- `VirtualAlloc(MEM_RESERVE)` at a fixed address, `MEM_COMMIT`, `VirtualProtect`, `MEM_DECOMMIT`, `MEM_RELEASE`,
-  with `VirtualQuery` reporting the guest-granular state;
-- a section with two views at fixed addresses sharing pages, and `VirtualFree(MEM_DECOMMIT)` refused on a view
-  exactly as on Windows;
-- positioned `ReadFile` (`OVERLAPPED` offset), `ERROR_HANDLE_EOF` past the end, `GetFileSizeEx`, `FindFirstFileExW`;
-- UTF-8 ↔ UTF-32 round trip through `WideCharToMultiByte`/`MultiByteToWideChar`.
+### The memory budget of a run (16 GB host, measured)
 
-Design notes that came out of writing it:
+The game commits ~8.4 GB of its 8 GiB heap (it exits at boot with a smaller cap) and its NVN pools reach ~5.2 GB, of
+which the port imports only the 80 MiB chunks it touches. At the world load the process footprint is ~9 GB; the
+port's own caches (`pool_copy_mb` 1536, `tex_prep_mb` 512) are the only part it can trim — at 384 and 128 the
+footprint at the language menu drops from 8.0 GB to 7.5 GB.
 
-- **SRWLOCK and CONDITION_VARIABLE are one pointer each.** `os/sync.cpp:110` relies on zero-initialised storage being
-  a valid unlocked lock and `KThread::cv_storage` is one `void*`, while a Darwin `pthread_mutex_t` is 64 bytes whose
-  zeroed state is not initialised. The pthread objects are allocated on first use, and `SleepConditionVariableSRW`
-  releases the write lock atomically with the wait (the Win32 contract), which is what makes the kernel lock's
-  `block_on_wake` correct.
-- **Every condvar deadline is on `CLOCK_REALTIME`.** `pthread_condattr_setclock` does not exist on Darwin and several
-  of the objects are `PTHREAD_COND_INITIALIZER` statics that cannot take an attribute. A `CLOCK_MONOTONIC` deadline
-  handed to a realtime condvar returns `ETIMEDOUT` immediately and turns every wait into a spin.
-- **A waitable timer's worker is joined, not detached.** `CloseHandle` on a timer stops the worker before the mutex
-  and condition variable are destroyed; a detached worker was waiting on freed objects.
-- **A thread object outlives its thread.** `CreateThread` takes two references, one for the caller's handle and one
-  for the running thread, so a `CloseHandle` right after creation cannot free the object the trampoline is writing to.
-- **`VirtualAlloc(MEM_COMMIT)` on a section view only applies the protection**; the pages are already mapped and read
-  as zeros until touched, which is `SEC_RESERVE` semantics. `VirtualFree(MEM_DECOMMIT)` on a view is refused, as
-  `memory.cpp:574` documents.
-- **`PAGE_EXECUTE*` maps to read/read-write.** Guest code is never executed (D7), and an executable anonymous mapping
-  on arm64 macOS needs `MAP_JIT` plus the allow-jit entitlement.
-- **Protection changes are applied at host granularity.** `mprotect` needs 16 KiB alignment while the guest page is
-  4 KiB, so a change covers the union of the guest pages inside the touched host pages. The guest-level state in the
-  shim's region table stays 4 KiB accurate, which is what `VirtualQuery` and `write_watch.cpp` read.
-- **Structured exceptions are BSD signals, not mach ports.** A `SIGSEGV` handler runs on the faulting thread and
-  returning from it resumes the faulting instruction, which is what `write_watch.cpp` needs (un-protect, return, the
-  store retries). A mach exception port would need `thread_set_state` to resume. The `CONTEXT` is built from
-  `ucontext_t`.
+### Before an Apple Silicon machine was available
 
-Not yet exercised in that pre-Mac harness: the memory layout the game needs (module images at `0x7100000000`…, a 6 GiB
-heap section, pool aliases). It is exercised now, on the target, by `nxrt_memprobe` (see "Verified on Apple Silicon").
-
-### M2 — the pre-Mac evidence
-
-Of the graphics shell's 89 sources, the **34 that need no fetched SDK header compile against the shim with 0
-errors**; the other 55 need `volk.h`, `SDL3/*`, `imgui.h` or `zstd.h`, which come from `NXRT_DEPS_DIR` and are not
-downloaded here, so they are unchecked rather than assumed good.
-
-- `pool_copy`: `auto_copy()` returns true on macOS (`nvn_pool_copy.cpp`), because MoltenVK implements no
-  `VK_EXT_external_memory_host` (D3).
-- `platform::native_hwnd()` returns the `NSView*` from `SDL_PROP_WINDOW_COCOA_WINDOW_POINTER`, which is what
-  `VK_EXT_metal_surface` takes.
-- The DXGI/GDI HDR query has a CoreGraphics counterpart (`src/gfx/extras/win_display_posix.cpp`); DLSS and FSR3 are
-  compiled out (their SDKs are Windows binaries).
-- `frame_limiter.cpp`/`nvn_shaders.cpp` intrinsics resolve through `compat/intrin.h` (`_mm_pause` → `yield`,
-  `__rdtsc` → `mach_absolute_time`, `__cpuid` → zeroes, so `have_shani()` is false and the portable SHA-1 loop is
-  used).
-- ASTC passes through untouched when the device samples it (`nvn_texdata.cpp` already does this through
-  `caps.astc`), which MoltenVK does on Apple Silicon (D4). The `astc2bc7` transcoder itself is ISPC and
-  x86-ISA-specific (`tools/textures/CMakeLists.txt:15` pins `ispc-v1.32.0-windows`, and `bc7e.ispc` is emitted with
-  `--arch=x86-64`), so the macOS build takes `src/os/os_posix_a2b.cpp` instead: the same size and format helpers
-  (checked against `tools/textures/src/a2b.cpp`'s formulas), and `A2B_ERR_UNSUPPORTED` from the three entry points
-  that need the missing kernels. No source file had to change: the four call sites already handle a failed
-  transcode, and on Metal they are never reached. That keeps `nxrt_gfx` linkable on macOS.
-
-### The address space a real dump needs (measured)
-
-The layout in `runtime/include/nxrt/memory.h` was written from the lifted configuration, not from a game. It has now
-been checked against an actual package (2.0.1, update 655360): the ExeFS NSO headers give
-
-| module | base | image | bss | end | slot headroom |
-|---|---|---|---|---|---|
-| `main` | `0x7100000000` | `0x34cbec0` (55.4 MiB) | `0x854140` | `0x7103d20000` | `0xfc2e0000` |
-| `sdk` | `0x7500000000` | `0xe08870` (14.0 MiB) | `0x1e7790` | `0x7500ff0000` | `0xff010000` |
-| `subsdk0` | `0x7600000000` | `0x130010` (1.19 MiB) | `0xfff0` | `0x7600140000` | `0xffec0000` |
-| `rtld` | `0x7700000000` | `0x10008` (64 KiB) | `0xfff8` | `0x7700020000` | `0xfffe0000` |
-
-78.4 MiB across the four slots, and the documented layout holds without adjustment: `main` ends `0xfc2e0000` short of
-`kRemoteBase`, the 12 GiB `kHeapMax` window (`0x7800000000`..`0x7b00000000`) ends 1 GiB before `kStackBase`
-(`0x7c00000000`, 4 GiB), which ends 1 GiB before `kKernelBase` (`0x7e00000000`, 4 GiB, ending at `0x7f00000000` —
-well inside the 47-bit user limit, which is the binding constraint on arm64 macOS). On macOS the alias window moved to
-`kAliasBase` `0x7300000000` + 8 GiB (it was `0x6000000000`, inside the kernel's 385 GiB guard region) and the HLE
-thunks to `kHleBase` `0x7F00000000` + 16 MiB (they were at `0x7400000000`, in the middle of the xzone allocator's
-random ranges); the module bases did not move.
-
-Checked through the shim (`VirtualAlloc`/`VirtualProtect`/`VirtualQuery`/`CreateFileMapping`+`MapViewOfFileEx` at those
-addresses, 25 assertions, all passing on a POSIX host): the four images reserve at their lifted bases, a second
-reservation of the same range is refused, a text page commits RW, seals RX and reads back through the guest address,
-`VirtualQuery` reports the commit granularity, a 6 GiB `SEC_RESERVE` section takes its primary view at `0x7800000000`,
-a 64 KiB alias view shares its pages both ways, and the remote/HLE/stack/kernel regions all place. **Now re-run on the
-target** as `nxrt_memprobe`: the layout, the 6 GiB heap section (`shm_open` + `ftruncate`), an alias view at
-`0x7300000000`, and every page of the four real module images (with their real sizes) reserve, commit, write and read
-back, 5/5 runs — with the executable's `__GUEST` segment supplying the reservation the kernel guard and xzone would
-otherwise have taken.
-
-**Input format for M3.** The runtime serves a `.nup` package directly (`src/loader/nup.cpp`) but only when its files
-are *stored*: a zstd-compressed package is refused with "… is compressed in the .nup; the game reads packages directly
-and needs stored files". The 2.0.1 package in hand is compressed (ExeFS: 5/5 files zstd; RomFS: 25/36), so M3 needs
-either the launcher's unpack (`launcher/src-tauri/src/nup.rs` decompresses into `nup_dump/`, which is also what
-`pkp_build.py --exefs <dump>/updates/<v>/exefs` expects) or a repack without compression. Its five ExeFS sha256s and
-the main build id match `game-build/release_b/dump_hashes.json` exactly, and its RomFS is 36 files / 7,246,052,773
-bytes — the manifest's figures to the byte — so it is the right dump; only its codec is wrong for the direct-read path.
-
-### The lifter covers the whole game (measured)
-
-The lift is the one part of M3 that can be checked without a Mac, and it came back clean. Lifting the five verified
-ExeFS files through `recomp/games/pkp/CMakeLists.txt`'s module table (`--game pkp`, each module at its lifted base):
-
-| module | functions | instructions | shards | not translated |
-|---|---|---|---|---|
-| `main` | 149,580 | 10,195,167 | 838 | **0** |
-| `sdk` | 47,943 | 1,944,009 | 165 | **0** |
-| `subsdk0` | 2,730 | 175,636 | 15 | **0** |
-| `rtld` | 37 | 2,393 | 1 | **0** |
-
-12,317,205 instructions and 200,290 functions with nothing left untranslated, in ~36 s of Python on 10 cores. The
-tier-2 lifter therefore covers every instruction shape this game uses — the "some AArch64 shape falls through to the
-tier-1 reference decoder or is skipped" risk does not apply to 2.0.1. `main` produces 663 MB of C++ across 839 files;
-a 680 KiB shard compiles in 1.9 s at `-O1`, so the M3 build is minutes on a laptop. Eight shards sampled across the
-range and `module_main.cpp` (35 MB) all pass `g++ -std=c++20 -fsyntax-only` against `recomp/include`, which is the
-first evidence that the emitted code is portable C++20 rather than something only clang-cl accepts. The CMake path
-was then run end to end on that Linux host (g++ 13.3, GNU make, no Ninja): `--target pkp_rtld` lifts, compiles and
-archives `libpkp_rtld.a` in 1.4 s, so `NxRecomp.cmake`'s non-MSVC branch is exercised, not just written.
+The lifter and the build were exercised on x86-64 Linux first: all five ExeFS files lifted with 0 untranslated
+functions, `main` produced 663 MB of C++ across 839 shards, and eight sampled shards plus `module_main.cpp` passed
+`g++ -std=c++20 -fsyntax-only`, which is the first evidence that the emitted code is portable C++20 rather than
+something only clang-cl accepts. `--target pkp_rtld` lifted, compiled and archived on that host, so `NxRecomp.cmake`'s
+non-MSVC branch was exercised, not just written.
 
 ### Still open
 

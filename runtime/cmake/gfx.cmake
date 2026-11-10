@@ -78,11 +78,6 @@ target_compile_definitions(nxrt_gfx PUBLIC VMA_STATIC_VULKAN_FUNCTIONS=0 VMA_DYN
 add_executable(nxrt_gfx_demo apps/gfx_demo.cpp)
 target_link_libraries(nxrt_gfx_demo PRIVATE nxrt_gfx)
 nxrt_add_guest_segment(nxrt_gfx_demo)
-# The address-space self test (apps/memprobe_main.cpp): reserves the guest layout, commits, aliases and maps the module
-# images without the game. M1 of the macOS port (docs/macos-port.md); useful on any host.
-add_executable(nxrt_memprobe apps/memprobe_main.cpp)
-target_link_libraries(nxrt_memprobe PRIVATE nxrt_gfx)
-nxrt_add_guest_segment(nxrt_memprobe)
 if(NXRT_WINDOWS)
     target_link_options(nxrt_gfx_demo PRIVATE /MAP /DEBUG /STACK:8388608)
     foreach(dll ${NXRT_A2B_DLLS})
