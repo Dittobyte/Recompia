@@ -12,6 +12,12 @@ of the game (version 2.0.1a): the download contains no game files.
 ### Testers on AMD handhelds, please read
 This Testing build adds logging and a few device checks, and changes no frame-rate settings. We need your logs to learn what helps on the Steam Deck, ROG Ally, Legion Go and similar devices. Play for about twenty minutes the way you normally do, then open **Settings > Testing** and press **Copy handheld report**: it copies one short block with your device, memory, graphics driver, frame summaries and any problems, with user names, folders and addresses removed. Paste it into a bug report and tell us the device, the system (SteamOS, Bazzite and so on), the power mode, your frame cap and what you were doing. If the picture drops to about 10 fps and stays there, or the game freezes, say so and restart the device. This is a Testing build: some rough edges are expected, and your reports are how Stable gets better.
 
+### Why textures are not prepared in the background
+- `pkp.log` now says why the background texture preparation is rarely used
+  - Before: the `nvn.texprep` line only said "used 0, no job N"
+  - Now: the same line also counts the reasons a texture upload got no job: too small, too large, not block-compressed, GPU off, never considered, idle, stale, or a transcode still running
+  - Still not: nothing else changes; the texture preparation behaves exactly as before (the 480 unknown-proc lines at startup stay as they are for now)
+
 ### Memory limit under Proton
 - The game's memory limit ([memory] limit_gb) now works under Proton
   - Before: under Proton the reading the limit compares (private commit) can be 0, so the limit never triggered even when the game used many gigabytes; `pkp.log` showed `footprint 0.00 GB` next to a real pagefile usage
