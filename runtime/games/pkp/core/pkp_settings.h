@@ -58,6 +58,7 @@ enum class Key : uint8_t {
     TitleQuit,
     OptionsMenu,
     PokemonCap50,
+    PokemonCapLimit,
     Count
 };
 
