@@ -13,7 +13,7 @@ of the game (version 2.0.1a): the download contains no game files.
   - **Export and report** makes one zip of `pkp.log`, `pkp.log.prev`, the crash files, `setup.log` and `pkp.ini`, opens its folder (`testing-logs` next to `pkp.exe`) and the bug report form. Drag the zip into the form: the launcher has no GitHub login, so nothing is uploaded for you
   - Names in paths, your account and server settings and IP addresses are removed before anything is written. Long logs keep their end, so the zip stays under GitHub's 25 MB limit
   - **View logs** shows the end of each file in the launcher, with a filter and a Copy button
-  - **Experimental features** has **Mouse in the game's menus** and the **Taller view** on 16:10 screens, both on by default. The gameplay options (Camera aim, Running jump, Sort, Search, Quit Game) stay in **Game > Gameplay**, on by default
+  - **Experimental features** has **Mouse in the game's menus** and the **Taller view** on 16:10 screens, both off by default. The gameplay options (Camera aim, Running jump, Sort, Search, Quit Game) are off by default in this Testing build; switch them on here
 - The touch screen **Menu button** is automatic: on when the machine has a touch screen, so a handheld keeps its way into the menu
 
 ### Link Play
@@ -39,7 +39,7 @@ of the game (version 2.0.1a): the download contains no game files.
   - Before: Steam's default layout for a non-Steam shortcut sends the d-pad as arrow keys, and the launcher ignored them
   - Now: the arrow keys move between controls, Enter presses, Escape goes back (closes a question, or returns Home), the same as the pad
   - Text boxes, sliders and drop-downs keep the arrows they need
-- Settings > **Gameplay** now lists every gameplay option, each on by default
+- Settings > **Gameplay** now lists every gameplay option, each off by default (Testing build; a value already in your `pkp.ini` is kept)
   - Before: only Camera aim and Running jump were there; the Sort button, crafting Search and Quit Game could only be switched off in `pkp.ini`
   - Now: one switch each for Running jump, Camera aim, Sort button (plus **Sort each time the bag opens**, off by default), crafting Search and Quit Game on the title screen. A gameplay option added later shows up here by itself
 - **Set up again** after an update that changes only the runtime now just relinks the game (seconds instead of translating and compiling it again); it keeps the compiled game libraries (a few hundred MB) in `build/lib`
