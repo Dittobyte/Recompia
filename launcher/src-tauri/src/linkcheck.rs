@@ -77,6 +77,12 @@ pub struct Peer {
 const PROBE_TIMEOUT: Duration = Duration::from_millis(1500);
 const FIREWALL_LIMIT: Duration = Duration::from_secs(2);
 const TAILSCALE_LIMIT: Duration = Duration::from_secs(3);
+/// All of the firewall questions together: a stalled firewall-cmd must not hold the page for ten seconds.
+const FIREWALL_BUDGET: Duration = Duration::from_secs(5);
+/// Peers probed for hosting at most: a tailnet with hundreds of shared devices is not scanned.
+const MAX_PROBED_PEERS: usize = 64;
+/// The most a program's output is read: a runaway one cannot fill memory.
+const MAX_OUTPUT: u64 = 1 << 20;
 
 const BAD_ADDRESS_HELP: &str = "Type an address like 192.0.2.10 or 192.0.2.10:47600";
 
@@ -143,28 +149,34 @@ fn run_limited(program: &str, args: &[&str], limit: Duration) -> io::Result<(boo
         cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
     }
     let mut child = cmd.spawn()?;
-    let mut out = child.stdout.take();
-    let reader = std::thread::spawn(move || {
+    let out = child.stdout.take();
+    // the reader hands its text over a channel: a grandchild that keeps the pipe open can never make this function wait past its limit
+    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    std::thread::spawn(move || {
         let mut s = String::new();
-        if let Some(o) = out.as_mut() {
-            let _ = o.read_to_string(&mut s);
+        if let Some(o) = out {
+            let _ = o.take(MAX_OUTPUT).read_to_string(&mut s);
         }
-        s
+        let _ = tx.send(s);
     });
     let start = Instant::now();
     let status = loop {
-        match child.try_wait()? {
-            Some(st) => break st,
-            None if start.elapsed() >= limit => {
+        match child.try_wait() {
+            Ok(Some(st)) => break st,
+            Ok(None) if start.elapsed() < limit => std::thread::sleep(Duration::from_millis(15)),
+            Ok(None) => {
                 let _ = child.kill();
                 let _ = child.wait();
-                let _ = reader.join();
                 return Err(io::Error::new(io::ErrorKind::TimedOut, "command took too long"));
             }
-            None => std::thread::sleep(Duration::from_millis(15)),
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(e);
+            }
         }
     };
-    let text = reader.join().unwrap_or_default();
+    let text = rx.recv_timeout(Duration::from_millis(500)).unwrap_or_default();
     Ok((status.success(), text))
 }
 
@@ -189,16 +201,22 @@ fn parse_ports(out: &str) -> Vec<String> {
 
 /// Reads the firewall state, without privileges and without changing anything.
 pub fn setup_facts() -> SetupFacts {
-    let state = firewalld_state(&run_limited("firewall-cmd", &["--state"], FIREWALL_LIMIT));
+    let began = Instant::now();
+    // each question gets what is left of the budget, at most FIREWALL_LIMIT
+    let left = || FIREWALL_BUDGET.saturating_sub(began.elapsed()).min(FIREWALL_LIMIT);
+    let state = firewalld_state(&run_limited("firewall-cmd", &["--state"], left()));
     let mut zones = Vec::new();
     let mut ports: Vec<String> = Vec::new();
     if state == "running" {
-        if let Ok((true, out)) = run_limited("firewall-cmd", &["--get-active-zones"], FIREWALL_LIMIT) {
+        if let Ok((true, out)) = run_limited("firewall-cmd", &["--get-active-zones"], left()) {
             zones = parse_zones(&out);
         }
         for z in &zones {
+            if left().is_zero() {
+                break;
+            }
             let arg = format!("--zone={z}");
-            if let Ok((true, out)) = run_limited("firewall-cmd", &[arg.as_str(), "--list-ports"], FIREWALL_LIMIT) {
+            if let Ok((true, out)) = run_limited("firewall-cmd", &[arg.as_str(), "--list-ports"], left()) {
                 for p in parse_ports(&out) {
                     if !ports.contains(&p) {
                         ports.push(p);
@@ -257,18 +275,20 @@ fn parse_tailscale(json: &str) -> TailscaleReport {
 /// the host port answered.
 fn mark_hosting(report: &mut TailscaleReport, prober: &(dyn Fn(&str) -> bool + Sync)) {
     std::thread::scope(|s| {
+        let mut probed = 0;
         let handles: Vec<_> = report
             .peers
             .iter()
             .map(|p| {
-                let ip = p.ips.first().cloned();
+                let ip = p.ips.first().cloned().filter(|_| p.online && probed < MAX_PROBED_PEERS);
+                probed += usize::from(ip.is_some());
                 (p.online, ip.map(|ip| s.spawn(move || prober(&ip))))
             })
             .collect();
         for (peer, (online, handle)) in report.peers.iter_mut().zip(handles) {
             peer.hosting = match (online, handle) {
                 (true, Some(h)) => Some(h.join().unwrap_or(false)),
-                _ => None,
+                _ => None,   // offline, or beyond MAX_PROBED_PEERS: not checked
             };
         }
     });
@@ -473,5 +493,28 @@ mod tests {
         let by = |n: &str| r.peers.iter().find(|p| p.name == n).unwrap().hosting;
         assert_eq!(by("deck"), Some(true));
         assert_eq!(by("laptop"), Some(false));
+    }
+
+    #[test]
+    fn tailscale_hosting_probes_a_bounded_number_of_peers() {
+        let peers = (0..100)
+            .map(|i| Peer { name: format!("p{i}"), dns_name: String::new(), ips: vec![format!("100.64.1.{i}")], online: true, hosting: None })
+            .collect();
+        let mut r = TailscaleReport { found: true, error: None, self_ips: vec![], peers };
+        mark_hosting(&mut r, &|_| true);
+        assert_eq!(r.peers.iter().filter(|p| p.hosting == Some(true)).count(), MAX_PROBED_PEERS);
+        assert!(r.peers[MAX_PROBED_PEERS..].iter().all(|p| p.hosting.is_none()));
+    }
+
+    #[test]
+    fn run_limited_returns_when_a_grandchild_holds_the_pipe() {
+        // the shell exits at once, its background sleep keeps stdout open: the call must still return within its limit
+        if cfg!(windows) {
+            return;
+        }
+        let began = Instant::now();
+        let res = run_limited("sh", &["-c", "sleep 3 & echo hi"], Duration::from_millis(800));
+        assert!(began.elapsed() < Duration::from_millis(1800), "took {:?}", began.elapsed());
+        assert!(res.is_ok());
     }
 }
