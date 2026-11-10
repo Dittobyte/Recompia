@@ -24,6 +24,7 @@
 
 import controlsSchema from '../../runtime/docs/controls_schema.json' with { type: 'json' };
 import gameIniSchema from '../../runtime/docs/pkp_ini_schema.json' with { type: 'json' };
+import { modsNotice } from './mods-notice-model.js';
 
 const controls = (section, key) => ({ file: 'controls', section, key });
 const pkp = (section, key) => ({ file: 'pkp', section, key });
@@ -548,6 +549,7 @@ export const SECTIONS = [
         rows: [
           { id: 'gameplay_note', type: 'note', note: () => ({ text: 'New ways of playing, on by default (switch them off here). They take effect the next time the game starts, and they need the game built with this version (Set up again once after an update).' }) },
           ...gameplayRows(),
+          { id: 'mods_notice', type: 'note', note: (_e, v) => ({ text: modsNotice(v, gameplayKeys(), EXPERIMENTAL_ROWS.map((r) => r.id)).text }) },
         ],
       },
       {

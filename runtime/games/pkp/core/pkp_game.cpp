@@ -9,6 +9,7 @@
 #include "ui/pkp_key_guide.h"
 #include "core/pkp_layout.h"
 #include "core/pkp_linkplay.h"
+#include "core/pkp_mods_notice.h"
 #include "ui/pkp_menu.h"
 #if NXRT_TESTTOOLS
 #include "test/pkp_movie_test.h"
@@ -49,9 +50,10 @@ constexpr uint64_t kFrameUpdate = 0x1fdcde4;
 //                       order
 //   key_guide           after its clients: its install registers the hooks they need
 //   options             after title: title's frame callback runs first
+//   mods_notice         any position: it only logs which gameplay mods are on, at install
 // No other two features hook the same address.
 constexpr const Feature* kFeatures[] = {
-    &kSaveUuidFeature, &kLinkplayFeature, &kPlayFeature, &kKbmFeature,
+    &kSaveUuidFeature, &kLinkplayFeature, &kPlayFeature, &kKbmFeature, &kModsNoticeFeature,
 #if NXRT_TESTTOOLS
     &kMovieTestFeature,
 #endif
