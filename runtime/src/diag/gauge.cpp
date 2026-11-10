@@ -206,6 +206,13 @@ void monitor_run(double summary_s) {
     auto last_line = Clock::now() - std::chrono::seconds(10);
     uint64_t last_n = g_ring_n.load(std::memory_order_acquire);
     bool seen_frames = last_n > 0;
+    // #405: after a GPU reset the driver stays slow until a reboot, so every frame of a fresh run waits on the GPU. The first three summary
+    // windows all averaging over kStuckWaitMs of GPU sync wait per frame are reported once; later windows never count (a heavy scene).
+    constexpr double kStuckWaitMs = 100.0;
+    constexpr int kStuckWindows = 3;
+    int stuck_windows = 0;
+    bool stuck_checked = false;
+    uint64_t last_wait_ticks = g_phase[kHpGameSyncWait].load(std::memory_order_relaxed);
     for (;;) {
         {
             std::unique_lock<std::mutex> lk(s.m);
@@ -236,6 +243,20 @@ void monitor_run(double summary_s) {
                 const uint64_t t = g_ring[i % kRing].load(std::memory_order_relaxed);
                 if (prev) dt.push_back((double)(t - prev) * 1000.0 / qpc_freq());
                 prev = t;
+            }
+            const uint64_t wait_ticks = g_phase[kHpGameSyncWait].load(std::memory_order_relaxed);
+            const double wait_ms = (double)(wait_ticks - last_wait_ticks) * 1000.0 / qpc_freq();
+            last_wait_ticks = wait_ticks;
+            if (!stuck_checked && n > last_n) {
+                const double per_frame = wait_ms / (double)(n - last_n);
+                if (per_frame > kStuckWaitMs) {
+                    if (++stuck_windows == kStuckWindows) {
+                        NXLOG_W("hitch", "every frame has waited about %.0f ms on the GPU since the start of this run. If the system log shows a GPU reset, reboot the device: restarting the game does not clear it (#405)", per_frame);
+                        stuck_checked = true;
+                    }
+                } else {
+                    stuck_checked = true;   // a normal window: this run is not in that state
+                }
             }
             diag::host_probe_tick(n > 0);
             const uint64_t window_frames = n - last_n;
