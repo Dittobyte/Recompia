@@ -5,6 +5,12 @@
 - New **Show on Discord while playing** in the launcher's Settings: shows "Playing Recompia" and how long you have played on your Discord profile while the game runs. Off by default; Discord must be open. Update only: no shader rebuild, no Set up again
 - Fixed the Pokédex tabs showing "Time" as their title after the Settings screen had been opened (#494)
 
+### macOS
+- The game runs on Apple Silicon Macs. This is the first release with a macOS build: the runtime, the lifted game and the launcher are native arm64 programs, so there is no Proton, no Vulkan driver to install and no `pkp_rt.dll`
+  - Before: the launcher and the game were Windows builds. On a Mac the launcher only started under CrossOver or Whisky, and the game stopped during start-up
+  - Now: `docs/macos-port.md` has the build and the run. The address space the game needs is reserved in the executable itself, the Win32 calls go through a POSIX shim, audio plays through CoreAudio, and the launcher's Set up extracts and translates the shaders and Play starts the game with keyboard and mouse prompts
+  - Still not: the two in-game movies are untested (they are VP9 in WebM, and the game's own movie library plus the host VP9 decoder is the path, but no run has reached one yet), a signed and notarized `.app`, and Link Play against a peer. The GPU is the limit in the world: about 25 fps on an M3 at 1080p internal
+
 ## 0.10.3 (build N: Newt Hotfix a3)
 
 **Update:** press **Update**, then **Set up again** once. It rebuilds the game code for the shoulder camera's new hook, a few minutes. Your shaders and saves are kept; no shader is translated again.
