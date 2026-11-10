@@ -191,7 +191,7 @@ pub fn reset_launcher_text(old: &str) -> String {
 /// `pkp_rt.dll.0.7.6` yes; `pkp_rt.dll`, `pkp_rt.dll.bak` and `pkp.log.prev` no.
 pub fn is_old_copy(name: &str) -> bool {
     VERSIONED.iter().any(|base| {
-        name.strip_prefix(base).and_then(|rest| rest.strip_prefix('.')).map_or(false, |v| v.chars().next().map_or(false, |c| c.is_ascii_digit()))
+        name.strip_prefix(base).and_then(|rest| rest.strip_prefix('.')).is_some_and(|v| v.chars().next().is_some_and(|c| c.is_ascii_digit()))
     })
 }
 

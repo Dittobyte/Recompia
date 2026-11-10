@@ -115,7 +115,7 @@ pub fn safe_name(name: &str) -> bool {
 fn commit_pending(sd: &Path, key: &str) -> bool {
     let acc = sd.join("account");
     let (a, b) = (format!("{}.commit", key), format!("{}.journal.", key));
-    fs::read_dir(&acc).map(|rd| rd.flatten().any(|e| e.file_name().to_str().map_or(false, |n| n == a || n.starts_with(&b)))).unwrap_or(false)
+    fs::read_dir(&acc).map(|rd| rd.flatten().any(|e| e.file_name().to_str().is_some_and(|n| n == a || n.starts_with(&b)))).unwrap_or(false)
 }
 
 // ---- reading and copying --------------------------------------------------------------------------------------------------------
@@ -211,8 +211,8 @@ fn prune(game_dir: &Path, key: &str, keep: usize) {
     }
     if let Ok(rd) = fs::read_dir(&root) {
         for e in rd.flatten() {
-            let old = e.metadata().and_then(|m| m.modified()).ok().and_then(|m| m.elapsed().ok()).map_or(false, |d| d > Duration::from_secs(900));
-            if old && e.file_name().to_str().map_or(false, |n| n.starts_with(".tmp-")) {
+            let old = e.metadata().and_then(|m| m.modified()).ok().and_then(|m| m.elapsed().ok()).is_some_and(|d| d > Duration::from_secs(900));
+            if old && e.file_name().to_str().is_some_and(|n| n.starts_with(".tmp-")) {
                 let _ = fs::remove_dir_all(e.path());
             }
         }
@@ -252,14 +252,14 @@ fn snapshot_impl(game_dir: &Path, kind: &str, retry_wait: Duration, game_closed:
             }
             Ok(())
         })();
-        let stable = made.is_ok() && (game_closed || !commit_pending(&sd, &key)) && listing(&live).map_or(false, |after| after == before);
+        let stable = made.is_ok() && (game_closed || !commit_pending(&sd, &key)) && listing(&live).is_ok_and(|after| after == before);
         if !stable {
             let _ = fs::remove_dir_all(&tmp);
             std::thread::sleep(retry_wait);
             continue;
         }
         let (hash, files, bytes) = digest(&tmp.join(DATA), Some(&tmp.join(META))).map_err(|e| e.to_string())?;
-        if kind != KIND_SAFETY && list_key(game_dir, &key).first().map_or(false, |e| e.hash == hash) {
+        if kind != KIND_SAFETY && list_key(game_dir, &key).first().is_some_and(|e| e.hash == hash) {
             let _ = fs::remove_dir_all(&tmp);
             return Ok(Outcome::Unchanged);
         }

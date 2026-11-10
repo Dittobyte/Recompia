@@ -369,7 +369,7 @@ pub fn find_tools(tools_dir: &Path) -> Result<Tools, String> {
 
 /// A progress line of a tool ("scan: 12 of 99", "  500/1000  3.2 s"): counted by the progress bar, not worth a log line.
 fn is_progress_line(l: &str) -> bool {
-    l.starts_with("scan: ") || l.trim().split('/').next().map_or(false, |x| !x.is_empty() && x.bytes().all(|b| b.is_ascii_digit()) && l.contains('/'))
+    l.starts_with("scan: ") || l.trim().split('/').next().is_some_and(|x| !x.is_empty() && x.bytes().all(|b| b.is_ascii_digit()) && l.contains('/'))
 }
 
 /// Runs a tool, handing each stdout line to `line`; kills it when `cancel` is set. Ok(true) = exit 0, Ok(false) = cancelled.
