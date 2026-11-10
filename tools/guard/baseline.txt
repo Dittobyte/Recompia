@@ -1,0 +1,15 @@
+# Files that already break a rule of check_repo_content.mjs and were in the repository before the guard. They are listed, not blocked.
+# Moving them out is the owner's call (the owner rules say reverse-engineering notes stay in the local modding-docs folder); shrink this list, never grow it.
+CHANGELOG.md
+recomp/docs/debug/008.md
+runtime/docs/CONFIG.md
+runtime/docs/hid_mouse_sw2.md
+runtime/docs/IPC_ANSWERS.md
+runtime/docs/nvn2_abi.md
+runtime/include/nxrt/hooks.h
+runtime/src/diag/trace_sites.cpp
+runtime/src/services/acc.cpp
+runtime/src/services/am.cpp
+runtime/src/services/hid.cpp
+runtime/src/services/hid_internal.h
+runtime/src/services/misc_streamplay.cpp

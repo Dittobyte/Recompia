@@ -10,6 +10,10 @@ Always build code cleanly, modularly, and with proper architecture and separatio
 - Release notes are the version's section of [CHANGELOG.md](CHANGELOG.md); write it from [.github/RELEASE_TEMPLATE.md](.github/RELEASE_TEMPLATE.md).
 - Code for this game goes in `recomp/games/pkp/` and `runtime/games/pkp/`; the rest is shared with other games.
 
+## Keeping game content out
+
+Never commit game files, keys, lifted game code or reverse-engineering notes (they stay in the local, git-ignored `modding-docs/` folder). Turn on the check once per clone with `git config core.hooksPath tools/hooks`: it refuses a commit or push that adds such a file (`node tools/guard/check_repo_content.mjs --all` lists what is already there).
+
 ## Keeping up with pokopia-native
 
 [pokopia-native](https://github.com/xFractals/pokopia-native) is this project's parent. Every update it publishes gets mirrored here:
