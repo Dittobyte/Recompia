@@ -85,3 +85,39 @@ pub fn setup_facts() -> SetupFacts {
 pub fn tailscale_peers() -> TailscaleReport {
     TailscaleReport { found: false, error: Some("The Tailscale finder is not built yet.".into()), self_ips: vec![], peers: vec![] }
 }
+
+#[cfg(test)]
+mod shape_tests {
+    //! The JSON the page reads (api.js, dev/mock.js). Both missions build on these strings: do not change them.
+    use super::*;
+
+    fn json<T: Serialize>(v: &T) -> String {
+        serde_json::to_string(v).unwrap()
+    }
+
+    #[test]
+    fn contract_probe_shapes() {
+        assert_eq!(json(&ProbeResult::Answered { ms: 12 }), r#"{"kind":"answered","ms":12}"#);
+        assert_eq!(json(&ProbeResult::Refused), r#"{"kind":"refused"}"#);
+        assert_eq!(json(&ProbeResult::TimedOut), r#"{"kind":"timed_out"}"#);
+        assert_eq!(json(&ProbeResult::BadAddress { message: "x".into() }), r#"{"kind":"bad_address","message":"x"}"#);
+    }
+
+    #[test]
+    fn contract_setup_and_tailscale_shapes() {
+        let f = SetupFacts { firewalld: Firewalld { state: "running".into(), zones: vec!["FedoraWorkstation".into()], ports: vec!["1025-65535/tcp".into()] } };
+        assert_eq!(json(&f), r#"{"firewalld":{"state":"running","zones":["FedoraWorkstation"],"ports":["1025-65535/tcp"]}}"#);
+        let t = TailscaleReport {
+            found: true,
+            error: None,
+            self_ips: vec!["100.64.0.5".into()],
+            peers: vec![Peer { name: "deck".into(), dns_name: "deck.t.ts.net".into(), ips: vec!["100.64.0.9".into()], online: true, hosting: None }],
+        };
+        assert_eq!(
+            json(&t),
+            r#"{"found":true,"self":["100.64.0.5"],"peers":[{"name":"deck","dns_name":"deck.t.ts.net","ips":["100.64.0.9"],"online":true,"hosting":null}]}"#
+        );
+        let missing = TailscaleReport { found: false, error: Some("not installed".into()), self_ips: vec![], peers: vec![] };
+        assert_eq!(json(&missing), r#"{"found":false,"error":"not installed","self":[],"peers":[]}"#);
+    }
+}
