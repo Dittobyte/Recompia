@@ -8,8 +8,9 @@ import { store } from '../store.js';
 import { gamePhase } from '../action.js';
 import {
   HOST_PORT, RELAY_PORT, addrProblem, addressRows, applyEdits, codeEdits, editsFor, hostsOverInternet, interactEdits, internetShare, pathParts,
-  portForwardEdits, protocolEdits, readIni, relayPort, shownCode, storyEdits, uiFrom,
+  portForwardEdits, protocolEdits, localAddr, readIni, relayPort, shownCode, storyEdits, uiFrom,
 } from '../linkplay-model.js';
+import { inviteNote, inviteToUi, makeInvite, parseInvite } from '../link-invite-model.js';
 
 const LS = 'pkp.linkplay';
 const POLL_MS = 3000;   // link count and the game's room code, while the Host view is on screen
@@ -74,7 +75,10 @@ export async function render(el, ctx) {
   // --- what is on the page
 
   const copyButton = (addr) => `<button class="btn quiet sm lp-copy" data-copy="${esc(addr)}" aria-label="Copy ${esc(addr)}" title="Copy">${icon('copy')}</button>`;
-  const addressRow = (r) => row(r.label, `<code class="selectable">${esc(r.addr)}</code>${copyButton(r.addr)}`);
+  // an invite carries the address, the room code and the mode in one paste (link-invite-model.js); built when pressed, from the code shown then
+  const inviteButton = (r) => (r.invite ? `<button class="btn quiet sm lp-invite" data-invite="${esc(r.addr)}" data-through="${r.through ? 1 : 0}" title="Copy an invite that fills in the address and room code for your friend">${icon('link')}Copy invite</button>` : '');
+  const addressRow = (r) => row(r.label, `<code class="selectable">${esc(r.addr)}</code>${copyButton(r.addr)}${inviteButton(r)}`);
+  const inviteField = () => `<div class="lp-field">${field('lp-invite', '', 'Paste the invite here', { mono: true })}<small class="lp-msg" id="lp-invite-msg" hidden></small></div>`;
   const fieldAt = (id, placeholder) => `<div class="lp-field">${field(id, ui[FIELDS[id]], placeholder, { mono: true })}<small class="lp-msg" id="${id}-msg" hidden></small></div>`;
   const visitPlaceholder = () => (ui.through ? `203.0.113.5:${RELAY_PORT}` : '192.0.2.10');
 
@@ -106,7 +110,7 @@ export async function render(el, ctx) {
     if (!lan) return '';
     const notice = [lan.warning, lan.firewall_hint].filter(Boolean);
     const note = notice.length ? `<div class="banner warn">${icon('triangle-alert')}<div class="grow">${esc(notice[0])}${notice[1] ? `<div>${esc(notice[1])}</div>` : ''}</div></div>` : '';
-    const rows = addressRows(lan, HOST_PORT).map(addressRow);
+    const rows = addressRows(lan, HOST_PORT).map((r) => addressRow({ ...r, invite: localAddr(r.addr) }));   // a Tailscale address needs the room code: its invite is on the Internet page
     return note + group('This PC', rows.length ? rows : [row('No address found', '')]);
   }
 
@@ -118,12 +122,14 @@ export async function render(el, ctx) {
       return `<div class="banner warn">${icon('triangle-alert')}<div class="grow">The relay on this PC is off, so visitors cannot join. Turn on Run a relay on this PC.</div></div>`;
     }
     const internet = share.addr
-      ? addressRow({ addr: share.addr, label: 'Over the internet' })
+      ? addressRow({ addr: share.addr, label: 'Over the internet', invite: true, through: share.through })
       : row('Over the internet', `<span class="faint">${publicIp === null ? 'Could not find this PC\'s public address. Search "what is my IP" in a browser.' : 'Looking it up\u2026'}</span>`);
-    // a VPN (Tailscale and the like) keeps its own name: it is not the same network
-    const local = share.own && relay && lan
-      ? [...lan.lan.map((a) => addressRow({ addr: `${a.ip}:${share.port}`, label: `Same network (${a.adapter})` })),
-        ...addressRows({ lan: [], overlay: lan.overlay }, share.port).map(addressRow)]
+    // a VPN (Tailscale and the like) keeps its own name: it is not the same network. Its address is shown with or without a relay: a friend
+    // on the same tailnet reaches this PC at it directly
+    const mine = (a) => ({ addr: `${a.ip}:${share.port}`, invite: true, through: !!relay });
+    const local = share.own && lan
+      ? [...(relay ? lan.lan.map((a) => addressRow({ ...mine(a), label: `Same network (${a.adapter})` })) : []),
+        ...lan.overlay.map((a) => addressRow({ ...mine(a), label: a.label.replace(/^internet via /, '') }))]
       : [];
     const links = relay ? [row('Links', `<span class="num" id="lp-links">${esc(relay.clients)}</span>`)] : [];
     const how = `Visitors pick Visit and type this address and the room code, with Through a relay ${share.through ? 'on' : 'off'}.`;
@@ -140,7 +146,7 @@ export async function render(el, ctx) {
     if (ui.view === 'off') return '';
     if (ui.view === 'lan') {
       return `<div class="lp-part" id="lp-lan"></div>
-        ${group('', [row('Join directly', fieldAt('lp-join', '192.0.2.10'))])}
+        ${group('', [row('Paste invite', inviteField()), row('Join directly', fieldAt('lp-join', '192.0.2.10'))])}
         ${ui.lastJoin ? `<datalist id="lp-last"><option value="${esc(ui.lastJoin)}"></option></datalist>` : ''}`;
     }
     const role = segmented('role', [['host', 'Host'], ['visit', 'Visit']], ui.role, { label: 'Host or visit' });
@@ -156,6 +162,7 @@ export async function render(el, ctx) {
     }
     return `<div>${role}</div>
       ${group('', [
+        row('Paste invite', inviteField()),
         row('Address', fieldAt('lp-addr', visitPlaceholder())),
         row('Room code', fieldAt('lp-code-in', 'XXXX-XXXX-XXXX-XXXX')),
         row('Through a relay', toggle('lp-through', ui.through)),
@@ -277,7 +284,7 @@ export async function render(el, ctx) {
     if (isHost()) {
       loadGameCode();
       loadPublicIp();
-      if (relay && !lan) loadLan();
+      if (!lan) loadLan();
     }
   }
 
@@ -362,6 +369,28 @@ export async function render(el, ctx) {
     patch(part('lp-share'), shareHtml());
   });
 
+  const invitePart = () => ({ input: part('lp-invite'), msg: part('lp-invite-msg') });
+
+  /** A pasted invite fills the page exactly as typing its values would, then the page commits as usual. */
+  const applyInvite = (text) => inOrder(async () => {
+    const { input, msg } = invitePart();
+    if (!input || !String(text).trim()) return;
+    const r = parseInvite(text);
+    if (msg) {
+      msg.textContent = r.ok ? '' : r.error;
+      msg.hidden = r.ok;
+    }
+    if (!r.ok) return;
+    Object.assign(ui, inviteToUi(r.invite));
+    if (ui.view === 'internet') remember({ role: 'visit' });
+    problems = {};
+    el.querySelector(`input[name="view"][value="${ui.view}"]`).checked = true;
+    draw();
+    enter();
+    await commit();
+    toast(inviteNote(r.invite), 'ok');
+  });
+
   async function copy(text) {
     try {
       await navigator.clipboard.writeText(text);
@@ -389,11 +418,16 @@ export async function render(el, ctx) {
       drawProblems();
     }
   });
+  el.addEventListener('paste', (e) => {
+    if (e.target.id === 'lp-invite') setTimeout(() => applyInvite(e.target.value), 0);
+  });
   el.addEventListener('focusout', (e) => {
+    if (e.target.id === 'lp-invite') applyInvite(e.target.value);
     if (FIELDS[e.target.id]) inOrder(() => commit(e.target.id));
   });
   el.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && FIELDS[e.target.id]) inOrder(() => commit(e.target.id));
+    if (e.key === 'Enter' && e.target.id === 'lp-invite') applyInvite(e.target.value);
+    else if (e.key === 'Enter' && FIELDS[e.target.id]) inOrder(() => commit(e.target.id));
   });
   el.addEventListener('change', (e) => {
     const t = e.target;
@@ -413,7 +447,11 @@ export async function render(el, ctx) {
   el.addEventListener('click', (e) => {
     const t = e.target.closest('[data-copy], [data-act]');
     if (!t) return;
-    if (t.dataset.copy) copy(t.dataset.copy);
+    if (t.dataset.invite) {
+      const made = makeInvite({ addr: t.dataset.invite, code: shownCode({ gameCode, hostCode: ui.hostCode, running: gameActive(store.state) }), through: t.dataset.through === '1' });
+      if (made) copy(made.text);
+      else toast('An invite needs the room code first: press New code, or start the game as host.', 'error');
+    } else if (t.dataset.copy) copy(t.dataset.copy);
     else if (t.dataset.act === 'new-code') newCode();
     else if (t.dataset.act === 'switch') inOrder(async () => { await save(protocolEdits()); draw(); });
   });
