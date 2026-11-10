@@ -30,7 +30,7 @@ assert.equal(store.layout, M.serialize(l), 'saved');
 assert.deepEqual(A.loadLayout(), out, 'load after save');
 assert.equal(attrs.nav, 'top'); assert.equal(attrs.density, 'compact');
 assert.ok('data-hide-news' in attrs); assert.ok(!('data-hide-link' in attrs));
-assert.equal(btns.find((b) => b.dataset.page === 'settings').style.order, '0');
+assert.equal(btns.find((b) => b.dataset.page === 'settings').style.order, '1');   // first in the player's order, after the brand (0)
 assert.equal(btns.find((b) => b.dataset.page === 'news').hidden, true);
 assert.equal(btns.find((b) => b.dataset.page === 'home').hidden, false);
 assert.equal(events.at(-1).type, A.LAYOUT_EVENT);

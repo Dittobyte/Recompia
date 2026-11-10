@@ -2,6 +2,11 @@
    With no attributes set none of this applies and the launcher looks as it always did. Colours and sizes come from theme.css tokens.
    Specificity note: each position rule is scoped to body:not([data-shell="full"]) so the first-run setup (no sidebar) is never changed. */
 
+/* ---------- sidebar items: the brand first, the pages in the player's order, the fixed buttons last; a hidden page really hides ---------- */
+#nav > .brand { order: 0; }
+#nav > :not(.brand):not([data-page]) { order: 10; }
+#nav [data-page][hidden] { display: none !important; }
+
 /* ---------- compact spacing: the same tokens, smaller ---------- */
 html[data-density="compact"] {
   --space-1: 3px;

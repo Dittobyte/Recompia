@@ -29,7 +29,7 @@ export function applyLayout(l) {
   if (lay.blocks.link) root.removeAttribute('data-hide-link'); else root.setAttribute('data-hide-link', '');
   for (const btn of document.querySelectorAll('#nav [data-page]')) {
     const i = lay.order.indexOf(btn.dataset.page);
-    if (i >= 0) btn.style.order = String(i);
+    if (i >= 0) btn.style.order = String(i + 1);   // the brand stays first (order 0), the fixed buttons last (layout-modes.css)
     btn.hidden = lay.hidden.includes(btn.dataset.page);
   }
 }
