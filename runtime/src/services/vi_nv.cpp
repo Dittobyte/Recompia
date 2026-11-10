@@ -10,6 +10,7 @@
 //
 // The services are in vi_display.cpp (vi), vi_nvdrv.cpp (nvdrv) and vi_nv_common.cpp (helpers both use); this file registers them and resets their state.
 
+#include <cstring>
 #include "vi_nv_internal.h"
 
 namespace nxrt::services {

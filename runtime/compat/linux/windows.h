@@ -16,6 +16,7 @@
 #include <cerrno>
 #include <climits>
 #include <x86intrin.h>
+#include "msvc_crt.h"
 
 // ---- basic types -------------------------------------------------------------------------------------------------
 typedef int BOOL;
@@ -24,8 +25,8 @@ typedef unsigned short WORD, USHORT, LANGID;
 typedef int32_t LONG, INT, *PLONG;
 typedef uint32_t DWORD, ULONG, UINT, UINT32, *PDWORD, *LPDWORD, *PULONG;
 typedef int64_t LONGLONG, INT64;
-typedef uint64_t ULONGLONG, DWORD64, ULONG64, UINT64;
-typedef uintptr_t ULONG_PTR, DWORD_PTR, SIZE_T, UINT_PTR, *PULONG_PTR, *PSIZE_T;
+typedef uint64_t ULONGLONG, DWORD64, ULONG64, UINT64, *PULONG64, *PDWORD64;
+typedef uintptr_t ULONG_PTR, DWORD_PTR, SIZE_T, UINT_PTR, *PULONG_PTR, *PSIZE_T, *PDWORD_PTR;
 typedef intptr_t LONG_PTR, INT_PTR, SSIZE_T;
 typedef void *HANDLE, *PVOID, *LPVOID, *HMODULE, *HINSTANCE, *HWND, *FARPROC;
 typedef const void *LPCVOID;
@@ -105,10 +106,6 @@ void GetSystemTimePreciseAsFileTime(LPFILETIME ft);
 typedef unsigned int MMRESULT;
 inline MMRESULT timeBeginPeriod(UINT) { return 0; }   // Linux timers are already fine grained
 inline MMRESULT timeEndPeriod(UINT) { return 0; }
-inline int localtime_s(struct tm* out, const time_t* t) { return localtime_r(t, out) ? 0 : EINVAL; }
-inline int gmtime_s(struct tm* out, const time_t* t) { return gmtime_r(t, out) ? 0 : EINVAL; }
-inline unsigned long long _strtoui64(const char* s, char** e, int b) { return strtoull(s, e, b); }
-inline long long _strtoi64(const char* s, char** e, int b) { return strtoll(s, e, b); }
 
 // ---- processes and threads ---------------------------------------------------------------------------------------
 #define CREATE_SUSPENDED 0x00000004u
@@ -147,6 +144,7 @@ HRESULT SetThreadDescription(HANDLE t, PCWSTR name);
 BOOL GetThreadTimes(HANDLE t, LPFILETIME create, LPFILETIME exit, LPFILETIME kernel, LPFILETIME user);
 BOOL GetProcessTimes(HANDLE p, LPFILETIME create, LPFILETIME exit, LPFILETIME kernel, LPFILETIME user);
 BOOL SetPriorityClass(HANDLE p, DWORD cls);
+DWORD GetPriorityClass(HANDLE p);   // the class last set with SetPriorityClass (NORMAL_PRIORITY_CLASS at start)
 BOOL GetExitCodeThread(HANDLE t, LPDWORD code);
 [[noreturn]] void ExitThread(DWORD code);
 [[noreturn]] void ExitProcess(UINT code);
@@ -354,10 +352,9 @@ DWORD GetModuleFileNameW(HMODULE m, LPWSTR buf, DWORD size);
 DWORD GetFullPathNameA(LPCSTR path, DWORD size, LPSTR buf, LPSTR* file_part);
 DWORD GetFullPathNameW(LPCWSTR path, DWORD size, LPWSTR buf, LPWSTR* file_part);
 DWORD GetCurrentDirectoryA(DWORD size, LPSTR buf);
+BOOL SetCurrentDirectoryA(LPCSTR path);
+BOOL SetCurrentDirectoryW(LPCWSTR path);
 DWORD GetTempPathA(DWORD size, LPSTR buf);
-FILE* _wfopen(const wchar_t* path, const wchar_t* mode);
-int _wremove(const wchar_t* path);
-int _wrename(const wchar_t* from, const wchar_t* to);
 
 // ---- dynamic libraries -------------------------------------------------------------------------------------------
 #define LOAD_LIBRARY_SEARCH_SYSTEM32 0x00000800u
@@ -430,5 +427,129 @@ BOOL AllocConsole();
 #define SUBLANG_CHINESE_HONGKONG 0x03
 #define SUBLANG_CHINESE_MACAU 0x05
 LANGID GetUserDefaultUILanguage();   // from LANG / LC_ALL / LC_MESSAGES
+
+// ---- exceptions (signals) ----------------------------------------------------------------------------------------
+// Hardware faults arrive as signals (SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGTRAP) and are turned into the same
+// EXCEPTION_RECORD + CONTEXT that Windows gives a vectored handler. See win32_fault.cpp.
+#define EXCEPTION_ACCESS_VIOLATION 0xC0000005u
+#define EXCEPTION_IN_PAGE_ERROR 0xC0000006u
+#define EXCEPTION_ILLEGAL_INSTRUCTION 0xC000001Du
+#define EXCEPTION_NONCONTINUABLE_EXCEPTION 0xC0000025u
+#define EXCEPTION_INT_DIVIDE_BY_ZERO 0xC0000094u
+#define EXCEPTION_INT_OVERFLOW 0xC0000095u
+#define EXCEPTION_PRIV_INSTRUCTION 0xC0000096u
+#define EXCEPTION_STACK_OVERFLOW 0xC00000FDu
+#define EXCEPTION_FLT_DIVIDE_BY_ZERO 0xC000008Eu
+#define EXCEPTION_FLT_INVALID_OPERATION 0xC0000090u
+#define EXCEPTION_BREAKPOINT 0x80000003u
+#define EXCEPTION_SINGLE_STEP 0x80000004u
+#define EXCEPTION_NONCONTINUABLE 0x1u
+#define EXCEPTION_MAXIMUM_PARAMETERS 15
+#define EXCEPTION_CONTINUE_EXECUTION (-1)
+#define EXCEPTION_CONTINUE_SEARCH 0
+#define EXCEPTION_EXECUTE_HANDLER 1
+#define CONTEXT_AMD64 0x00100000u
+#define CONTEXT_CONTROL (CONTEXT_AMD64 | 0x1u)
+#define CONTEXT_INTEGER (CONTEXT_AMD64 | 0x2u)
+#define CONTEXT_SEGMENTS (CONTEXT_AMD64 | 0x4u)
+#define CONTEXT_FLOATING_POINT (CONTEXT_AMD64 | 0x8u)
+#define CONTEXT_FULL (CONTEXT_CONTROL | CONTEXT_INTEGER | CONTEXT_FLOATING_POINT)
+#define CONTEXT_ALL (CONTEXT_FULL | CONTEXT_SEGMENTS)
+// The general registers of an x86-64 thread, named as in the Win32 CONTEXT. Only these are kept (no FPU/XMM state).
+typedef struct _CONTEXT {
+    DWORD ContextFlags; DWORD MxCsr; WORD SegCs, SegDs, SegEs, SegFs, SegGs, SegSs; DWORD EFlags;
+    DWORD64 Rax, Rcx, Rdx, Rbx, Rsp, Rbp, Rsi, Rdi, R8, R9, R10, R11, R12, R13, R14, R15, Rip;
+} CONTEXT, *PCONTEXT;
+typedef struct _EXCEPTION_RECORD {
+    DWORD ExceptionCode; DWORD ExceptionFlags; struct _EXCEPTION_RECORD* ExceptionRecord; PVOID ExceptionAddress;
+    DWORD NumberParameters; ULONG_PTR ExceptionInformation[EXCEPTION_MAXIMUM_PARAMETERS];
+} EXCEPTION_RECORD, *PEXCEPTION_RECORD;
+typedef struct _EXCEPTION_POINTERS { PEXCEPTION_RECORD ExceptionRecord; PCONTEXT ContextRecord; } EXCEPTION_POINTERS, *PEXCEPTION_POINTERS;
+typedef LONG (*PVECTORED_EXCEPTION_HANDLER)(PEXCEPTION_POINTERS);
+typedef LONG (*PTOP_LEVEL_EXCEPTION_FILTER)(PEXCEPTION_POINTERS);
+typedef PTOP_LEVEL_EXCEPTION_FILTER LPTOP_LEVEL_EXCEPTION_FILTER;
+PVOID AddVectoredExceptionHandler(ULONG first, PVECTORED_EXCEPTION_HANDLER fn);
+ULONG RemoveVectoredExceptionHandler(PVOID h);
+LPTOP_LEVEL_EXCEPTION_FILTER SetUnhandledExceptionFilter(LPTOP_LEVEL_EXCEPTION_FILTER fn);
+[[noreturn]] void RaiseException(DWORD code, DWORD flags, DWORD nargs, const ULONG_PTR* args);
+BOOL SetThreadStackGuarantee(PULONG size);   // installs this thread's signal stack (size is the reserve asked for)
+BOOL TerminateProcess(HANDLE p, UINT code);
+BOOL IsBadReadPtr(const void* p, UINT_PTR size);
+BOOL IsBadWritePtr(LPVOID p, UINT_PTR size);
+BOOL ReadProcessMemory(HANDLE p, LPCVOID from, LPVOID to, SIZE_T n, SIZE_T* got);
+HANDLE OpenThread(DWORD access, BOOL inherit, DWORD tid);
+DWORD SuspendThread(HANDLE t);   // stops the thread in a signal handler until ResumeThread
+BOOL GetThreadContext(HANDLE t, PCONTEXT c);   // only for a thread stopped by SuspendThread
+BOOL SetThreadPriorityBoost(HANDLE, BOOL);
+BOOL GetProcessHandleCount(HANDLE p, PDWORD count);
+#define ERROR_DISK_FULL 112u
+HANDLE CreateMutexA(LPSECURITY_ATTRIBUTES, BOOL owned, LPCSTR name);
+HANDLE CreateMutexW(LPSECURITY_ATTRIBUTES, BOOL owned, LPCWSTR name);
+BOOL ReleaseMutex(HANDLE m);
+
+// ---- paths given as std::filesystem::path::c_str() ----------------------------------------------------------------
+// On Windows path::c_str() is wide; on Linux it is UTF-8 char. These let the W calls take either.
+HANDLE CreateFileW(const char* path, DWORD access, DWORD share, LPSECURITY_ATTRIBUTES sa, DWORD disp, DWORD flags, HANDLE tmpl);
+inline BOOL DeleteFileW(const char* p) { return DeleteFileA(p); }
+inline DWORD GetFileAttributesW(const char* p) { return GetFileAttributesA(p); }
+inline BOOL GetFileAttributesExW(const char* p, GET_FILEEX_INFO_LEVELS l, LPVOID out) { return GetFileAttributesExA(p, l, out); }
+inline BOOL CreateDirectoryW(const char* p, LPSECURITY_ATTRIBUTES sa) { return CreateDirectoryA(p, sa); }
+inline BOOL RemoveDirectoryW(const char* p) { return RemoveDirectoryA(p); }
+inline BOOL MoveFileExW(const char* a, const char* b, DWORD f) { return MoveFileExA(a, b, f); }
+inline BOOL CopyFileW(const char* a, const char* b, BOOL f) { return CopyFileA(a, b, f); }
+
+// ---- more processes, threads and system information ---------------------------------------------------------------
+HANDLE OpenProcess(DWORD access, BOOL inherit, DWORD pid);   // waits on it say whether the process is still running
+BOOL QueryThreadCycleTime(HANDLE t, PULONG64 cycles);        // CPU time of the thread in nanoseconds (Linux has no cycle count)
+#define GR_GDIOBJECTS 0u
+#define GR_USEROBJECTS 1u
+inline DWORD GetGuiResources(HANDLE, DWORD) { return 0; }   // no GDI/USER objects on Linux
+typedef struct _PROCESSOR_NUMBER { WORD Group; BYTE Number; BYTE Reserved; } PROCESSOR_NUMBER, *PPROCESSOR_NUMBER;
+void GetCurrentProcessorNumberEx(PPROCESSOR_NUMBER pn);
+typedef enum _LOGICAL_PROCESSOR_RELATIONSHIP { RelationProcessorCore = 0, RelationNumaNode = 1, RelationCache = 2, RelationProcessorPackage = 3,
+                                               RelationGroup = 4, RelationAll = 0xffff } LOGICAL_PROCESSOR_RELATIONSHIP;
+typedef ULONG_PTR KAFFINITY;
+typedef struct _GROUP_AFFINITY { KAFFINITY Mask; WORD Group; WORD Reserved[3]; } GROUP_AFFINITY, *PGROUP_AFFINITY;
+typedef struct _PROCESSOR_RELATIONSHIP { BYTE Flags; BYTE EfficiencyClass; BYTE Reserved[20]; WORD GroupCount; GROUP_AFFINITY GroupMask[1]; } PROCESSOR_RELATIONSHIP;
+typedef struct _SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX {
+    LOGICAL_PROCESSOR_RELATIONSHIP Relationship; DWORD Size;
+    union { PROCESSOR_RELATIONSHIP Processor; BYTE Reserved_[76]; };
+} SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX, *PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX;
+// RelationProcessorCore only, from /sys/devices/system/cpu: one record per physical core with its logical CPUs. EfficiencyClass
+// ranks the cores by their maximum frequency (performance cores of a hybrid CPU get the higher class, as on Windows).
+BOOL GetLogicalProcessorInformationEx(LOGICAL_PROCESSOR_RELATIONSHIP rel, PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX buf, PDWORD len);
+DWORD GetPrivateProfileStringA(LPCSTR section, LPCSTR key, LPCSTR def, LPSTR out, DWORD size, LPCSTR file);
+
+// ---- registry, process creation, power and affinity ----------------------------------------------------------------
+// Registry: only HKLM\HARDWARE\DESCRIPTION\System\BIOS is answered, from /sys/class/dmi/id (the data Wine fills it with).
+typedef struct HKEY__* HKEY;
+typedef LONG LSTATUS;
+#define HKEY_LOCAL_MACHINE (reinterpret_cast<HKEY>(static_cast<intptr_t>(0x80000002)))
+#define HKEY_CURRENT_USER (reinterpret_cast<HKEY>(static_cast<intptr_t>(0x80000001)))
+#define RRF_RT_REG_SZ 0x00000002u
+#define RRF_RT_REG_DWORD 0x00000010u
+LSTATUS RegGetValueA(HKEY key, LPCSTR sub, LPCSTR value, DWORD flags, LPDWORD type, PVOID data, LPDWORD size);
+// CreateProcessW: the runtime only starts Windows helpers (steam.exe, winebrowser.exe), which don't exist on Linux; it then falls
+// back to ShellExecute (xdg-open).
+typedef struct _STARTUPINFOW { DWORD cb; LPWSTR lpReserved, lpDesktop, lpTitle; DWORD dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags; WORD wShowWindow, cbReserved2; BYTE* lpReserved2; HANDLE hStdInput, hStdOutput, hStdError; } STARTUPINFOW, *LPSTARTUPINFOW;
+typedef struct _PROCESS_INFORMATION { HANDLE hProcess; HANDLE hThread; DWORD dwProcessId; DWORD dwThreadId; } PROCESS_INFORMATION, *LPPROCESS_INFORMATION;
+#define CREATE_NO_WINDOW 0x08000000u
+inline BOOL CreateProcessW(LPCWSTR, LPWSTR, LPSECURITY_ATTRIBUTES, LPSECURITY_ATTRIBUTES, BOOL, DWORD, LPVOID, LPCWSTR, LPSTARTUPINFOW, LPPROCESS_INFORMATION) {
+    SetLastError(ERROR_FILE_NOT_FOUND); return FALSE;
+}
+BOOL GetProcessAffinityMask(HANDLE p, PDWORD_PTR proc, PDWORD_PTR sys);
+BOOL GetThreadIdealProcessorEx(HANDLE t, PPROCESSOR_NUMBER pn);   // Linux has no ideal processor: the one the thread runs on now
+// The scheduler has no ideal-processor hint: the request is accepted and the affinity mask alone steers the thread.
+inline BOOL SetThreadIdealProcessorEx(HANDLE t, PPROCESSOR_NUMBER, PPROCESSOR_NUMBER prev) {
+    return prev ? GetThreadIdealProcessorEx(t, prev) : TRUE;
+}
+// Power throttling (EcoQoS) is a Windows scheduler feature; SetProcessInformation reports it as not supported.
+typedef enum _PROCESS_INFORMATION_CLASS { ProcessMemoryPriority, ProcessMemoryExhaustionInfo, ProcessAppMemoryInfo, ProcessInPrivateInfo,
+                                          ProcessPowerThrottling } PROCESS_INFORMATION_CLASS;
+typedef struct _PROCESS_POWER_THROTTLING_STATE { ULONG Version; ULONG ControlMask; ULONG StateMask; } PROCESS_POWER_THROTTLING_STATE;
+#define PROCESS_POWER_THROTTLING_CURRENT_VERSION 1
+#define PROCESS_POWER_THROTTLING_EXECUTION_SPEED 0x1
+#define PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION 0x4
+inline BOOL SetProcessInformation(HANDLE, PROCESS_INFORMATION_CLASS, LPVOID, DWORD) { SetLastError(ERROR_NOT_SUPPORTED); return FALSE; }
 
 #endif // !_WIN32

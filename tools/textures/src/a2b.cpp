@@ -2,10 +2,16 @@
 // Uses: ARM astcenc 5.7.0 (Apache-2.0) through per-ISA DLLs, bc7e.ispc from bc7enc_rdo (Apache-2.0, Binomial LLC).
 #include "astc2bc7.h"
 
+#ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
 #include <intrin.h>
+#else
+#include <cpuid.h>
+#include <dlfcn.h>
+#include <unistd.h>
+#endif
 
 #include <algorithm>
 #include <atomic>
@@ -22,8 +28,16 @@
 namespace {
 
 // ---------------------------------------------------------------- astcenc DLL dispatch
+#ifdef _WIN32
+using LibHandle = HMODULE;
+using PathString = std::wstring;
+#else
+using LibHandle = void*;
+using PathString = std::string;
+#endif
+
 struct AstcApi {
-    HMODULE module = nullptr;
+    LibHandle module = nullptr;
     const char* isa = nullptr;
     decltype(&astcenc_config_init) config_init = nullptr;
     decltype(&astcenc_context_alloc) context_alloc = nullptr;
@@ -36,25 +50,47 @@ AstcApi g_astc;
 std::mutex g_astc_mutex;
 std::once_flag g_bc7e_once;
 
+#ifndef _WIN32
+// The MSVC intrinsics on GCC/Clang's cpuid.h.
+void cpuidex(int r[4], int leaf, int sub) {
+    unsigned a, b, c, d;
+    __cpuid_count(leaf, sub, a, b, c, d);
+    r[0] = (int)a; r[1] = (int)b; r[2] = (int)c; r[3] = (int)d;
+}
+unsigned long long xgetbv0() {
+    unsigned lo, hi;
+    __asm__ volatile("xgetbv" : "=a"(lo), "=d"(hi) : "c"(0));
+    return ((unsigned long long)hi << 32) | lo;
+}
+#define A2B_CPUID(r, leaf) cpuidex(r, leaf, 0)
+#define A2B_CPUIDEX(r, leaf, sub) cpuidex(r, leaf, sub)
+#define A2B_XGETBV0() xgetbv0()
+#else
+#define A2B_CPUID(r, leaf) __cpuid(r, leaf)
+#define A2B_CPUIDEX(r, leaf, sub) __cpuidex(r, leaf, sub)
+#define A2B_XGETBV0() _xgetbv(0)
+#endif
+
 bool cpu_has_avx2() {
     int r[4];
-    __cpuid(r, 0);
+    A2B_CPUID(r, 0);
     if (r[0] < 7) return false;
-    __cpuid(r, 1);
+    A2B_CPUID(r, 1);
     const bool osxsave = (r[2] >> 27) & 1, avx = (r[2] >> 28) & 1, f16c = (r[2] >> 29) & 1, fma = (r[2] >> 12) & 1;
     const bool popcnt = (r[2] >> 23) & 1;
     if (!(osxsave && avx && f16c && fma && popcnt)) return false;
-    if ((_xgetbv(0) & 6) != 6) return false;  // OS saves YMM state
-    __cpuidex(r, 7, 0);
+    if ((A2B_XGETBV0() & 6) != 6) return false;  // OS saves YMM state
+    A2B_CPUIDEX(r, 7, 0);
     return (r[1] >> 5) & 1;                   // AVX2
 }
 
 bool cpu_has_sse41() {
     int r[4];
-    __cpuid(r, 1);
+    A2B_CPUID(r, 1);
     return ((r[2] >> 19) & 1) && ((r[2] >> 23) & 1);  // SSE4.1 + POPCNT
 }
 
+#ifdef _WIN32
 std::wstring exe_dir() {
     wchar_t buf[MAX_PATH * 2];
     DWORD n = GetModuleFileNameW(nullptr, buf, (DWORD)(sizeof buf / sizeof buf[0]));
@@ -70,19 +106,42 @@ std::wstring widen(const char* s) {
     return w;
 }
 
-bool load_isa(const std::wstring& dir, const char* isa, AstcApi& api) {
-    std::wstring path = dir + L"\\astcdec-" + widen(isa) + L"-shared.dll";
-    HMODULE m = LoadLibraryW(path.c_str());
+LibHandle open_isa(const std::wstring& dir, const char* isa) {
+    return LoadLibraryW((dir + L"\\astcdec-" + widen(isa) + L"-shared.dll").c_str());
+}
+void* lib_symbol(LibHandle m, const char* name) { return (void*)GetProcAddress(m, name); }
+void lib_close(LibHandle m) { FreeLibrary(m); }
+PathString lib_dir(const char* dll_dir) { return dll_dir ? widen(dll_dir) : exe_dir(); }
+#else
+std::string exe_dir() {
+    char buf[4096];
+    const ssize_t n = readlink("/proc/self/exe", buf, sizeof buf - 1);
+    if (n <= 0) return ".";
+    std::string s(buf, (size_t)n);
+    size_t p = s.find_last_of('/');
+    return p == std::string::npos ? "." : s.substr(0, p);
+}
+
+LibHandle open_isa(const std::string& dir, const char* isa) {
+    return dlopen((dir + "/libastcdec-" + isa + "-shared.so").c_str(), RTLD_NOW | RTLD_LOCAL);
+}
+void* lib_symbol(LibHandle m, const char* name) { return dlsym(m, name); }
+void lib_close(LibHandle m) { dlclose(m); }
+PathString lib_dir(const char* dll_dir) { return dll_dir ? std::string(dll_dir) : exe_dir(); }
+#endif
+
+bool load_isa(const PathString& dir, const char* isa, AstcApi& api) {
+    LibHandle m = open_isa(dir, isa);
     if (!m) return false;
     api.module = m;
     api.isa = isa;
-    api.config_init = (decltype(api.config_init))GetProcAddress(m, "astcenc_config_init");
-    api.context_alloc = (decltype(api.context_alloc))GetProcAddress(m, "astcenc_context_alloc");
-    api.decompress = (decltype(api.decompress))GetProcAddress(m, "astcenc_decompress_image");
-    api.context_free = (decltype(api.context_free))GetProcAddress(m, "astcenc_context_free");
-    api.error_string = (decltype(api.error_string))GetProcAddress(m, "astcenc_get_error_string");
+    api.config_init = (decltype(api.config_init))lib_symbol(m, "astcenc_config_init");
+    api.context_alloc = (decltype(api.context_alloc))lib_symbol(m, "astcenc_context_alloc");
+    api.decompress = (decltype(api.decompress))lib_symbol(m, "astcenc_decompress_image");
+    api.context_free = (decltype(api.context_free))lib_symbol(m, "astcenc_context_free");
+    api.error_string = (decltype(api.error_string))lib_symbol(m, "astcenc_get_error_string");
     if (api.config_init && api.context_alloc && api.decompress && api.context_free && api.error_string) return true;
-    FreeLibrary(m);
+    lib_close(m);
     api = AstcApi{};
     return false;
 }
@@ -90,7 +149,7 @@ bool load_isa(const std::wstring& dir, const char* isa, AstcApi& api) {
 a2b_status ensure_astc(const char* dll_dir) {
     std::lock_guard<std::mutex> lock(g_astc_mutex);
     if (g_astc.module) return A2B_OK;
-    std::wstring dir = dll_dir ? widen(dll_dir) : exe_dir();
+    const PathString dir = lib_dir(dll_dir);
     std::vector<const char*> order;
     if (cpu_has_avx2()) order.push_back("avx2");
     if (cpu_has_sse41()) order.push_back("sse4.1");
@@ -137,7 +196,7 @@ const char* a2b_status_string(a2b_status s) {
         case A2B_ERR_ARGS: return "bad arguments";
         case A2B_ERR_SIZE: return "buffer size does not match dimensions";
         case A2B_ERR_UNSUPPORTED: return "unsupported format";
-        case A2B_ERR_NO_ASTC_LIB: return "astcdec-*-shared.dll not found";
+        case A2B_ERR_NO_ASTC_LIB: return "the astcdec-*-shared decoder libraries were not found";
         case A2B_ERR_DECODE: return "astcenc decode error";
     }
     return "?";

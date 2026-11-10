@@ -36,6 +36,7 @@
 #include <vector>
 
 #include "nxrt/config.h"
+#include "nxrt/fault_guard.h"
 #include "nxrt/ftrace.h"
 #include "nxrt/gauge.h"
 #include "nxrt/host_device.h"
@@ -179,14 +180,9 @@ struct CopyGauges {
 };
 CopyGauges g_copy_gauges;
 
-// memcpy that survives an access violation (a guest page decommitted under it). No C++ objects here (SEH).
+// memcpy that survives an access violation (a guest page decommitted under it).
 bool seh_copy(void* d, const void* s, size_t n) {
-    __try {
-        std::memcpy(d, s, n);
-    } __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
-        return false;
-    }
-    return true;
+    return nxrt::fault_guarded([&] { std::memcpy(d, s, n); });
 }
 
 // [d, d + n) <- [s, s + n); on a fault, page by page of `s` (in) or `d` (out): a part that cannot be copied is zero-filled when it is the

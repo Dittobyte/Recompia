@@ -3,6 +3,10 @@
 #ifndef _WIN32
 #include "windows.h"
 #include "psapi.h"
+#include "tlhelp32.h"
+#include "compat_internal.h"
+#include "iphlpapi.h"
+#include "shellapi.h"
 
 #include <algorithm>
 #include <atomic>
@@ -19,6 +23,8 @@
 #include <sched.h>
 #include <signal.h>
 #include <sys/mman.h>
+#include <spawn.h>
+#include <sys/file.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -33,7 +39,7 @@ thread_local DWORD t_last_error = 0;
 
 // ---- handles -----------------------------------------------------------------------------------------------------
 // Every HANDLE the compat layer gives out points at one of these. The pseudo handles (-1 process, -2 thread) never do.
-enum class Kind { File, Thread, Event, Semaphore, Timer, Mapping, Find, Std };
+enum class Kind { File, Thread, Event, Semaphore, Timer, Mapping, Find, Std, Mutex, Snapshot, Process };
 struct Handle {
     Kind kind;
     explicit Handle(Kind k) : kind(k) {}
@@ -59,6 +65,11 @@ struct TimerH : WaitH {
     ~TimerH() override { if (armed) timer_delete(timer); }
 };
 struct MappingH : Handle { int fd; uint64_t size; explicit MappingH(int f, uint64_t s) : Handle(Kind::Mapping), fd(f), size(s) {} ~MappingH() override { ::close(fd); } };
+struct ProcessH : WaitH { pid_t pid; explicit ProcessH(pid_t p) : WaitH(Kind::Process), pid(p) {} };
+struct SnapshotH : Handle { std::vector<DWORD> tids; size_t next = 0; SnapshotH() : Handle(Kind::Snapshot) {} };
+// A named mutex is a lock file held with flock: another process asking for the same name finds it taken (ERROR_ALREADY_EXISTS),
+// which is how the runtime spreads several instances over the CPU. Unnamed ones are an in-process lock.
+struct MutexH : WaitH { int fd = -1; MutexH() : WaitH(Kind::Mutex) { manual = false; count = 1; max = 1; } ~MutexH() override { if (fd >= 0) ::close(fd); } };
 struct FindH : Handle {
     std::vector<std::string> names; std::string dir; size_t next = 0;
     FindH() : Handle(Kind::Find) {}
@@ -190,6 +201,7 @@ BOOL SwitchToThread() { sched_yield(); return TRUE; }
 static void* thread_entry(void* p) {
     auto* t = static_cast<ThreadH*>(p);
     t->tid = static_cast<int>(syscall(SYS_gettid));
+    nx_fault_thread_setup();
     {
         std::unique_lock<std::mutex> g(t->m);   // CREATE_SUSPENDED: wait for ResumeThread
         while (t->suspended) { g.unlock(); Sleep(1); g.lock(); }
@@ -218,6 +230,8 @@ HANDLE CreateThread(LPSECURITY_ATTRIBUTES, SIZE_T stack, LPTHREAD_START_ROUTINE 
 DWORD ResumeThread(HANDLE h) {
     auto* t = dynamic_cast<ThreadH*>(of(h));
     if (!t) return static_cast<DWORD>(-1);
+    DWORD prev = 0;
+    if (nx_fault_resume(t->tid.load(), &prev)) return prev;   // a SuspendThread stop
     std::lock_guard<std::mutex> g(t->m);
     DWORD was = t->suspended ? 1 : 0; t->suspended = false; return was;
 }
@@ -249,7 +263,7 @@ DWORD_PTR SetThreadAffinityMask(HANDLE h, DWORD_PTR mask) {
 HRESULT SetThreadDescription(HANDLE h, PCWSTR name) {
     std::string n = to_utf8(name).substr(0, 15);
     if (reinterpret_cast<intptr_t>(h) == -2) { pthread_setname_np(pthread_self(), n.c_str()); return S_OK; }
-    auto* t = dynamic_cast<ThreadH*>(of(h)); if (t) pthread_setname_np(t->t, n.c_str());
+    auto* t = dynamic_cast<ThreadH*>(of(h)); if (t && t->fn) pthread_setname_np(t->t, n.c_str());
     return S_OK;
 }
 static BOOL times_of(clockid_t clk, LPFILETIME kernel, LPFILETIME user) {
@@ -275,7 +289,10 @@ BOOL GetProcessTimes(HANDLE, LPFILETIME create, LPFILETIME exit, LPFILETIME kern
     if (user) ns_to_filetime_span(static_cast<int64_t>(r.ru_utime.tv_sec) * 1000000000LL + r.ru_utime.tv_usec * 1000LL, user);
     return TRUE;
 }
-BOOL SetPriorityClass(HANDLE, DWORD) { return TRUE; }   // process priority stays with the desktop (nice is per thread)
+// Process priority stays with the desktop (nice is per thread); the class is only remembered for GetPriorityClass.
+std::atomic<DWORD> g_priority_class{NORMAL_PRIORITY_CLASS};
+BOOL SetPriorityClass(HANDLE, DWORD cls) { g_priority_class = cls; return TRUE; }
+DWORD GetPriorityClass(HANDLE) { return g_priority_class; }
 BOOL GetExitCodeThread(HANDLE h, LPDWORD code) {
     auto* t = dynamic_cast<ThreadH*>(of(h)); if (!t) return FALSE;
     std::lock_guard<std::mutex> g(t->m); *code = t->exit_code; return TRUE;
@@ -390,6 +407,15 @@ static DWORD wait_one(WaitH* w, DWORD ms) {
 }
 DWORD WaitForSingleObject(HANDLE h, DWORD ms) {
     auto* w = dynamic_cast<WaitH*>(of(h)); if (!w) { t_last_error = ERROR_INVALID_HANDLE; return WAIT_FAILED; }
+    if (auto* p = dynamic_cast<ProcessH*>(w)) {   // polled: only used to ask whether another instance is still running
+        ULONGLONG end = ms == INFINITE ? ~0ULL : GetTickCount64() + ms;
+        for (;;) {
+            if (kill(p->pid, 0) != 0 && errno == ESRCH) return WAIT_OBJECT_0;
+            if (GetTickCount64() >= end) return WAIT_TIMEOUT;
+            Sleep(ms == 0 ? 0 : 10);
+            if (ms == 0) return WAIT_TIMEOUT;
+        }
+    }
     return wait_one(w, ms);
 }
 DWORD WaitForSingleObjectEx(HANDLE h, DWORD ms, BOOL) { return WaitForSingleObject(h, ms); }
@@ -649,6 +675,9 @@ HANDLE CreateFileA(LPCSTR path, DWORD access, DWORD, LPSECURITY_ATTRIBUTES, DWOR
     if (disp == CREATE_ALWAYS || disp == OPEN_ALWAYS) t_last_error = 0;
     return as_handle(new FileH(fd));
 }
+HANDLE CreateFileW(const char* path, DWORD access, DWORD share, LPSECURITY_ATTRIBUTES sa, DWORD disp, DWORD flags, HANDLE tmpl) {
+    return CreateFileA(path, access, share, sa, disp, flags, tmpl);
+}
 HANDLE CreateFileW(LPCWSTR path, DWORD access, DWORD share, LPSECURITY_ATTRIBUTES sa, DWORD disp, DWORD flags, HANDLE tmpl) {
     return CreateFileA(to_utf8(path).c_str(), access, share, sa, disp, flags, tmpl);
 }
@@ -816,6 +845,8 @@ DWORD GetCurrentDirectoryA(DWORD size, LPSTR buf) {
     DWORD n = static_cast<DWORD>(std::strlen(cwd)); if (n >= size) return n + 1;
     std::memcpy(buf, cwd, n + 1); return n;
 }
+BOOL SetCurrentDirectoryA(LPCSTR path) { return chdir(fix_path(path).c_str()) == 0 ? TRUE : fail_errno(); }
+BOOL SetCurrentDirectoryW(LPCWSTR path) { return SetCurrentDirectoryA(to_utf8(path).c_str()); }
 DWORD GetTempPathA(DWORD size, LPSTR buf) {
     const char* t = std::getenv("TMPDIR"); std::string p = std::string(t && *t ? t : "/tmp") + "/";
     if (p.size() >= size) return static_cast<DWORD>(p.size() + 1);
@@ -825,6 +856,12 @@ FILE* _wfopen(const wchar_t* path, const wchar_t* mode) {
     std::string m = to_utf8(mode); m.erase(std::remove(m.begin(), m.end(), 'b'), m.end()); m += 'b';   // binary is the only mode on Linux
     return std::fopen(fix_path(to_utf8(path)).c_str(), m.c_str());
 }
+FILE* _wfopen(const char* path, const wchar_t* mode) {
+    std::string m = to_utf8(mode); m.erase(std::remove(m.begin(), m.end(), 'b'), m.end()); m += 'b';
+    return std::fopen(fix_path(path).c_str(), m.c_str());
+}
+int _wremove(const char* path) { return std::remove(fix_path(path).c_str()); }
+int _wrename(const char* from, const char* to) { return std::rename(fix_path(from).c_str(), fix_path(to).c_str()); }
 int _wremove(const wchar_t* path) { return std::remove(fix_path(to_utf8(path)).c_str()); }
 int _wrename(const wchar_t* from, const wchar_t* to) { return std::rename(fix_path(to_utf8(from)).c_str(), fix_path(to_utf8(to)).c_str()); }
 
@@ -912,5 +949,220 @@ LANGID GetUserDefaultUILanguage() {
     if (is("zh_HK")) return MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_HONGKONG);
     if (is("zh")) return MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED);
     return MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US);
+}
+
+// ---- shared with win32_fault.cpp ---------------------------------------------------------------------------------
+pid_t nx_compat_thread_tid(HANDLE h) { return tid_of(h); }
+HANDLE nx_compat_thread_handle(pid_t tid) {
+    auto* t = new ThreadH(); t->tid = tid; t->refs = 1;   // an existing thread: waits on it are not supported, only suspend/context
+    return as_handle(t);
+}
+
+// ---- thread snapshots --------------------------------------------------------------------------------------------
+HANDLE CreateToolhelp32Snapshot(DWORD flags, DWORD) {
+    if (!(flags & TH32CS_SNAPTHREAD)) { t_last_error = ERROR_NOT_SUPPORTED; return INVALID_HANDLE_VALUE; }
+    DIR* d = opendir("/proc/self/task"); if (!d) { fail_errno(); return INVALID_HANDLE_VALUE; }
+    auto* s = new SnapshotH();
+    while (dirent* e = readdir(d)) if (e->d_name[0] != '.') s->tids.push_back(static_cast<DWORD>(std::strtoul(e->d_name, nullptr, 10)));
+    closedir(d); return as_handle(s);
+}
+static BOOL snapshot_next(HANDLE h, LPTHREADENTRY32 te) {
+    auto* s = dynamic_cast<SnapshotH*>(of(h));
+    if (!s || s->next >= s->tids.size()) { t_last_error = ERROR_NO_MORE_FILES; return FALSE; }
+    DWORD size = te->dwSize; std::memset(te, 0, sizeof(*te)); te->dwSize = size;
+    te->th32ThreadID = s->tids[s->next++]; te->th32OwnerProcessID = GetCurrentProcessId(); te->tpBasePri = 8;
+    return TRUE;
+}
+BOOL Thread32First(HANDLE h, LPTHREADENTRY32 te) { if (auto* s = dynamic_cast<SnapshotH*>(of(h))) s->next = 0; return snapshot_next(h, te); }
+BOOL Thread32Next(HANDLE h, LPTHREADENTRY32 te) { return snapshot_next(h, te); }
+
+// ---- mutexes -----------------------------------------------------------------------------------------------------
+HANDLE CreateMutexA(LPSECURITY_ATTRIBUTES, BOOL owned, LPCSTR name) {
+    auto* m = new MutexH();
+    t_last_error = 0;
+    if (name && *name) {
+        std::string n = name; for (auto& c : n) if (c == '\\' || c == '/') c = '_';
+        const char* rt = std::getenv("XDG_RUNTIME_DIR");
+        std::string path = std::string(rt && *rt ? rt : "/tmp") + "/" + n + ".lock";
+        m->fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0600);
+        if (m->fd < 0) { delete m; fail_errno(); return nullptr; }
+        if (flock(m->fd, LOCK_EX | LOCK_NB) != 0) t_last_error = ERROR_ALREADY_EXISTS;   // held by another process
+    }
+    if (owned) m->count = 0;
+    return as_handle(m);
+}
+HANDLE CreateMutexW(LPSECURITY_ATTRIBUTES sa, BOOL owned, LPCWSTR name) { return CreateMutexA(sa, owned, name ? to_utf8(name).c_str() : nullptr); }
+BOOL ReleaseMutex(HANDLE h) {
+    auto* m = dynamic_cast<MutexH*>(of(h)); if (!m) return FALSE;
+    std::lock_guard<std::mutex> g(m->m); m->count = 1; pthread_cond_broadcast(&m->cv); return TRUE;
+}
+
+// ---- more processes, threads and system information ---------------------------------------------------------------
+HANDLE OpenProcess(DWORD, BOOL, DWORD pid) {
+    if (kill(static_cast<pid_t>(pid), 0) != 0 && errno == ESRCH) { t_last_error = ERROR_INVALID_PARAMETER; return nullptr; }
+    return as_handle(new ProcessH(static_cast<pid_t>(pid)));
+}
+BOOL QueryThreadCycleTime(HANDLE h, PULONG64 cycles) {
+    FILETIME k, u, c, e; if (!GetThreadTimes(h, &c, &e, &k, &u)) return FALSE;
+    *cycles = ((static_cast<ULONG64>(u.dwHighDateTime) << 32) | u.dwLowDateTime) * 100;   // 100 ns units -> ns
+    return TRUE;
+}
+void GetCurrentProcessorNumberEx(PPROCESSOR_NUMBER pn) { pn->Group = 0; pn->Number = static_cast<BYTE>(GetCurrentProcessorNumber()); pn->Reserved = 0; }
+
+static std::string read_line(const std::string& path) {
+    FILE* f = std::fopen(path.c_str(), "r"); if (!f) return {};
+    char b[512] = {}; if (!std::fgets(b, sizeof b, f)) b[0] = 0; std::fclose(f);
+    std::string s = b; while (!s.empty() && (s.back() == '\n' || s.back() == ' ')) s.pop_back(); return s;
+}
+// "0-3,8,10-11" -> bit mask
+static uint64_t cpu_list_mask(const std::string& list) {
+    uint64_t m = 0; const char* p = list.c_str();
+    while (*p) {
+        char* e; long a = std::strtol(p, &e, 10), b = a; if (e == p) break; p = e;
+        if (*p == '-') { b = std::strtol(p + 1, &e, 10); p = e; }
+        for (long i = a; i <= b && i < 64; ++i) m |= uint64_t(1) << i;
+        if (*p == ',') ++p;
+    }
+    return m;
+}
+BOOL GetLogicalProcessorInformationEx(LOGICAL_PROCESSOR_RELATIONSHIP rel, PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX buf, PDWORD len) {
+    if (rel != RelationProcessorCore && rel != RelationAll) { t_last_error = ERROR_NOT_SUPPORTED; return FALSE; }
+    struct Core { uint64_t mask; long freq; };
+    std::vector<Core> cores; uint64_t seen = 0;
+    long ncpu = sysconf(_SC_NPROCESSORS_CONF);
+    for (long cpu = 0; cpu < ncpu && cpu < 64; ++cpu) {
+        if (seen & (uint64_t(1) << cpu)) continue;
+        std::string base = "/sys/devices/system/cpu/cpu" + std::to_string(cpu);
+        if (access((base + "/topology").c_str(), F_OK) != 0) continue;   // offline
+        std::string sib = read_line(base + "/topology/core_cpus_list");
+        if (sib.empty()) sib = read_line(base + "/topology/thread_siblings_list");
+        uint64_t m = sib.empty() ? (uint64_t(1) << cpu) : cpu_list_mask(sib);
+        seen |= m;
+        std::string f = read_line(base + "/cpufreq/cpuinfo_max_freq");
+        cores.push_back({m, f.empty() ? 0 : std::atol(f.c_str())});
+    }
+    // EfficiencyClass: rank of the core's maximum frequency among the distinct ones (0 = slowest).
+    std::vector<long> freqs; for (auto& c : cores) freqs.push_back(c.freq);
+    std::sort(freqs.begin(), freqs.end()); freqs.erase(std::unique(freqs.begin(), freqs.end()), freqs.end());
+    DWORD need = static_cast<DWORD>(cores.size() * sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX));
+    if (!buf || *len < need) { *len = need; t_last_error = ERROR_INSUFFICIENT_BUFFER; return FALSE; }
+    for (size_t i = 0; i < cores.size(); ++i) {
+        auto& e = buf[i]; std::memset(&e, 0, sizeof e);
+        e.Relationship = RelationProcessorCore; e.Size = sizeof e;
+        e.Processor.Flags = __builtin_popcountll(cores[i].mask) > 1 ? 1 : 0;   // LTP_PC_SMT
+        e.Processor.EfficiencyClass = static_cast<BYTE>(std::lower_bound(freqs.begin(), freqs.end(), cores[i].freq) - freqs.begin());
+        e.Processor.GroupCount = 1; e.Processor.GroupMask[0].Mask = cores[i].mask; e.Processor.GroupMask[0].Group = 0;
+    }
+    *len = need; return TRUE;
+}
+
+// The one ini read the runtime does through Win32: section and key compared without case, as Windows does.
+DWORD GetPrivateProfileStringA(LPCSTR section, LPCSTR key, LPCSTR def, LPSTR out, DWORD size, LPCSTR file) {
+    auto put = [&](const std::string& v) { DWORD n = static_cast<DWORD>(std::min<size_t>(v.size(), size ? size - 1 : 0)); if (size) { std::memcpy(out, v.data(), n); out[n] = 0; } return n; };
+    FILE* f = std::fopen(fix_path(file).c_str(), "r"); if (!f) return put(def ? def : "");
+    char line[1024]; bool in = false; std::string val; bool found = false;
+    auto trim = [](std::string s) { size_t a = s.find_first_not_of(" \t\r\n"), b = s.find_last_not_of(" \t\r\n"); return a == std::string::npos ? std::string() : s.substr(a, b - a + 1); };
+    while (!found && std::fgets(line, sizeof line, f)) {
+        std::string l = trim(line);
+        if (l.empty() || l[0] == ';' || l[0] == '#') continue;
+        if (l[0] == '[') { in = strcasecmp(trim(l.substr(1, l.find(']') - 1)).c_str(), section) == 0; continue; }
+        auto eq = l.find('='); if (!in || eq == std::string::npos) continue;
+        if (strcasecmp(trim(l.substr(0, eq)).c_str(), key) == 0) { val = trim(l.substr(eq + 1)); found = true; }
+    }
+    std::fclose(f);
+    return put(found ? val : std::string(def ? def : ""));
+}
+
+HINSTANCE ShellExecuteA(HWND, LPCSTR, LPCSTR file, LPCSTR, LPCSTR, INT) {
+    if (!file) return reinterpret_cast<HINSTANCE>(static_cast<intptr_t>(2));
+    pid_t pid; const char* argv[] = {"xdg-open", file, nullptr};
+    int r = posix_spawnp(&pid, "xdg-open", nullptr, nullptr, const_cast<char* const*>(argv), environ);
+    return reinterpret_cast<HINSTANCE>(static_cast<intptr_t>(r == 0 ? 42 : 2));   // > 32 = success, 2 = file not found
+}
+HINSTANCE ShellExecuteW(HWND h, LPCWSTR op, LPCWSTR file, LPCWSTR params, LPCWSTR dir, INT show) {
+    return ShellExecuteA(h, op ? to_utf8(op).c_str() : nullptr, file ? to_utf8(file).c_str() : nullptr, nullptr, nullptr, show);
+}
+
+ULONG GetAdaptersAddresses(ULONG family, ULONG, PVOID, PIP_ADAPTER_ADDRESSES out, PULONG len) {
+    ifaddrs* list = nullptr; if (getifaddrs(&list) != 0) return ERROR_GEN_FAILURE;
+    struct Iface { std::string name; unsigned flags; std::vector<std::pair<sockaddr_in, int>> v4; };
+    std::vector<Iface> ifs;
+    for (ifaddrs* a = list; a; a = a->ifa_next) {
+        Iface* it = nullptr; for (auto& i : ifs) if (i.name == a->ifa_name) it = &i;
+        if (!it) { ifs.push_back({a->ifa_name, a->ifa_flags, {}}); it = &ifs.back(); }
+        if (a->ifa_addr && a->ifa_addr->sa_family == AF_INET && (family == AF_UNSPEC || family == AF_INET)) {
+            int prefix = a->ifa_netmask ? __builtin_popcount(reinterpret_cast<sockaddr_in*>(a->ifa_netmask)->sin_addr.s_addr) : 0;
+            it->v4.push_back({*reinterpret_cast<sockaddr_in*>(a->ifa_addr), prefix});
+        }
+    }
+    freeifaddrs(list);
+    size_t need = 0;
+    for (auto& i : ifs) need += sizeof(IP_ADAPTER_ADDRESSES) + (i.name.size() + 1) * (1 + sizeof(wchar_t)) + i.v4.size() * (sizeof(IP_ADAPTER_UNICAST_ADDRESS) + sizeof(sockaddr_in)) + 16;
+    if (!out || *len < need) { *len = static_cast<ULONG>(need); return ERROR_BUFFER_OVERFLOW; }
+    std::memset(out, 0, *len);
+    auto* p = reinterpret_cast<unsigned char*>(out);
+    auto take = [&](size_t n) { void* r = p; p += (n + 15) & ~size_t(15); return r; };
+    PIP_ADAPTER_ADDRESSES prev = nullptr;
+    for (unsigned idx = 0; idx < ifs.size(); ++idx) {
+        auto& i = ifs[idx];
+        auto* a = static_cast<PIP_ADAPTER_ADDRESSES>(take(sizeof(IP_ADAPTER_ADDRESSES)));
+        a->Length = sizeof(*a); a->IfIndex = if_nametoindex(i.name.c_str());
+        a->AdapterName = static_cast<char*>(take(i.name.size() + 1)); std::memcpy(a->AdapterName, i.name.c_str(), i.name.size() + 1);
+        a->FriendlyName = static_cast<PWSTR>(take((i.name.size() + 1) * sizeof(wchar_t)));
+        for (size_t k = 0; k <= i.name.size(); ++k) a->FriendlyName[k] = static_cast<unsigned char>(i.name.c_str()[k]);
+        a->Description = a->FriendlyName;
+        a->IfType = (i.flags & IFF_LOOPBACK) ? IF_TYPE_SOFTWARE_LOOPBACK : access(("/sys/class/net/" + i.name + "/wireless").c_str(), F_OK) == 0 ? IF_TYPE_IEEE80211 : IF_TYPE_ETHERNET_CSMACD;
+        a->OperStatus = (i.flags & IFF_UP) && (i.flags & IFF_RUNNING) ? IfOperStatusUp : IfOperStatusDown;
+        PIP_ADAPTER_UNICAST_ADDRESS uprev = nullptr;
+        for (auto& [sin, prefix] : i.v4) {
+            auto* u = static_cast<PIP_ADAPTER_UNICAST_ADDRESS>(take(sizeof(IP_ADAPTER_UNICAST_ADDRESS)));
+            auto* sa = static_cast<sockaddr_in*>(take(sizeof(sockaddr_in))); *sa = sin;
+            u->Length = sizeof(*u); u->Address.lpSockaddr = reinterpret_cast<sockaddr*>(sa); u->Address.iSockaddrLength = sizeof(sockaddr_in);
+            u->OnLinkPrefixLength = static_cast<UCHAR>(prefix);
+            if (uprev) uprev->Next = u; else a->FirstUnicastAddress = u;
+            uprev = u;
+        }
+        if (prev) prev->Next = a;
+        prev = a;
+    }
+    return NO_ERROR;
+}
+// ---- registry, affinity --------------------------------------------------------------------------------------------
+LSTATUS RegGetValueA(HKEY key, LPCSTR sub, LPCSTR value, DWORD flags, LPDWORD type, PVOID data, LPDWORD size) {
+    static const struct { const char* value; const char* file; } kBios[] = {
+        {"SystemManufacturer", "sys_vendor"}, {"SystemProductName", "product_name"}, {"SystemFamily", "product_family"},
+        {"SystemVersion", "product_version"}, {"SystemSKU", "product_sku"}, {"BaseBoardManufacturer", "board_vendor"},
+        {"BaseBoardProduct", "board_name"}, {"BaseBoardVersion", "board_version"}, {"BIOSVendor", "bios_vendor"},
+        {"BIOSVersion", "bios_version"}, {"BIOSReleaseDate", "bios_date"}};
+    if (key != HKEY_LOCAL_MACHINE || !sub || strcasecmp(sub, "HARDWARE\\DESCRIPTION\\System\\BIOS") != 0 || !(flags & RRF_RT_REG_SZ) || !value)
+        return static_cast<LSTATUS>(ERROR_FILE_NOT_FOUND);
+    for (const auto& b : kBios) {
+        if (strcasecmp(b.value, value) != 0) continue;
+        std::string v = read_line(std::string("/sys/class/dmi/id/") + b.file);
+        if (v.empty()) return static_cast<LSTATUS>(ERROR_FILE_NOT_FOUND);
+        if (type) *type = 1;   // REG_SZ
+        DWORD need = static_cast<DWORD>(v.size() + 1);
+        if (!data || *size < need) { *size = need; return static_cast<LSTATUS>(data ? 234 : ERROR_SUCCESS); }   // ERROR_MORE_DATA
+        std::memcpy(data, v.c_str(), need); *size = need;
+        return static_cast<LSTATUS>(ERROR_SUCCESS);
+    }
+    return static_cast<LSTATUS>(ERROR_FILE_NOT_FOUND);
+}
+BOOL GetProcessAffinityMask(HANDLE, PDWORD_PTR proc, PDWORD_PTR sys) {
+    cpu_set_t s; if (sched_getaffinity(0, sizeof s, &s) != 0) return fail_errno();
+    DWORD_PTR m = 0; for (int i = 0; i < 64; ++i) if (CPU_ISSET(i, &s)) m |= DWORD_PTR(1) << i;
+    DWORD_PTR all = 0; long n = sysconf(_SC_NPROCESSORS_CONF); for (long i = 0; i < n && i < 64; ++i) all |= DWORD_PTR(1) << i;
+    if (proc) *proc = m; if (sys) *sys = all;
+    return TRUE;
+}
+BOOL GetThreadIdealProcessorEx(HANDLE h, PPROCESSOR_NUMBER pn) {
+    pid_t tid = tid_of(h); if (!tid) return FALSE;
+    std::string stat = read_line("/proc/self/task/" + std::to_string(tid) + "/stat");
+    auto close = stat.rfind(')'); if (close == std::string::npos) return FALSE;
+    // field 39 (processor) counted after the command name, which ends at the last ')'
+    const char* p = stat.c_str() + close + 2; int field = 3;
+    while (*p && field < 39) { if (*p++ == ' ') ++field; }
+    pn->Group = 0; pn->Number = static_cast<BYTE>(std::atoi(p)); pn->Reserved = 0;
+    return TRUE;
 }
 #endif // !_WIN32

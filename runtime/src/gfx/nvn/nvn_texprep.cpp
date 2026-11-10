@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "nxrt/config.h"
+#include "nxrt/fault_guard.h"
 #include "nxrt/ftrace.h"
 #include "nxrt/gauge.h"
 #include "nxrt/log.h"
@@ -83,25 +84,26 @@ const bool g_hitch_registered = (nxrt::hitch_add_counter("texprep_staged_kb", []
 State& S() { return *g_state; }
 
 bool prepare_guarded(const Texture& t, const TexCaps& caps, PreparedTexture& out, bool& crashed) {
-    __try {
-        return prepare_texture(t, caps, out);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    bool ok = false;
+    if (!nxrt::fault_guarded([&] { ok = prepare_texture(t, caps, out); }, nxrt::FaultCatch::Any)) {
         crashed = true;
         return false;
     }
+    return ok;
 }
 
-// Reads the storage under SEH: a page the game unmapped must not take the process down.
+// Reads the storage under a fault guard: a page the game unmapped must not take the process down.
 bool hash_guarded(const Texture& t, uint64_t& h) {
-    __try {
+    bool ok = false;
+    const bool ran = nxrt::fault_guarded([&] {
         if (t.mem) {
             h = hash_bytes(t.mem, static_cast<size_t>(t.storage_size));
-            return true;
+            ok = true;
+        } else {
+            ok = texture_hash_virtual(t, h);     // a sparse texture: the mapped tiles, hashed where they are
         }
-        return texture_hash_virtual(t, h);       // a sparse texture: the mapped tiles, hashed where they are
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
+    }, nxrt::FaultCatch::Any);
+    return ran && ok;
 }
 
 uint64_t now_ns() { return ft::now_ns(); }

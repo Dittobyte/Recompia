@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // hwopus: Opus decoders that "decode" to silence (see misc.cpp).
+#include <cstring>
 #include "misc_internal.h"
 
 namespace nxrt::services::miscsvc {

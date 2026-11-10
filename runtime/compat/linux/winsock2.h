@@ -63,4 +63,13 @@ inline int WSAPoll(WSAPOLLFD* fds, ULONG n, int ms) { return ::poll(fds, n, ms);
 #define SIO_UDP_CONNRESET _WSAIOW(IOC_VENDOR, 12)
 // WSAIoctl is used only for SIO_UDP_CONNRESET, a Windows-only quirk; Linux UDP sockets don't need it.
 inline int WSAIoctl(SOCKET, DWORD, LPVOID, DWORD, LPVOID, DWORD, LPDWORD ret, void*, void*) { if (ret) *ret = 0; return 0; }
+// Winsock passes lengths as int*, BSD sockets as socklen_t*: overloads taking int* for the calls that return a length.
+inline int getsockopt(SOCKET s, int level, int name, char* v, int* len) { socklen_t l = static_cast<socklen_t>(*len); int r = ::getsockopt(s, level, name, v, &l); *len = static_cast<int>(l); return r; }
+inline int getsockname(SOCKET s, struct sockaddr* a, int* len) { socklen_t l = static_cast<socklen_t>(*len); int r = ::getsockname(s, a, &l); *len = static_cast<int>(l); return r; }
+inline int getpeername(SOCKET s, struct sockaddr* a, int* len) { socklen_t l = static_cast<socklen_t>(*len); int r = ::getpeername(s, a, &l); *len = static_cast<int>(l); return r; }
+inline SOCKET accept(SOCKET s, struct sockaddr* a, int* len) { socklen_t l = len ? static_cast<socklen_t>(*len) : 0; int r = ::accept(s, a, len ? &l : nullptr); if (len) *len = static_cast<int>(l); return r; }
+inline int recvfrom(SOCKET s, char* buf, int n, int flags, struct sockaddr* a, int* len) {
+    socklen_t l = len ? static_cast<socklen_t>(*len) : 0; int r = static_cast<int>(::recvfrom(s, buf, static_cast<size_t>(n), flags, a, len ? &l : nullptr));
+    if (len) *len = static_cast<int>(l); return r;
+}
 #endif

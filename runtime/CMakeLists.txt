@@ -51,6 +51,8 @@ set(NXRT_GAMES "pkp" CACHE STRING "ids of the game modules to build (games/<id>/
 option(NXRT_TESTTOOLS "Build the test tooling (src/testtools)" ON)
 
 file(GLOB_RECURSE NXRT_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
+include(cmake/platform_twins.cmake)
+nxrt_pick_platform_twins(NXRT_SOURCES)   # <name>_linux.cpp replaces <name>.cpp on Linux
 list(FILTER NXRT_SOURCES EXCLUDE REGEX "/src/gfx/")   # the graphics shell is its own library (cmake/gfx.cmake)
 if(NXRT_TESTTOOLS)
     list(FILTER NXRT_SOURCES EXCLUDE REGEX "/src/core/tt_off[.]cpp$")
@@ -65,9 +67,16 @@ if(EXISTS "${NXRT_RECOMP_INCLUDE}")
 endif()
 if(NXRT_LINUX)
     target_include_directories(nxrt PUBLIC compat/linux)
-    target_sources(nxrt PRIVATE compat/linux/win32_compat.cpp)
+    target_sources(nxrt PRIVATE compat/linux/win32_compat.cpp compat/linux/win32_fault.cpp)
+    # Frame pointers for the host stack walk (diag/stackwalk_linux.cpp); -rdynamic so dladdr can name the program's functions.
+    target_compile_options(nxrt PUBLIC -fno-omit-frame-pointer
+        "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/compat/linux/msvc_crt.h>")
+    target_link_options(nxrt PUBLIC -rdynamic)
     find_package(Threads REQUIRED)
     target_link_libraries(nxrt PUBLIC Threads::Threads ${CMAKE_DL_LIBS} rt)
+    include(cmake/sdl3_dep.cmake)   # audio output (src/services/audio_xaudio2_linux.cpp, audio_devices_linux.cpp)
+    target_link_libraries(nxrt PUBLIC SDL3::SDL3-static)
+    target_link_libraries(nxrt PRIVATE nxrt_miniz)   # the album's PNG encoder (src/services/album_png_linux.cpp)
 else()
     target_link_libraries(nxrt PUBLIC psapi)
 endif()

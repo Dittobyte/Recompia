@@ -7,6 +7,7 @@
 #include <array>
 #include <cstdio>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
