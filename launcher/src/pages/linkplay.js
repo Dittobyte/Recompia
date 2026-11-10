@@ -3,6 +3,8 @@
 // Fields never redraw on commit (tabbing to the next field must keep its focus); only a mode, role or toggle change redraws, and that keeps focus.
 import './linkplay.css';
 import { api } from '../api.js';
+import { t } from '../i18n.js';
+import { fromBackend } from '../backend-text.js';
 import { errText, esc, field, group, icon, row, segmented, toast, toggle } from '../ui.js';
 import { store } from '../store.js';
 import { gamePhase } from '../action.js';
@@ -81,7 +83,7 @@ export async function render(el, ctx) {
 
   // --- what is on the page
 
-  const copyButton = (addr) => `<button class="btn quiet sm lp-copy" data-copy="${esc(addr)}" aria-label="Copy ${esc(addr)}" title="Copy">${icon('copy')}</button>`;
+  const copyButton = (addr) => `<button class="btn quiet sm lp-copy" data-copy="${esc(addr)}" aria-label="${esc(t('Copy {text}', { text: addr }))}" title="${esc(t('Copy'))}">${icon('copy')}</button>`;
   // an invite carries the address, the room code and the mode in one paste (link-invite-model.js); built when pressed, from the code shown then
   const inviteButton = (r) => (r.invite ? `<button class="btn quiet sm lp-invite" data-invite="${esc(r.addr)}" data-through="${r.through ? 1 : 0}" title="Copy an invite that fills in the address and room code for your friend">${icon('link')}Copy invite</button>` : '');
   const addressRow = (r) => row(r.label, `<code class="selectable">${esc(r.addr)}</code>${copyButton(r.addr)}${inviteButton(r)}`);
@@ -90,8 +92,8 @@ export async function render(el, ctx) {
   const visitPlaceholder = () => (ui.through ? `203.0.113.5:${RELAY_PORT}` : '192.0.2.10');
 
   function bannersHtml() {
-    const legacy = ui.legacy ? `<div class="banner warn">${icon('triangle-alert')}<div class="grow">This install uses the old Link Play protocol</div><button class="btn sm" data-act="switch">Switch to current</button></div>` : '';
-    const later = gameActive(store.state) ? `<div class="banner info">${icon('info')}<div class="grow">Changes apply next time the game starts</div></div>` : '';
+    const legacy = ui.legacy ? `<div class="banner warn">${icon('triangle-alert')}<div class="grow">${esc(t('This install uses the old Link Play protocol'))}</div><button class="btn sm" data-act="switch">${esc(t('Switch to current'))}</button></div>` : '';
+    const later = gameActive(store.state) ? `<div class="banner info">${icon('info')}<div class="grow">${esc(t('Changes apply next time the game starts'))}</div></div>` : '';
     return legacy + later;
   }
 
@@ -100,25 +102,25 @@ export async function render(el, ctx) {
   function pathHtml() {
     if (!live()) return '';
     // the menu path inside the game (its Link Play menu always says Local connection), not a breadcrumb of this page
-    return `<span class="lp-path-lead">${icon('gamepad-2')}In game</span>`
+    return `<span class="lp-path-lead">${icon('gamepad-2')}${esc(t('In game'))}</span>`
       + pathParts(ui).map((p) => `<span class="chip on-art">${esc(p)}</span>`).join(icon('chevron-right'));
   }
 
   function sharedHtml() {
     if (!live()) return '';
-    const exp = '<span class="chip lp-exp">Experimental</span>';
-    return group('Same for everyone', [
-      row('Visitors can build everywhere', exp + toggle('lp-interact', ui.interact || ui.story, { disabled: ui.story })),
-      row('Visitors can talk to story characters', exp + toggle('lp-story', ui.story)),
+    const exp = `<span class="chip lp-exp">${esc(t('Experimental'))}</span>`;
+    return group(t('Same for everyone'), [
+      row(t('Visitors can build everywhere'), exp + toggle('lp-interact', ui.interact || ui.story, { disabled: ui.story })),
+      row(t('Visitors can talk to story characters'), exp + toggle('lp-story', ui.story)),
     ]);
   }
 
   function lanHtml() {
     if (!lan) return '';
     const notice = [lan.warning, lan.firewall_hint].filter(Boolean);
-    const note = notice.length ? `<div class="banner warn">${icon('triangle-alert')}<div class="grow">${esc(notice[0])}${notice[1] ? `<div>${esc(notice[1])}</div>` : ''}</div></div>` : '';
+    const note = notice.length ? `<div class="banner warn">${icon('triangle-alert')}<div class="grow">${esc(fromBackend(notice[0]))}${notice[1] ? `<div>${esc(fromBackend(notice[1]))}</div>` : ''}</div></div>` : '';
     const rows = addressRows(lan, HOST_PORT).map((r) => addressRow({ ...r, invite: localAddr(r.addr) }));   // a Tailscale address needs the room code: its invite is on the Internet page
-    return note + group('This PC', rows.length ? rows : [row('No address found', '')]);
+    return note + group(t('This PC'), rows.length ? rows : [row(t('No address found'), '')]);
   }
 
   // what visitors type: the public address over the internet (#245), this PC's LAN addresses on the same network
@@ -126,27 +128,27 @@ export async function render(el, ctx) {
     if (!isHost()) return '';
     const share = internetShare(ui, { publicIp, relayOn: relay ? relayPort(relay) : 0 });
     if (!share) {
-      return `<div class="banner warn">${icon('triangle-alert')}<div class="grow">The relay on this PC is off, so visitors cannot join. Turn on Run a relay on this PC.</div></div>`;
+      return `<div class="banner warn">${icon('triangle-alert')}<div class="grow">${esc(t('The relay on this PC is off, so visitors cannot join. Turn on Run a relay on this PC.'))}</div></div>`;
     }
     const internet = share.addr
-      ? addressRow({ addr: share.addr, label: 'Over the internet', invite: true, through: share.through })
-      : row('Over the internet', `<span class="faint">${publicIp === null ? 'Could not find this PC\'s public address. Search "what is my IP" in a browser.' : 'Looking it up\u2026'}</span>`);
+      ? addressRow({ addr: share.addr, label: t('Over the internet'), invite: true, through: share.through })
+      : row(t('Over the internet'), `<span class="faint">${esc(publicIp === null ? t('Could not find this PC\'s public address. Search "what is my IP" in a browser.') : t('Looking it up\u2026'))}</span>`);
     // a VPN (Tailscale and the like) keeps its own name: it is not the same network. Its address is shown with or without a relay: a friend
     // on the same tailnet reaches this PC at it directly
     const mine = (a) => ({ addr: `${a.ip}:${share.port}`, invite: true, through: !!relay });
     const local = share.own && lan
-      ? [...(relay ? lan.lan.map((a) => addressRow({ ...mine(a), label: `Same network (${a.adapter})` })) : []),
+      ? [...(relay ? lan.lan.map((a) => addressRow({ ...mine(a), label: t('Same network ({adapter})', { adapter: a.adapter }) })) : []),
         ...lan.overlay.map((a) => addressRow({ ...mine(a), label: a.label.replace(/^internet via /, '') }))]
       : [];
-    const links = relay ? [row('Links', `<span class="num" id="lp-links">${esc(relay.clients)}</span>`)] : [];
-    const how = `Visitors pick Visit and type this address and the room code, with Through a relay ${share.through ? 'on' : 'off'}.`;
+    const links = relay ? [row(t('Links'), `<span class="num" id="lp-links">${esc(relay.clients)}</span>`)] : [];
+    const how = share.through ? t('Visitors pick Visit and type this address and the room code, with Through a relay on.') : t('Visitors pick Visit and type this address and the room code, with Through a relay off.');
     // without a relay the game asks the router itself ([net] port_forward); this PC's relay listens on its own port, which it does not
     const auto = share.own && !share.through && ui.portForward;
     const router = !share.own ? ''
       : auto ? ` While you host, the game asks your router to forward port ${share.port} (TCP and UDP) to this PC. If the router does not allow it, the game's log says why: forward the port by hand then.`
-      : ` Your router must forward port ${share.port} (TCP and UDP) to this PC.`;
-    return group('Share with visitors', [internet, ...local, ...links])
-      + `<div class="banner info">${icon('info')}<div class="grow">${how}${router} Never give out 127.0.0.1: on a visitor's PC it means their own PC.</div></div>`;
+      : ` ${t('Your router must forward port {port} (TCP and UDP) to this PC.', { port: share.port })}`;
+    return group(t('Share with visitors'), [internet, ...local, ...links])
+      + `<div class="banner info">${icon('info')}<div class="grow">${esc(how)}${esc(router)} ${esc(t("Never give out 127.0.0.1: on a visitor's PC it means their own PC."))}</div></div>`;
   }
 
   // --- Test connection, Check my setup, Friends on my Tailscale: read only, nothing is written to pkp.ini by them
@@ -243,16 +245,16 @@ export async function render(el, ctx) {
     if (ui.view === 'off') return '';
     if (ui.view === 'lan') {
       return `<div class="lp-part" id="lp-lan"></div>
-        ${group('', [row('Paste invite', inviteField()), row('Join directly', fieldAt('lp-join', '192.0.2.10'))])}
+        ${group('', [row('Paste invite', inviteField()), row(t('Join directly'), fieldAt('lp-join', '192.0.2.10'))])}
         ${ui.lastJoin ? `<datalist id="lp-last"><option value="${esc(ui.lastJoin)}"></option></datalist>` : ''}`;
     }
-    const role = segmented('role', [['host', 'Host'], ['visit', 'Visit']], ui.role, { label: 'Host or visit' });
+    const role = segmented('role', [['host', t('Host')], ['visit', t('Visit')]], ui.role, { label: t('Host or visit') });
     if (ui.role === 'host') {
       return `<div>${role}</div>
         ${group('', [
-          row('Room code', `<code class="selectable" id="lp-code"></code>${copyButton('')}<button class="btn sm" data-act="new-code">${icon('refresh-cw')}New code</button>`),
-          row('Relay address', fieldAt('lp-relay', 'No relay')),
-          row('Run a relay on this PC', toggle('lp-run-relay', !!relay)),
+          row(t('Room code'), `<code class="selectable" id="lp-code"></code>${copyButton('')}<button class="btn sm" data-act="new-code">${icon('refresh-cw')}${esc(t('New code'))}</button>`),
+          row(t('Relay address'), fieldAt('lp-relay', t('No relay'))),
+          row(t('Run a relay on this PC'), toggle('lp-run-relay', !!relay)),
           row('Ask the router to open the port', toggle('lp-forward', ui.portForward)),
         ])}
         <div class="lp-part" id="lp-share"></div>`;
@@ -260,9 +262,9 @@ export async function render(el, ctx) {
     return `<div>${role}</div>
       ${group('', [
         row('Paste invite', inviteField()),
-        row('Address', fieldAt('lp-addr', visitPlaceholder())),
-        row('Room code', fieldAt('lp-code-in', 'XXXX-XXXX-XXXX-XXXX')),
-        row('Through a relay', toggle('lp-through', ui.through)),
+        row(t('Address'), fieldAt('lp-addr', visitPlaceholder())),
+        row(t('Room code'), fieldAt('lp-code-in', 'XXXX-XXXX-XXXX-XXXX')),
+        row(t('Through a relay'), toggle('lp-through', ui.through)),
       ])}`;
   }
 
@@ -293,12 +295,12 @@ export async function render(el, ctx) {
     const code = part('lp-code');
     if (!code) return;
     const shown = shownCode({ gameCode, hostCode: ui.hostCode, running: gameActive(store.state) });
-    code.textContent = shown || 'New each time the game starts';
+    code.textContent = shown || t('New each time the game starts');
     code.classList.toggle('faint', !shown);
     const button = code.nextElementSibling;
     button.dataset.copy = shown;
     button.disabled = !shown;
-    button.setAttribute('aria-label', 'Copy room code');
+    button.setAttribute('aria-label', t('Copy room code'));
   }
 
   function drawProblems() {
@@ -357,8 +359,8 @@ export async function render(el, ctx) {
           if (input) input.value = ui.visitCode;
         } catch (e) { problems['lp-code-in'] = errText(e); }
       }
-      if (left === 'lp-addr' && !ui.visitAddr.trim() && code) problems['lp-addr'] = 'Needed';
-      if (left === 'lp-code-in' && !code && ui.visitAddr.trim()) problems['lp-code-in'] = 'Needed';
+      if (left === 'lp-addr' && !ui.visitAddr.trim() && code) problems['lp-addr'] = t('Needed');
+      if (left === 'lp-code-in' && !code && ui.visitAddr.trim()) problems['lp-code-in'] = t('Needed');
     }
     drawProblems();
     if (Object.values(problems).some(Boolean)) return;
@@ -499,14 +501,14 @@ export async function render(el, ctx) {
   async function copy(text) {
     try {
       await navigator.clipboard.writeText(text);
-      toast('Copied.', 'ok');
-    } catch { toast('Cannot copy here. Select the text and press Ctrl+C.', 'error'); }
+      toast(t('Copied.'), 'ok');
+    } catch { toast(t('Cannot copy here. Select the text and press Ctrl+C.'), 'error'); }
   }
 
   el.innerHTML = `<div class="page linkplay">
     <div class="lp-head">
-      <h1>Link Play</h1>
-      ${segmented('view', [['off', 'Off'], ['lan', 'Same network'], ['internet', 'Internet']], ui.view, { label: 'Link Play' })}
+      <h1>${esc(t('Link Play'))}</h1>
+      ${segmented('view', [['off', t('Off')], ['lan', t('Same network')], ['internet', t('Internet')]], ui.view, { label: t('Link Play') })}
     </div>
     <div class="lp-part" id="lp-banners"></div>
     <div class="lp-path" id="lp-path"></div>

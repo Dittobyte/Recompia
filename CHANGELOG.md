@@ -39,7 +39,7 @@ This Testing build adds logging and a few device checks, and changes no frame-ra
 - On any AMD handheld (Steam Deck, ROG Ally, Legion Go, Legion Go S, Xbox Ally, Claw A8), under Proton or Windows: play 10 minutes, then send the lines of `pkp.log` that contain `host: handheld`, `pool_copy`, `footprint` and `gamepad`. Say which BIOS GPU-memory setting you use if you changed it. They show which handheld rule matched, why pool copy is on or off with the graphics memory size, and the two memory readings
 - On a Legion Go, Go 2, ROG Xbox Ally or MSI Claw A8: check that `pkp.log` says `host: handheld: yes`, and tell us whether the picture size, the controller prompts and the frame rate feel right compared with the previous build
 - If the frame rate falls partway through a session: send the `pkp.log` lines that contain `waited on the GPU` and say how long into the session it began
-- If Set up stops on a Steam Deck or another Linux handheld: send `shader_cache/harness_error.txt` and `setup.log`
+- If Set up stops on a Steam Deck or another Linux handheld: send `shader_cache/stage/harness_error.txt` and `setup.log`
 - If you own a Steam Controller (2026): follow the 15-minute check in `docs/steam-controller-check.md` (which grip is which, whether the small View and Menu buttons are the right way round, the trackpad clicks) and send the table with the exported logs
 
 ### Controller log
@@ -72,10 +72,6 @@ This Testing build adds logging and a few device checks, and changes no frame-ra
 ### Graphics driver resets
 - `pkp.log` now says when every frame of a run waits on the graphics card from the start, which is what a driver reset on a Linux handheld looks like. The game cannot fix it: reboot the device. The README's common problems say so too
 - It also notices a run that starts fine and then slows down: when frames wait on the graphics card for three summary windows in a row, `pkp.log` says when it began (before, it only looked at the start of a run). It is a note for bug reports, not a fix
-
-### Shader setup
-- When the shader translator stops, setup now writes what it said to `shader_cache/harness_error.txt` and shows it in `setup.log` and in the error (on Linux, Proton hid it, so the log said only that it stopped)
-- Setup checks that the translator's files are whole before it starts and names what is missing or too short
 
 ### Screens narrower than 16:9
 - Added **4:3 Fix**, a very experimental option in Settings > Testing (Testing channel only, off by default) for 4:3, 16:10 and 3:2 screens: full-screen backgrounds, fades and dimming fill the whole picture instead of stopping at a 16:9 strip in the middle. Menus, text and buttons stay where they were. If you have a 4:3 or 16:10 screen, please try it and send `pkp.log` with what looked wrong. It needs a restart of the game to take effect
@@ -122,6 +118,9 @@ This Testing build adds logging and a few device checks, and changes no frame-ra
 - **Story co-op** (experimental, `[pkp] link_story_coop`): the host's own story no longer stops while friends are visiting. Before, any Link Play session turned the host's story talks into "Bring <host> here to say hi!" and paused its requests. From pokopia-native 1.4.0
 
 ### Launcher
+- Fixed **Quality preset** in the launcher leaving Shadow quality and Anti-aliasing as they were
+  - Before: picking High, Ultra or Desktop PC in Settings > Graphics set only the texture settings (and the render resolution and frame limit for the device presets), so the game kept the old shadows and anti-aliasing
+  - Now: the preset sets them too, as it does in the game: High gives High (2x) shadows and SMAA High, Ultra gives Very High (3x) and SMAA Ultra, Desktop PC gives Very High (3x) and SMAA High; the other presets give the game's own shadows and no anti-aliasing
 - Added **Copy handheld report** to Settings > Testing (Testing channel only)
   - Before: a tester on an AMD handheld had to send the whole `pkp.log`, which holds names and paths, and say by hand what mattered
   - Now: one press copies a short block with only the useful lines of `pkp.log` (handheld detection, graphics card and driver, memory, the frame summaries and any graphics reset or crash), with user names, home folders, addresses and room codes removed, ready to paste into a bug report. Add your device, system, power mode and what you were doing
@@ -155,6 +154,51 @@ This Testing build adds logging and a few device checks, and changes no frame-ra
   - Before: the icons were the original 2015 controller's: its small buttons were the `<` and `>` arrows and it had two rear grips, so R4 and R5 (or L4 and L5) both showed "RG" (or "LG")
   - Now: View and Menu show the same symbols as on a Steam Deck, and each rear grip has its own icon: **L4**, **L5**, **R4** and **R5**
   - Still not: it needs the new `prompt_icons.pak` that comes with the build; the Steam button, the quick-access (...) button and the trigger clicks have no prompt icon yet
+
+## 0.10.2 (build N: Numbat Hotfix a2)
+
+**Update:** press **Update**, then **Set up again** once (it relinks pkp.exe in seconds; your saves and shaders are kept). Clock Notation needs it: it adds a hook site.
+
+The Numbat hotfix brings back the colourful logo, translates the launcher into nine languages, fixes an AMD start-up crash and BetterJoy input loss, and adds Time and Events tabs to the game's Settings.
+
+### Launcher
+- Set up now says why the shader translator stopped on Steam Deck and other Linux PCs (#366)
+  - Before: under Proton the translator's error text never reached setup.log, so a failed "Translating shaders" step showed only an exit status and an empty "Last output"
+  - Now: the translator writes its error to `shader_cache/stage/harness_error.txt` and Set up copies it into setup.log; if the translator never started at all, the log says Proton or Wine failed before it. Set up also checks that the translator's main files are present and not empty before it starts
+- The colourful **Recompia** logo and the green **R** icon are back in the launcher, the README, the window and taskbar icon and the Steam shortcut (the plain placeholder logo and icons from 0.10.1 are gone)
+- The launcher is now translated into Spanish, English, Japanese, French, Italian, German, Korean, Simplified Chinese and Traditional Chinese. It follows the system language by default (English when it cannot tell), and Settings > About > Language changes it
+- Fixed Set up finishing at once while the game still refused to start with "pkp.exe and pkp_rt.dll come from different releases", after an update that replaced only some files
+  - Before: the launcher compared pkp.exe only with the build tools in the tools folder. A new pkp_rt.dll next to old tools (files copied by hand, or a zip extracted without its tools folder) looked current, so Set up did nothing and the game refused the exe
+  - Now: pkp.exe and pkp_rt.dll both carry the runtime API they were built for, and the launcher reads it before Play and Set up. An exe from another release than the dll is relinked by Set up; a dll from another release than the tools is named on the main page, with what to do (extract the whole release over the folder)
+
+### Game
+- Fixed the game closing right at start ("pkp.exe exited with code 4") on some PCs with an AMD graphics card
+  - Before: when an older AMD driver was still installed next to the current one (common with a Ryzen processor's own graphics), the card was listed twice and the game could pick the old driver's copy, which crashed inside the driver on the first frames
+  - Now: the copy with the older driver is skipped and the log says so; reinstalling the graphics driver removes the leftover
+- Added a **Time** tab and an **Events** tab to the game's own Settings screen, for moving the game's clock without restarting (#385)
+  - Before: the game's date and time came from the PC, and the launcher's event preset or `clock_offset` only applied at the next start
+  - Now: **Time** has Time Travel (Off follows the real time) and Year, Month, Day, Hour and Minute rows; the clock changes when you leave the screen. **Events** lists the events of `pokopia_events.tsv` (one line each: start date, end date and name, separated by tabs); pressing one sets the clock to noon on its first day, marks it **Chosen** (one at a time) and fills the Time tab. Nothing is written to your save or to Settings
+  - Still not: tab icons of their own (both tabs use the Game tab's), and a launcher button that fetches the event list
+- Added **Clock Notation** to the Time tab: Game, 12 hour or 24 hour for the time of day the game shows
+  - Before: the game's language chose the notation (English showed 12 hours with AM/PM whatever the PC's region), and nothing in the settings changed it
+  - Now: pick 12 hour or 24 hour (`[tweaks] clock_format` in `controls.ini`: `auto`, `12h` or `24h`); Game keeps the language's own. A screen that is already open shows the new notation after you close it and open it again
+  - Still not: a launcher row for it
+- Button prompts: the face buttons are plain white, like the rest of the prompt icons
+  - Before: Xbox, PlayStation, Steam Controller and Steam Deck prompts drew A/B/X/Y and cross/circle/square/triangle as coloured buttons
+  - Now: they use Kenney's monotone white buttons, matching the bumpers, triggers, d-pad and keyboard icons. Switch prompts are unchanged
+- Fixed the inventory **Sort** prompt showing **L** on some screens, where L also turns the page to the tab on the left
+  - Before: where Y and R both had an action, the Sort prompt took L; pressing it sorted the panel and switched the tab at the same time
+  - Now: Sort is Y in the bag and R in container screens; where both are taken the prompt is click only (left click or the menu pointer), and L only turns the page
+- The F1 menu opens from a controller by clicking both sticks (L3 + R3) (#364)
+  - Before: no controller shortcut was set, and the README's example (L + R) is the game's Dive chord, so holding R and L to dive opened the menu instead
+  - Now: `[overlay] pad` defaults to `left_stick+right_stick`. A `controls.ini` from an earlier release keeps the value it already has (`none` = off); set the key to `left_stick+right_stick` there, or delete the line, to get the shortcut
+- Fixed a controller dropping stick and button input during vacuuming, breaking and Rollout above 30 fps when it goes through BetterJoy (#374)
+  - Before: the game sent the controller a new rumble value on almost every frame while it rumbled, about 100 times a second at 100 fps. BetterJoy passes each one to the controller over Bluetooth and stopped reading the stick and buttons while it caught up
+  - Now: rumble goes to the controller at most 30 times a second at any frame rate, the rate that already worked at a 30 fps cap
+- The "different releases" message names the runtime API of pkp.exe and of pkp_rt.dll and points to the launcher's main page, since Set up alone cannot always help
+
+### Docs
+- The README and the Linux readme are now also in Brazilian Portuguese and European Portuguese, and the README's F1 controller example uses L3 + R3 instead of the Dive chord (L + R)
 
 ## 0.10.1 (build N: Narwhal Hotfix a1)
 

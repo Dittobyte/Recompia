@@ -61,10 +61,10 @@ KBM_DIR = "Keyboard & Mouse"
 STEAM_DIR = "Steam Controller"
 
 XBOX_MAP = {
-    "xbox/a": "xbox_button_color_a",
-    "xbox/b": "xbox_button_color_b",
-    "xbox/x": "xbox_button_color_x",
-    "xbox/y": "xbox_button_color_y",
+    "xbox/a": "xbox_button_a",
+    "xbox/b": "xbox_button_b",
+    "xbox/x": "xbox_button_x",
+    "xbox/y": "xbox_button_y",
     "xbox/lb": "xbox_lb",
     "xbox/rb": "xbox_rb",
     "xbox/lt": "xbox_lt",
@@ -75,10 +75,10 @@ XBOX_MAP = {
 }
 
 PS_MAP = {
-    "ps/cross": "playstation_button_color_cross",
-    "ps/circle": "playstation_button_color_circle",
-    "ps/square": "playstation_button_color_square",
-    "ps/triangle": "playstation_button_color_triangle",
+    "ps/cross": "playstation_button_cross",
+    "ps/circle": "playstation_button_circle",
+    "ps/square": "playstation_button_square",
+    "ps/triangle": "playstation_button_triangle",
     "ps/l1": "playstation_trigger_l1",
     "ps/r1": "playstation_trigger_r1",
     "ps/l2": "playstation_trigger_l2",
@@ -89,13 +89,13 @@ PS_MAP = {
 }
 
 # The Steam Controller set, laid out like the Xbox one (A/B/X/Y by printed letter, bumpers, triggers; the controller's left small button is
-# View and the right one Menu). Kenney's art is coloured like the Steam Deck's. It is drawn after the original Steam Controller (the < and >
-# buttons, two rear grips); sc2_fit() turns it into the Steam Controller (2026) set.
+# View and the right one Menu). Face buttons use the plain white Kenney art, like the other sets. The art is drawn after the original Steam
+# Controller (the < and > buttons, two rear grips); sc2_fit() turns it into the Steam Controller (2026) set.
 STEAM_MAP = {
-    "steam/a": "steam_button_color_a",
-    "steam/b": "steam_button_color_b",
-    "steam/x": "steam_button_color_x",
-    "steam/y": "steam_button_color_y",
+    "steam/a": "steam_button_a",
+    "steam/b": "steam_button_b",
+    "steam/x": "steam_button_x",
+    "steam/y": "steam_button_y",
     "steam/lb": "steam_lb",
     "steam/rb": "steam_rb",
     "steam/lt": "steam_lt",

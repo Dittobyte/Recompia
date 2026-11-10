@@ -12,7 +12,11 @@ const ICONS = {
   Pencil, Play, Plus, RefreshCw, RotateCcw, Save, Settings, Square, Trash2, TriangleAlert, Upload, UserCheck, Users, Wrench, X,
 };
 
-export const errText = (e) => (typeof e === 'string' ? e : e?.message ?? String(e));
+import { fromBackend } from './backend-text.js';
+import { t } from './i18n.js';
+
+/** The words of an error, in the player's language when the backend's sentence is a known one (backend-text.js). */
+export const errText = (e) => fromBackend(typeof e === 'string' ? e : e?.message ?? String(e));
 
 /** The code of an error a command tagged (error.rs CmdError), else null. Branch on this, never on errText. */
 export const errCode = (e) => (typeof e === 'object' && e !== null ? e.code ?? null : null);
@@ -54,7 +58,7 @@ export function toast(message, kind = '') {
  *         setup (dlg) => void, called once the markup is in the page, to wire its controls }
  */
 export function confirm(opts = {}) {
-  const { title = '', body = '', html = '', ok = 'OK', cancel = 'Cancel', danger = false, alert = false, setup } = opts;
+  const { title = '', body = '', html = '', ok = t('OK'), cancel = t('Cancel'), danger = false, alert = false, setup } = opts;
   return new Promise((resolve) => {
     const dlg = document.createElement('dialog');
     dlg.className = 'modal glass strong';
@@ -90,7 +94,7 @@ export function confirm(opts = {}) {
  * opts: { title, body, label, value, ok = 'OK', max }
  */
 export function askText(opts = {}) {
-  const { title = '', body = '', label = '', value = '', ok = 'OK', max = 24 } = opts;
+  const { title = '', body = '', label = '', value = '', ok = t('OK'), max = 24 } = opts;
   return new Promise((resolve) => {
     const dlg = document.createElement('dialog');
     dlg.className = 'modal glass strong';
@@ -103,7 +107,7 @@ export function askText(opts = {}) {
           <input class="input" id="ask-text" type="text" maxlength="${max}" value="${esc(value)}" aria-label="${esc(label || title)}" autocomplete="off" spellcheck="false" />
         </div>
         <div class="modal-actions">
-          <button class="btn quiet" type="button" data-answer="">Cancel</button>
+          <button class="btn quiet" type="button" data-answer="">${esc(t('Cancel'))}</button>
           <button class="btn primary" type="submit" value="ok" data-answer="ok">${esc(ok)}</button>
         </div>
       </form>`;
