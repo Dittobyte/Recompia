@@ -175,7 +175,7 @@ void guard_loop(Settings s) {
                     static_cast<double>(g_peak.load()) / kBytesPerGb, limit_gb, commit_readings_text().c_str());
             if (!blind_noted && pmc.PrivateUsage == 0 && pmc.PagefileUsage != 0) {
                 blind_noted = true;
-                NXLOG_W("memory", "private commit reads 0 while pagefile usage does not: the memory limit compares private commit, so it cannot trigger on this system");
+                NXLOG_W("memory", "private commit reads 0 while pagefile usage does not: the memory limit compares the pagefile usage instead (resident anonymous memory plus swap)");
             }
         }
 
@@ -204,7 +204,11 @@ void guard_loop(Settings s) {
 
 uint64_t memguard_footprint() {
     PROCESS_MEMORY_COUNTERS_EX pmc;
-    return read_process_memory(&pmc) ? static_cast<uint64_t>(pmc.PrivateUsage) : 0;
+    if (!read_process_memory(&pmc)) return 0;
+    // Under Proton the private commit can read 0 while the pagefile usage (resident anonymous memory plus swap) does not: the limit
+    // would never trigger. Fall back to the pagefile usage, which is never more than the private commit on Windows.
+    if (pmc.PrivateUsage == 0 && pmc.PagefileUsage != 0) return static_cast<uint64_t>(pmc.PagefileUsage);
+    return static_cast<uint64_t>(pmc.PrivateUsage);
 }
 
 void memguard_set_discount(uint64_t (*gpu_bytes)()) { g_discount.store(gpu_bytes); }

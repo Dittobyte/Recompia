@@ -12,9 +12,14 @@ of the game (version 2.0.1a): the download contains no game files.
 ### Testers on AMD handhelds, please read
 This Testing build adds logging and a few device checks, and changes no frame-rate settings. We need your logs to learn what helps on the Steam Deck, ROG Ally, Legion Go and similar devices. Play for about twenty minutes the way you normally do, then open **Settings > Testing** and press **Copy handheld report**: it copies one short block with your device, memory, graphics driver, frame summaries and any problems, with user names, folders and addresses removed. Paste it into a bug report and tell us the device, the system (SteamOS, Bazzite and so on), the power mode, your frame cap and what you were doing. If the picture drops to about 10 fps and stays there, or the game freezes, say so and restart the device. This is a Testing build: some rough edges are expected, and your reports are how Stable gets better.
 
+### Memory limit under Proton
+- The game's memory limit ([memory] limit_gb) now works under Proton
+  - Before: under Proton the reading the limit compares (private commit) can be 0, so the limit never triggered even when the game used many gigabytes; `pkp.log` showed `footprint 0.00 GB` next to a real pagefile usage
+  - Now: when the private commit reads 0, the limit compares the pagefile usage (resident anonymous memory plus swap), so `footprint` shows the real figure and the limit can trigger before the device runs out of memory; the first time it happens `pkp.log` says so
+  - Still not: the limit is 16 GB by default, so on a normal run nothing changes except the log; if the game is stopped at the limit, a report is written and the numbers in it are the same as before
+
 ### Regressions and known problems
 - The Lenovo Legion Go, Go 2, ROG Xbox Ally and MSI Claw A8 now start in handheld mode (picture size, the game's lighter handheld graphics settings, controller prompts, short waits under Proton). This has not been confirmed on those devices yet; if it looks worse than before, set `[am] operation_mode = docked` or `[host] handheld = off` in `pkp.ini`
-- On some Proton versions the memory limit may not trigger, because the reading it compares can be 0 there; this build shows both readings in `pkp.log` so we can tell which devices are affected
 - The Steam Controller (2026) is still not detected under Proton; use another pad there
 
 ### What to test
