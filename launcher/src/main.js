@@ -3,6 +3,7 @@ import './theme.css';
 import './layout.css';
 import './layout-modes.css';
 import './components.css';
+import './gamemode.css';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import markUrl from './art/mark.svg';
 import markTestingUrl from './art/mark-testing.png';

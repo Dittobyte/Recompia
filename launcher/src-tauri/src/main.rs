@@ -81,6 +81,7 @@ fn main() {
     states::install(tauri::Builder::default().plugin(tauri_plugin_dialog::init()))
         // a swap cut off by closing the window would have to wait for the next start to be undone
         .on_window_event(window::on_event)
+        .on_page_load(window::mark_game_mode)
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 // a failed screen query only means the window keeps its default size: it must never stop the launcher from starting

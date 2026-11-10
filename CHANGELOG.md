@@ -43,6 +43,12 @@ This Testing build adds logging and a few device checks, and changes no frame-ra
   - Now: the log names both readings; the limit itself is checked exactly as before
   - Still not: the memory limit compares private commit, so it cannot trigger while that reading is 0; this only makes that visible in a log
 
+### Launcher in Steam game mode
+- On a Steam Deck, ROG Ally or Legion Go in game mode, the launcher now fills the screen and uses finger-sized controls
+  - Before: on a 1080p handheld screen the launcher opened as a small floating window, and its buttons, switches and text were small
+  - Now: when Steam game mode is detected, the window starts maximized, every button, menu item, switch and text field is at least 44 pixels tall, and the text is a little larger
+  - Still not: this has not been tried on a real handheld yet, and the launcher does not yet have a larger-text setting of its own
+
 ### Launcher layout
 - Added a **Layout** button in the launcher's sidebar, beside Colours and Hide sidebar. It opens a panel where you choose how the launcher is arranged: the sidebar on the left, right, top or bottom, or icons only; the order of the sidebar items, and which of them to hide (Home and Settings always stay); comfortable or compact spacing; and whether the news cards and the chips under the Play button (profile, Link Play and Discord) show on Home. Changes show at once, **Reset to default** puts everything back, and your choice is kept on your PC
   - Before: the launcher had one fixed arrangement
