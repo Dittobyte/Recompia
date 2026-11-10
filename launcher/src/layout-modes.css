@@ -41,6 +41,12 @@ html[data-hide-link] [data-block="link"], html[data-hide-link] .home-actions #li
 :is(html, body)[data-sidebar="hide"] .page.page { padding-top: calc(var(--titlebar-h) + var(--space-3)); }
 #show-sidebar { position: fixed; top: calc((var(--titlebar-h) - var(--control-sm)) / 2); left: var(--space-2); z-index: 6; }
 
+/* top bar + Hide sidebar: the bar is gone, so the title bar gets its normal height back (the window buttons and the Show sidebar button would be clipped at 8px) */
+html[data-nav="top"][data-sidebar="hide"] body:not([data-shell="full"]) { --titlebar-h: 44px; }
+/* top and bottom bars: the three footer buttons (Colours, Layout, Hide sidebar) are icon-only so the bar never runs into the window buttons; the tooltip names them */
+html:is([data-nav="top"], [data-nav="bottom"]) :is(#theme-btn, #layout-btn, #ui-hide-btn) .nav-label { display: none; }
+html:is([data-nav="top"], [data-nav="bottom"]) :is(#theme-btn, #layout-btn, #ui-hide-btn) { width: var(--control-lg); padding: 0; justify-content: center; }
+
 /* ---------- right: the sidebar on the right; the window buttons sit just left of it ---------- */
 html[data-nav="right"] body:not([data-shell="full"]) #app {
   grid-template-columns: minmax(0, 1fr) var(--sidebar-w);
