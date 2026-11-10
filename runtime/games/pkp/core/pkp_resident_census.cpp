@@ -36,17 +36,35 @@ struct State {
     std::uint64_t frames = 0;
     std::uint32_t occupied = 0;
     std::uint32_t samples = 0;
+    std::uint32_t failed_samples = 0;
     bool valid = false;
 };
 State g;
 
-std::uint64_t root(std::uint64_t off) {
+std::uint64_t root(std::uint64_t off, const char** error = nullptr) {
     const auto addr = g.base + off;
-    if (!guest::ok(addr, sizeof(std::uint64_t))) return 0;
+    if (!guest::ok(addr, sizeof(std::uint64_t))) {
+        if (error) *error = "root pointer cell is not mapped";
+        return 0;
+    }
     const auto holder = guest::rd<std::uint64_t>(addr);
-    if (!guest::ok(holder, sizeof(std::uint64_t))) return 0;
+    if (!guest::ok(holder, sizeof(std::uint64_t))) {
+        if (error) *error = "root holder pointer is null or unmapped";
+        return 0;
+    }
     const auto object = guest::rd<std::uint64_t>(holder);
-    return guest::ok(object, sizeof(std::uint64_t)) ? object : 0;
+    if (!guest::ok(object, sizeof(std::uint64_t))) {
+        if (error) *error = "root object pointer is null or unmapped";
+        return 0;
+    }
+    return object;
+}
+
+void unavailable(const char* reason) {
+    ++g.failed_samples;
+    if (g.failed_samples == 1 || g.failed_samples % kDetailEverySamples == 0)
+        NXLOG_W("pkp", "pokemon census: unavailable (%s), attempts=%u; checking again",
+                reason, g.failed_samples);
 }
 
 std::uint32_t resident_count() {
@@ -108,16 +126,37 @@ bool crossed(std::uint32_t before, std::uint32_t after, std::uint32_t n) {
 }
 } // namespace
 
-void start(std::uint64_t main_base) { g = {}; g.base = main_base; }
+void start(std::uint64_t main_base) {
+    g = {};
+    g.base = main_base;
+    NXLOG_I("pkp", "pokemon census: installed (read-only, samples every 120 game frames)");
+}
 void stop() { g = {}; }
 
 void tick() {
     if (!g.base || ++g.frames % kSampleFrames) return;
-    const auto pool = root(kPoolGlobal);
-    if (!pool || !guest::ok(pool + kSlotsOffset, kSlots * sizeof(std::uint64_t)) ||
-        !guest::ok(pool + kFreeOffset, sizeof(std::uint32_t))) return;
+    const char* root_error = "unknown actor pool error";
+    const auto pool = root(kPoolGlobal, &root_error);
+    if (!pool) {
+        unavailable(root_error);
+        return;
+    }
+    if (!guest::ok(pool + kSlotsOffset, kSlots * sizeof(std::uint64_t))) {
+        unavailable("pool slot array is not mapped");
+        return;
+    }
+    if (!guest::ok(pool + kFreeOffset, sizeof(std::uint32_t))) {
+        unavailable("pool free-slot counter is not mapped");
+        return;
+    }
     const auto free = guest::rd<std::uint32_t>(pool + kFreeOffset);
-    if (free > kSlots) return;
+    if (free > kSlots) {
+        unavailable("pool free-slot counter exceeds 64 (possibly wrong pointer chain)");
+        return;
+    }
+    if (g.failed_samples)
+        NXLOG_I("pkp", "pokemon census: actor pool available again after %u unsuccessful samples", g.failed_samples);
+    g.failed_samples = 0;
     const auto world = root(kWorldGlobal);
     std::array<Slot, kSlots> details{};
     std::uint32_t occupied = 0, offmap = 0, positioned = 0, invalid = 0, missing_links = 0;
