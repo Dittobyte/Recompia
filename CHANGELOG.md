@@ -10,6 +10,9 @@ of the game (version 2.0.1a): the download contains no game files.
 
 **Testing build:** the gameplay extras (Camera aim, Running jump, Sort, Search, Quit Game) are now **off by default**; players coming from 0.9.0 who never set them lose them until they switch them on in Settings. A value already in `pkp.ini` is kept.
 
+### Graphics driver resets
+- `pkp.log` now says when every frame of a run waits on the graphics card from the start, which is what a driver reset on a Linux handheld looks like. The game cannot fix it: reboot the device. The README's common problems say so too
+
 ### Gameplay mods
 - Settings > Gameplay and `pkp.log` now show which gameplay mods and experimental features are on, so you can see at a glance what a start will use
 
