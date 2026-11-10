@@ -269,7 +269,10 @@ void drop_guard(uint64_t addr, uint64_t size);   // below
 LONG CALLBACK on_fault(EXCEPTION_POINTERS* ep) {
     if (!ep || !ep->ExceptionRecord) return EXCEPTION_CONTINUE_SEARCH;
     const EXCEPTION_RECORD* rec = ep->ExceptionRecord;
-    if (rec->ExceptionCode != EXCEPTION_ACCESS_VIOLATION || rec->NumberParameters < 2) return EXCEPTION_CONTINUE_SEARCH;
+    // macOS reports a write to a page this process made read-only as SIGBUS (EXCEPTION_IN_PAGE_ERROR), not as an access
+    // violation; both reach here with the write/address parameters the shim fills.
+    if ((rec->ExceptionCode != EXCEPTION_ACCESS_VIOLATION && rec->ExceptionCode != EXCEPTION_IN_PAGE_ERROR) || rec->NumberParameters < 2)
+        return EXCEPTION_CONTINUE_SEARCH;
     const ULONG_PTR kind = rec->ExceptionInformation[0];     // 0 read, 1 write, 8 execute
     if (kind != 0 && kind != 1) return EXCEPTION_CONTINUE_SEARCH;
     if (g_live.load(std::memory_order_acquire) == 0) return EXCEPTION_CONTINUE_SEARCH;

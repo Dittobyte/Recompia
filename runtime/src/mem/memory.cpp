@@ -179,6 +179,28 @@ bool init(const Config& cfg) {
     }
     g_default_heap.store(align_up(heap, kAllocGranularity));
 
+#if defined(__APPLE__)
+    // macOS: the executable reserves the guest address space in its Mach-O header (cmake/guest_segment.py); the kernel maps
+    // it at exec, before dyld, which is what keeps libmalloc's xzone reservations out of it. dyld slides the image, so the
+    // reserved range starts a little above 0x7000000000; the layout must still fit, or every fixed reservation below fails.
+    uint64_t guest_lo = 0, guest_hi = 0;
+    if (nxos_guest_reservation(&guest_lo, &guest_hi)) {
+        const uint64_t lo = kMainBase, hi = kKernelBase + kKernelSize;
+        if (lo < guest_lo || hi > guest_hi) {
+            NXLOG_E(kTag, "init failed: the guest layout [%llx, %llx) is outside the executable's __GUEST segment [%llx, %llx): "
+                          "link with nxrt_add_guest_segment (cmake/guest_segment.cmake)",
+                    static_cast<unsigned long long>(lo), static_cast<unsigned long long>(hi),
+                    static_cast<unsigned long long>(guest_lo), static_cast<unsigned long long>(guest_hi));
+            return false;
+        }
+        NXLOG_I(kTag, "guest address space reserved by the executable: [%llx, %llx)", static_cast<unsigned long long>(guest_lo),
+                static_cast<unsigned long long>(guest_hi));
+    } else {
+        NXLOG_W(kTag, "no __GUEST segment in the executable: libmalloc's reservations may take the guest layout "
+                      "(link with nxrt_add_guest_segment, cmake/guest_segment.cmake)");
+    }
+#endif
+
     if (cfg.reserve_regions) {
         if (!reserve_fixed(kStackBase, kStackSize, "stack")) {
             NXLOG_E(kTag, "init failed: the stack region could not be reserved");

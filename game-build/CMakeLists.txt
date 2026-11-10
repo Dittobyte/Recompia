@@ -5,7 +5,7 @@
 cmake_minimum_required(VERSION 3.25)
 # Static MSVC runtime (/MT): players need no Visual C++ Redistributable. Set before project() so every target below, third-party code
 # included, uses it; the libraries this one links must agree (a mismatch is a link error).
-if(NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
+if(WIN32 AND NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 project(pkp_game C CXX)
@@ -20,12 +20,18 @@ set(PKP_EXEFS_DEFAULT "${PKP_ROOT}/game/dump/exefs" CACHE PATH "default ExeFS fo
 # a message box, output still reaches a terminal it was started from), looks for ./exefs by default, and carries no local build paths
 # (source paths in assert strings, the .pdb path): see the installed-layout comment in src/pkp_main.cpp.
 # __FILE__ (the assert strings of the audio renderer) never carries the build folder, in any build: paths are written relative to the checkout.
-add_compile_options("-clang:-fmacro-prefix-map=${PKP_ROOT}=.")
+if(WIN32)
+    add_compile_options("-clang:-fmacro-prefix-map=${PKP_ROOT}=.")
+else()
+    add_compile_options("-ffile-prefix-map=${PKP_ROOT}=.")   # Apple clang spells the same flag without the MSVC pass-through
+endif()
 option(PKP_RELEASE "build pkp.exe as a release package binary" OFF)
 if(PKP_RELEASE)
     set(PKP_GUI_SUBSYSTEM ON)
     set(PKP_EXEFS_DEFAULT "exefs")
-    add_compile_options("-clang:-ffile-prefix-map=${PKP_ROOT}=.")
+    if(WIN32)
+        add_compile_options("-clang:-ffile-prefix-map=${PKP_ROOT}=.")
+    endif()
 endif()
 
 # The release version ("0.1.0"; "dev" for local builds). The game log, --version and the exe's file properties show it.
@@ -59,13 +65,20 @@ set(PKP_MODULE_LIBS "")
 foreach(m ${PKP_MOD_MODULES})
     list(APPEND PKP_MODULE_LIBS pkp_${m})
     add_library(pkp_${m} STATIC IMPORTED GLOBAL)
-    set_target_properties(pkp_${m} PROPERTIES IMPORTED_LOCATION "${PKP_LIB_DIR}/pkp_${m}.lib")
+    if(WIN32)
+        set_target_properties(pkp_${m} PROPERTIES IMPORTED_LOCATION "${PKP_LIB_DIR}/pkp_${m}.lib")
+    else()
+        set_target_properties(pkp_${m} PROPERTIES IMPORTED_LOCATION "${PKP_LIB_DIR}/libpkp_${m}.a")
+    endif()
 endforeach()
 
 # Release model (b) (PKP_RT_DLL=ON, docs/RELEASE.md): no game code in anything built here. The runtime and the boot code become
 # pkp_rt.dll (+ the import library pkp_rt.lib); pkp.exe is linked on the player's PC from the libraries lifted out of their own dump
 # and src/pkp_stub.cpp (tools/build/pkp_build.py in the package, with the bundled Zig). Nothing lifted is imported here.
 option(PKP_RT_DLL "build the runtime as pkp_rt.dll for release model (b)" OFF)
+if(PKP_RT_DLL AND NOT WIN32)
+    message(FATAL_ERROR "PKP_RT_DLL is the Windows release model (b): pkp_rt.dll and its .def import library do not exist on macOS")
+endif()
 if(PKP_RT_DLL)
     add_library(pkp_rt SHARED src/pkp_main.cpp src/pkp_rt.def)
     set_source_files_properties(src/pkp_main.cpp PROPERTIES COMPILE_DEFINITIONS "PKP_VERSION=\"${PKP_VERSION}\"")
@@ -84,30 +97,54 @@ if(PKP_RT_DLL)
     return()
 endif()
 
-add_executable(pkp src/pkp_main.cpp res/pkp.rc)
+if(WIN32)
+    add_executable(pkp src/pkp_main.cpp res/pkp.rc)
+else()
+    add_executable(pkp src/pkp_main.cpp)   # res/pkp.rc is the Windows resource script (version info, manifest)
+endif()
 set_source_files_properties(src/pkp_main.cpp PROPERTIES COMPILE_DEFINITIONS "PKP_VERSION=\"${PKP_VERSION}\"")
-set_source_files_properties(res/pkp.rc PROPERTIES COMPILE_DEFINITIONS "PKP_VER_MAJOR=${PKP_VER_MAJOR};PKP_VER_MINOR=${PKP_VER_MINOR};PKP_VER_PATCH=${PKP_VER_PATCH};PKP_VER_TEXT=\"${PKP_VERSION}\""
-                            OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/res/pkp.manifest")
+if(WIN32)
+    set_source_files_properties(res/pkp.rc PROPERTIES COMPILE_DEFINITIONS "PKP_VER_MAJOR=${PKP_VER_MAJOR};PKP_VER_MINOR=${PKP_VER_MINOR};PKP_VER_PATCH=${PKP_VER_PATCH};PKP_VER_TEXT=\"${PKP_VERSION}\""
+                                OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/res/pkp.manifest")
+endif()
 target_compile_definitions(pkp PRIVATE PKP_EXEFS_DEFAULT="${PKP_EXEFS_DEFAULT}")
 target_include_directories(pkp PRIVATE "${PKP_GEN_INCLUDE}")
 target_link_libraries(pkp PRIVATE ${PKP_MODULE_LIBS} nxrt_game_pkp nxrt_gfx nxrt)   # nxrt_game_pkp: runtime/games/pkp
+nxrt_add_guest_segment(pkp)   # macOS: reserve the guest address space in the Mach-O header (runtime/cmake/guest_segment.cmake)
+if(APPLE)
+    # volk opens libvulkan.1.dylib next to the executable (src/gfx/vk_device.cpp): MoltenVK, as the demo target also gets it.
+    add_custom_command(TARGET pkp POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${NXRT_MOLTENVK_LIBRARY}" "$<TARGET_FILE_DIR:pkp>/libvulkan.1.dylib")
+endif()
 # the imported libraries must be lifted with this tree's site lists (a lift from another checkout or an older main.sites links fine but
 # its missing hooks never run): checked on every build
 nxrecomp_check_lift(pkp_lift_check PKP_MOD "${PKP_LIB_DIR}" pkp_)
 add_dependencies(pkp pkp_lift_check)
 # A linker map next to the exe (host frames get names), a big main stack (lifted
 # code nests deeply), low host allocations so the guest ranges at 0x71_0000_0000 and up stay free.
-if(PKP_RELEASE)
-    target_compile_definitions(pkp PRIVATE PKP_GUI_SUBSYSTEM=1)
-    target_link_options(pkp PRIVATE /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup /PDBALTPATH:pkp.pdb)
+if(WIN32)
+    if(PKP_RELEASE)
+        target_compile_definitions(pkp PRIVATE PKP_GUI_SUBSYSTEM=1)
+        target_link_options(pkp PRIVATE /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup /PDBALTPATH:pkp.pdb)
+    endif()
+    target_link_options(pkp PRIVATE /MAP /STACK:134217728 /HIGHENTROPYVA:NO /DEBUG /MANIFEST:NO)   # res/pkp.rc carries the manifest
+else()
+    # The main thread's stack: lifted code nests deeply. /STACK has no direct equivalent; -stack_size writes the size into the
+    # Mach-O LC_MAIN header, which is what the kernel gives the main thread (128 MiB, the same number as the Windows flag).
+    target_link_options(pkp PRIVATE "-Wl,-stack_size,0x8000000")
 endif()
-target_link_options(pkp PRIVATE /MAP /STACK:134217728 /HIGHENTROPYVA:NO /DEBUG /MANIFEST:NO)   # res/pkp.rc carries the manifest
 
 # The ASTC decoder DLLs astc2bc7 loads at run time (NVN textures in ASTC are transcoded to BC7 on first use): next to pkp.exe.
 # (NXRT_A2B_DIR is the tools/textures build folder the runtime links its transcoder from: cmake/gfx.cmake)
 # The shared-font fallback (runtime src/services/pl.cpp looks in fonts\ next to the exe): without any font the game crashes at boot.
 add_custom_command(TARGET pkp POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${PKP_RUNTIME_DIR}/assets/fonts/DejaVuSans.ttf" "$<TARGET_FILE_DIR:pkp>/fonts/DejaVuSans.ttf")
+
+# The prompt icon pack (runtime src/gfx/play/prompts.cpp: 598 36x36 RGBA icons, xbox/ps/steam/deck/kbm): the button prompts
+# replace the game's icon textures with these. Without it the game's own icons stay ("no icon pack (prompt_icons.pak) found").
+add_custom_command(TARGET pkp POST_BUILD COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:pkp>/prompts"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${PKP_RUNTIME_DIR}/assets/prompts/prompt_icons.pak" "$<TARGET_FILE_DIR:pkp>/prompts/prompt_icons.pak")
 
 # Keyboard and mouse prompt icons (runtime games/pkp/input/pkp_kbm.cpp reads assets\kbm_icons\<name>.png next to the exe): Kenney's Input Prompts
 # (CC0), the "Keyboard & Mouse/Default" PNGs, kept in the work folder (not in any repository). Without them the prompts show key names as text.
