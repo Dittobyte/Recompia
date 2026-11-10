@@ -35,6 +35,7 @@ mod relay_cmds;
 mod repair;
 mod repair_cmds;
 mod rollback;
+mod runtime_api;
 mod savebackup;
 mod saveimport;
 mod saves;

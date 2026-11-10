@@ -58,6 +58,7 @@ enum class Key : uint8_t {
     CraftSearch,
     TitleQuit,
     OptionsMenu,
+    EventsFile,
     Count
 };
 
