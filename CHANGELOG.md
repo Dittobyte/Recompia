@@ -51,6 +51,10 @@ of the game (version 2.0.1a): the download contains no game files.
 - **Joy-Con 2 mouse mode** is switched off for now: it aimed at the wrong blocks on PC. The middle mouse button no longer turns it on and the **Mouse Mode Key** row is gone from **Settings > Mouse**. Camera aim is not affected
 
 ### Launcher
+- Added **Copy handheld report** to Settings > Testing (Testing channel only)
+  - Before: a tester on an AMD handheld had to send the whole `pkp.log`, which holds names and paths, and say by hand what mattered
+  - Now: one press copies a short block with only the useful lines of `pkp.log` (handheld detection, graphics card and driver, memory, the frame summaries and any graphics reset or crash), with user names, home folders, addresses and room codes removed, ready to paste into a bug report. Add your device, system, power mode and what you were doing
+  - Still not: it does not send anything and does not replace **Export and report** when a full log is asked for
 - Changed the logo and icons to plain ones, and took the earlier game's name and a personal folder path out of comments and scripts
   - Before: the logo and icons were multi-colour bubble letters like the game's
   - Now: the logo is plain "Recompia" text and the icons are an R on a rounded square (Testing: with a T badge); the README pictures are plain placeholders
