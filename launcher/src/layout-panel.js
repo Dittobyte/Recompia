@@ -4,6 +4,8 @@ import './layout-panel.css';
 import { currentLayout, setLayout } from './layout-apply.js';
 import { DEFAULT_LAYOUT, LOCKED, setNav, setDensity, moveItem, setHidden, setBlock } from './layout-model.js';
 import { esc, icon, segmented, toggle } from './ui.js';
+import { appearanceSection, bindAppearance } from './background-panel.js';
+import { currentBackground } from './background-apply.js';
 
 const NAV_OPTIONS = [['left', 'Left'], ['right', 'Right'], ['top', 'Top'], ['bottom', 'Bottom'], ['icons', 'Icons only']];
 const DENSITY_OPTIONS = [['comfortable', 'Comfortable'], ['compact', 'Compact']];
@@ -39,7 +41,8 @@ function body(l) {
     <section class="lp-sec"><h3>Sidebar items</h3><ul class="lp-list">${l.order.map((id, i) => itemRow(l, id, i)).join('')}</ul></section>
     <section class="lp-sec"><h3>Home sections</h3>
       ${BLOCK_LABELS.map(([id, text]) => `<div class="lp-block"><label class="lp-name" for="lp-block-${id}">${esc(text)}</label>${toggle(`lp-block-${id}`, l.blocks[id], { label: text })}</div>`).join('')}
-    </section>`;
+    </section>
+    ${appearanceSection(currentBackground(), { available: document.documentElement.dataset.channel === 'testing' })}`;
 }
 
 /** What to focus again after a redraw: the same control, found by a stable key. */
@@ -98,7 +101,9 @@ export function openLayoutPanel() {
     draw();
   });
   dlg.addEventListener('cancel', (e) => { e.preventDefault(); dlg.close(''); });   // Escape: one close path
+  const unbindAppearance = bindAppearance(dlg, {});
   dlg.addEventListener('close', () => {
+    unbindAppearance();
     dlg.remove();
     (document.getElementById('layout-btn') || opener)?.focus();
   });
