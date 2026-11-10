@@ -47,8 +47,11 @@ What it cannot get past:
 
 - The first time you host, Windows Firewall may ask about pkp.exe: allow it on **private** networks. If nobody finds you, check that your
   network is set to Private (Settings, Network & internet, your connection, Network profile type) and that pkp.exe is allowed.
-- **Internet without a relay:** the host forwards TCP and UDP 47600 on its router; visitors pick Visit by address with the host's public
-  address and enter the host's room code.
+- **Internet without a relay:** the host's router must forward TCP and UDP 47600 to the host. While it hosts, the game asks the router
+  for that itself (UPnP, NAT-PMP or PCP; `[net] port_forward`, on by default, and **Ask the router to open the port** on the launcher's Host
+  view) and gives the port back when hosting ends. When the router does not allow it, or the internet provider shares one address among
+  many homes (carrier-grade NAT), `pkp.log` says so in a `nat:` line: forward the port by hand, or use a relay or a VPN. Visitors pick
+  Visit by address with the host's public address and enter the host's room code.
 - **Internet through a relay:** nobody forwards anything except whoever runs the relay. Any pokopia-native coop relay works. The launcher can
   run one too: **Run a relay here** on the Link Play page (while the launcher stays open), or `PokopiaLauncher --host` on a server
   (`--listen <IPv4>[:<port>]`, `--no-udp`, and pokopia-native's limits options). Forward TCP 47610 to it, and UDP 47610 too for the faster path.

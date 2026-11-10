@@ -16,6 +16,14 @@ of the game (version 2.0.1a): the download contains no game files.
   - **Experimental features** has **Mouse in the game's menus** and the **Taller view** on 16:10 screens, both on by default. The gameplay options (Camera aim, Running jump, Sort, Search, Quit Game) stay in **Game > Gameplay**, on by default
 - The touch screen **Menu button** is automatic: on when the machine has a touch screen, so a handheld keeps its way into the menu
 
+### Link Play
+- Updated the co-op module to pokopia-native 1.4.0. It still plays with pokopia-native 1.3.0 to 1.4.0 and with earlier builds of this game: the way games talk to each other did not change
+- Added **automatic port forwarding** when you host over the internet without a relay
+  - Before: your router had to forward port 47600 (TCP and UDP) by hand
+  - Now: while you host, the game asks your router to forward it (UPnP, NAT-PMP or PCP) and gives it back when you stop. **Ask the router to open the port** on the Link Play page's Host view (`[net] port_forward`) turns it off
+  - Still not: a router with UPnP switched off, or an internet provider that shares one address among many homes, can't be helped by this; `pkp.log` says which, in a `nat:` line. A relay you run on this PC still needs its own port forwarded. Quitting the game while hosting leaves the forwarded port until its one-hour lease runs out
+- `pkp.log` no longer contains your whole room code, only its first group, so a log is safe to attach to a bug report. The launcher still shows the whole code
+
 ### Game
 - NVIDIA graphics cards no longer risk a crash (device lost) in three of the game's compute shaders when a loop count is not the game's: the count is held to the size of the table the loop walks (on other cards, to 16384). From pokopia-native 1.4.0; `[nvn] loop_guard = off` turns it off
 - **Joy-Con 2 mouse mode** is switched off for now: it aimed at the wrong blocks on PC. The middle mouse button no longer turns it on and the **Mouse Mode Key** row is gone from **Settings > Mouse**. Camera aim is not affected
