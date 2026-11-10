@@ -6,7 +6,7 @@ of the game (version 2.0.1a): the download contains no game files.
 
 ## 0.9.1 (build M: Markhor)
 
-**This is mainly a compliance update.** The launcher's artwork, the logo and icons, the README pictures and some wording in the code no longer use material from the game or its makers: they are neutral placeholders until we have art we can publish. Nothing about how the game plays changes because of this.
+**This is mainly a compliance update.** The launcher's artwork, the logo and icons, the README pictures and some wording in the code no longer use material from the game or its makers: they are neutral placeholders until we have art we can publish. Nothing about how the game plays changes because of this. The launcher will get a new look soon.
 
 **Update:** press **Update**, then **Set up again** once (new game hooks for the crafting Search button; your saves and shaders are kept).
 
