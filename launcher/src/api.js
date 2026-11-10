@@ -91,4 +91,8 @@ export const api = {
   roomCodeNew: () => invoke('room_code_new'),
   roomCodeCheck: (args) => invoke('room_code_check', args),   // { code }
   roomCodeHost: () => invoke('room_code_host'),
+  // Link Play checks (src-tauri/src/linkcheck.rs holds the shapes): read only
+  linkProbe: (args) => invoke('link_probe', args),   // { addr } -> { kind: answered | refused | timed_out | bad_address, ms?, message? }
+  setupFacts: () => invoke('setup_facts'),           // -> { firewalld: { state, zones, ports } }
+  tailscalePeers: () => invoke('tailscale_peers'),   // -> { found, error?, self, peers: [{ name, dns_name, ips, online, hosting }] }
 };

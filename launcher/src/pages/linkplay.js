@@ -7,10 +7,12 @@ import { errText, esc, field, group, icon, row, segmented, toast, toggle } from 
 import { store } from '../store.js';
 import { gamePhase } from '../action.js';
 import {
-  HOST_PORT, RELAY_PORT, addrProblem, addressRows, applyEdits, codeEdits, editsFor, hostsOverInternet, interactEdits, internetShare, pathParts,
+  HOST_PORT, RELAY_PORT, addrProblem, parseAddr, addressRows, applyEdits, codeEdits, editsFor, hostsOverInternet, interactEdits, internetShare, pathParts,
   portForwardEdits, protocolEdits, localAddr, readIni, relayPort, shownCode, storyEdits, uiFrom,
 } from '../linkplay-model.js';
 import { inviteNote, inviteToUi, makeInvite, parseInvite } from '../link-invite-model.js';
+import { probeMessage, setupFindings } from '../setup-check-model.js';
+import { friendRows, joinNote, joinUi } from '../tailscale-model.js';
 
 const LS = 'pkp.linkplay';
 const POLL_MS = 3000;   // link count and the game's room code, while the Host view is on screen
@@ -37,6 +39,11 @@ export async function render(el, ctx) {
   let gameCode = null;     // room-code.txt: the game's own
   let dropped = null;      // the game's code the player replaced with New code
   let problems = {};       // field id -> what is wrong with it
+  // the read-only checks (linkcheck.rs): what each last said, and which one is running
+  let probeOut = null;     // { level, text, addr } of Test connection
+  let setupOut = null;     // setupFindings(): [{ level, title, detail, fix }]
+  let friendsOut = null;   // friendRows(): { ok, note, rows }
+  let busy = '';           // 'probe' | 'setup-check' | 'friends' while one runs
 
   // commits run one at a time, in the order the player made them: a blur, then the click that caused it
   let tail = Promise.resolve();
@@ -142,6 +149,96 @@ export async function render(el, ctx) {
       + `<div class="banner info">${icon('info')}<div class="grow">${how}${router} Never give out 127.0.0.1: on a visitor's PC it means their own PC.</div></div>`;
   }
 
+  // --- Test connection, Check my setup, Friends on my Tailscale: read only, nothing is written to pkp.ini by them
+
+  const checkIcon = { ok: 'circle-check', tip: 'info', problem: 'triangle-alert' };
+  const checkTone = { ok: 'ok', tip: 'info', problem: 'warn' };
+  const checkBanner = (level, title, detail, fix) => `<div class="banner ${checkTone[level]}">${icon(checkIcon[level])}<div class="grow">${title ? `<strong>${esc(title)}</strong>` : ''}<div>${esc(detail)}</div>${fix ? `<div>${esc(fix)}</div>` : ''}</div></div>`;
+  const checkButton = (act, label, ico) => `<button class="btn sm" id="lp-btn-${act}" data-act="${act}" ${busy ? 'disabled' : ''}>${icon(ico)}${busy === act ? 'Working\u2026' : label}</button>`;
+
+  /** The address Test connection tries: the one typed on this page, with the relay's port when the visit goes through a relay. */
+  function probeTarget() {
+    const typed = (ui.view === 'lan' ? ui.lanJoin : isVisit() ? ui.visitAddr : '').trim();
+    const a = parseAddr(typed);
+    return a && a.port === null ? `${typed}:${isVisit() && ui.through ? RELAY_PORT : HOST_PORT}` : typed;
+  }
+
+  function checksHtml() {
+    if (ui.view === 'off') return '';
+    const rows = [];
+    if (ui.view === 'lan' || isVisit()) rows.push(row('Test connection', checkButton('probe', 'Test', 'refresh-cw')));
+    rows.push(row('Check my setup', checkButton('setup-check', 'Check', 'wrench')));
+    if (isVisit()) rows.push(row('Friends on my Tailscale', checkButton('friends', 'Look', 'users')));
+    let out = '';
+    if (probeOut && probeOut.addr === probeTarget() && (ui.view === 'lan' || isVisit())) out += checkBanner(probeOut.level, '', probeOut.text);   // only for the address it tried
+    if (setupOut) out += setupOut.map((f) => checkBanner(f.level, f.title, f.detail, f.fix)).join('');
+    if (friendsOut && isVisit()) {
+      out += friendsOut.ok
+        ? group('Your Tailscale devices', friendsOut.rows.length ? friendsOut.rows.map((r) => row(r.dns ? `${r.name} (${r.dns})` : r.name, `<span class="faint">${esc(r.hint)}</span>${r.active ? `<button class="btn sm" data-friend="${esc(r.key)}">Join</button>` : ''}`)) : [row(friendsOut.note, '')])
+        : checkBanner('tip', '', friendsOut.note);
+      if (friendsOut.ok && friendsOut.rows.length && friendsOut.note) out += checkBanner('tip', '', friendsOut.note);
+    }
+    return group('Check the connection', rows) + out;
+  }
+
+  const drawChecks = () => patch(part('lp-checks'), checksHtml());
+
+  const probe = () => inOrder(async () => {
+    const addr = probeTarget();
+    if (!addr) {
+      probeOut = { level: 'tip', text: 'Type or paste the host\'s address first, then test.', addr };
+      drawChecks();
+      return;
+    }
+    busy = 'probe';
+    drawChecks();
+    try {
+      probeOut = { ...probeMessage(await api.linkProbe({ addr }), addr), addr };
+    } finally {
+      busy = '';
+      drawChecks();
+    }
+  });
+
+  const runSetupCheck = () => inOrder(async () => {
+    busy = 'setup-check';
+    drawChecks();
+    try {
+      const [facts, report] = await Promise.all([api.setupFacts().catch(() => null), api.lanReport().catch(() => null)]);
+      lan = report || lan;
+      // the port a friend needs: this PC's relay while it runs, else the host port
+      setupOut = setupFindings({ lan, facts, port: relay ? relayPort(relay) : HOST_PORT });
+    } finally {
+      busy = '';
+      drawChecks();
+    }
+  });
+
+  const runFriends = () => inOrder(async () => {
+    busy = 'friends';
+    drawChecks();
+    try {
+      friendsOut = friendRows(await api.tailscalePeers().catch(() => null));
+    } finally {
+      busy = '';
+      drawChecks();
+    }
+  });
+
+  /** Join on a Tailscale friend: the page shows that address as an Internet visit and waits for the room code (or an invite). */
+  const joinFriend = (key) => inOrder(async () => {
+    const r = friendsOut?.rows.find((x) => x.key === key);
+    if (!r) return;
+    Object.assign(ui, joinUi(r));
+    remember({ role: 'visit' });
+    problems = {};
+    el.querySelector('input[name="view"][value="internet"]').checked = true;
+    draw();
+    enter();
+    part('lp-code-in')?.focus();
+    toast(joinNote(r), 'ok');
+  });
+
   function bodyHtml() {
     if (ui.view === 'off') return '';
     if (ui.view === 'lan') {
@@ -174,9 +271,14 @@ export async function render(el, ctx) {
     if (!node || node.dataset.html === html) return false;
     const a = document.activeElement;
     const key = node.contains(a) ? (a.id ? `#${a.id}` : a.name ? `input[name="${a.name}"]:checked` : null) : null;
+    const caret = key && typeof a.selectionStart === 'number' ? [a.selectionStart, a.selectionEnd] : null;
     node.innerHTML = html;
     node.dataset.html = html;
-    if (key) node.querySelector(key)?.focus();
+    if (key) {
+      const back = node.querySelector(key);
+      back?.focus();
+      if (caret) { try { back?.setSelectionRange(...caret); } catch { /* not a text field */ } }
+    }
     return true;
   }
 
@@ -230,6 +332,7 @@ export async function render(el, ctx) {
       drawLan();
       drawCode();
     }
+    patch(part('lp-checks'), checksHtml());
     drawProblems();
   }
 
@@ -388,6 +491,8 @@ export async function render(el, ctx) {
     draw();
     enter();
     await commit();
+    if (Object.values(problems).some(Boolean)) return;   // the field shows what is wrong: no "applied" on top of it
+    input.value = '';   // done: leaving the box must not apply the same text twice
     toast(inviteNote(r.invite), 'ok');
   });
 
@@ -406,6 +511,7 @@ export async function render(el, ctx) {
     <div class="lp-part" id="lp-banners"></div>
     <div class="lp-path" id="lp-path"></div>
     <div class="lp-part" id="lp-body"></div>
+    <div class="lp-part" id="lp-checks"></div>
     <div class="lp-part" id="lp-shared"></div>
   </div>`;
 
@@ -445,13 +551,17 @@ export async function render(el, ctx) {
     }
   });
   el.addEventListener('click', (e) => {
-    const t = e.target.closest('[data-copy], [data-act], [data-invite]');
+    const t = e.target.closest('[data-copy], [data-act], [data-invite], [data-friend]');
     if (!t) return;
     if (t.dataset.invite) {
       const made = makeInvite({ addr: t.dataset.invite, code: shownCode({ gameCode, hostCode: ui.hostCode, running: gameActive(store.state) }), through: t.dataset.through === '1' });
       if (made) copy(made.text);
       else toast('An invite needs the room code first: press New code, or start the game as host.', 'error');
     } else if (t.dataset.copy) copy(t.dataset.copy);
+    else if (t.dataset.friend) joinFriend(t.dataset.friend);
+    else if (t.dataset.act === 'probe') probe();
+    else if (t.dataset.act === 'setup-check') runSetupCheck();
+    else if (t.dataset.act === 'friends') runFriends();
     else if (t.dataset.act === 'new-code') newCode();
     else if (t.dataset.act === 'switch') inOrder(async () => { await save(protocolEdits()); draw(); });
   });
