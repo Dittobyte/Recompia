@@ -40,8 +40,10 @@
 #include "nxrt/gauge.h"
 #include "nxrt/host_device.h"
 #include "nxrt/log.h"
+#include "nxrt/memory.h"
 #include "nxrt/write_watch.h"
 #include "nvn_gpu_internal.h"
+#include "nvn_thread.h"
 
 namespace nxrt::nvn::be::gpu {
 namespace {
@@ -63,6 +65,15 @@ AutoDecision g_auto;
 
 bool auto_copy() {
     if (host_is_wine()) return true;
+#if defined(__APPLE__)
+    // The shadow cache exists for the case where a pool cannot be imported from the guest's pages. MoltenVK 1.4 does
+    // implement VK_EXT_external_memory_host -- the device logs "host-memory import available" -- and importing is both
+    // correct and far cheaper than mirroring 25-40 MB a frame (measured on the M3: pool_copy_copied_kb +43704 in a 54 ms
+    // frame). The copy-back is also what broke the UI for ~30 frames every ~500 presents, so with the extension there is
+    // no reason to pay for it. Older MoltenVK has no extension and keeps the shadows.
+    if (!active()) return true;   // before the device exists: the safe path (the decision is not latched)
+    return !device().features().external_memory_host;
+#endif
     if (!active()) return false;     // an early stats call must not latch auto off
     gfx::Device& d = device();
     std::lock_guard<std::mutex> lk(g_auto_mu);
@@ -106,7 +117,14 @@ const Cfg& cfg() {
 void log_cfg(const Cfg& c, bool on) {
     static std::once_flag once;
     std::call_once(once, [&] {
-        const char* why = !c.automatic ? "" : (host_is_wine() ? ", Wine" : (on ? ", integrated GPU with at most 8 GiB of device-local memory" : ", not Wine or a small integrated GPU"));
+        const char* why = !c.automatic ? ""
+                        : host_is_wine() ? ", Wine"
+#if defined(__APPLE__)
+                        : on ? ", MoltenVK without VK_EXT_external_memory_host"
+                             : ", host-memory import (VK_EXT_external_memory_host) available";
+#else
+                        : on ? ", integrated GPU with at most 8 GiB of device-local memory" : ", not Wine or a small integrated GPU";
+#endif
         NXLOG_I(kTag, "pool_copy %s (%s%s)", on ? "on" : "off", c.mode.c_str(), why);
         if (on)
             NXLOG_I(kTag, "pool_copy: shadows in cells of %llu MiB, dropped after %u idle presents, cap %llu MiB; pool_lazy, pool_lazy_chunk_mb, "
@@ -156,7 +174,7 @@ std::vector<PoolChunk*> g_reg;
 // the landing thread
 std::mutex g_th_mu;
 std::condition_variable g_th_cv;
-std::thread g_th;
+BigThread g_th;
 bool g_th_stop = false;
 
 struct CopyGauges {
@@ -181,12 +199,16 @@ CopyGauges g_copy_gauges;
 
 // memcpy that survives an access violation (a guest page decommitted under it). No C++ objects here (SEH).
 bool seh_copy(void* d, const void* s, size_t n) {
+#if defined(_WIN32)
     __try {
         std::memcpy(d, s, n);
     } __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
         return false;
     }
     return true;
+#else
+    return nxos_guard([&] { std::memcpy(d, s, n); });   // the shim's __try: a fault inside returns 0
+#endif
 }
 
 // [d, d + n) <- [s, s + n); on a fault, page by page of `s` (in) or `d` (out): a part that cannot be copied is zero-filled when it is the
@@ -243,7 +265,7 @@ void start_lander() {
     std::lock_guard<std::mutex> lk(g_th_mu);
     if (g_th.joinable()) return;
     g_th_stop = false;
-    g_th = std::thread(land_loop);
+    g_th.start("nvn-pool-land", 16, land_loop);
 }
 
 void reg_remove(PoolChunk* c) {
@@ -523,6 +545,32 @@ uint64_t pcopy_land(uint64_t reached) {
             const PoolChunk* c = r.chunk;
             uint8_t* dst = r.pool->base + r.pool_off;
             const uint8_t* src = static_cast<const uint8_t*>(c->shadow.mapped) + (r.pool_off - c->off);
+            // A record whose destination is not guest memory must not be copied to: the memcpy would land in whatever host
+            // mapping the address falls in (a thread stack top, once) and take the process down outside any guard.
+            const uintptr_t d = reinterpret_cast<uintptr_t>(dst);
+            const bool guest_dst = (d >= mem::kAliasBase && d + r.size <= mem::kAliasBase + mem::kAliasSize) ||
+                                   (d >= mem::kHeapBase && d + r.size <= mem::kHeapBase + mem::heap_reserved());
+            if (!guest_dst) {
+                NXLOG_E(kTag, "land: dst 0x%llx (+0x%llx) is not guest memory (pool %p base 0x%llx, off 0x%llx, serial %llu): skipped",
+                        static_cast<unsigned long long>(d), static_cast<unsigned long long>(r.size), static_cast<void*>(r.pool),
+                        static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(r.pool->base)),
+                        static_cast<unsigned long long>(r.pool_off), static_cast<unsigned long long>(r.serial));
+                bad += r.size;
+                bytes += r.size;
+                continue;
+            }
+            // The source is a host shadow buffer: a stale chunk (destroyed under a record) or a range past its end would read
+            // whatever host mapping follows it. Check the chunk covers the range before touching it.
+            const uint64_t src_off = r.pool_off - c->off;
+            if (!c->shadow.mapped || r.pool_off < c->off || src_off + r.size > c->size) {
+                NXLOG_E(kTag, "land: chunk %p does not cover off 0x%llx (+0x%llx) (chunk off 0x%llx size 0x%llx, shadow %p, serial %llu): skipped",
+                        static_cast<void*>(const_cast<PoolChunk*>(c)), static_cast<unsigned long long>(r.pool_off),
+                        static_cast<unsigned long long>(r.size), static_cast<unsigned long long>(c->off),
+                        static_cast<unsigned long long>(c->size), c->shadow.mapped, static_cast<unsigned long long>(r.serial));
+                bad += r.size;
+                bytes += r.size;
+                continue;
+            }
             mem::ww::before_os_write(dst, r.size);     // pages a write watch made read-only become writable (and count as written)
             bad += guarded_copy(dst, src, r.size, false);
             bytes += r.size;

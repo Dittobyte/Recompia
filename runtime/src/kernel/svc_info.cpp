@@ -121,8 +121,8 @@ uint32_t get_info(uint32_t type, uint32_t handle, uint64_t sub, uint64_t& out) {
             out = entropy_seed() ^ (sub * kGoldenRatio64);
             return kernel::kOk;
         }
-        case 12: out = kAslrRegionAddress; return kernel::kOk;                // AslrRegionAddress
-        case 13: out = kAslrRegionSize; return kernel::kOk;                   // AslrRegionSize
+        case 12: out = mem::kAslrBase; return kernel::kOk;                    // AslrRegionAddress
+        case 13: out = mem::kAslrSize; return kernel::kOk;                    // AslrRegionSize
         case 14: out = mem::kStackBase; return kernel::kOk;                   // StackRegionAddress
         case 15: out = mem::kStackSize; return kernel::kOk;                   // StackRegionSize
         case 16:                                                              // SystemResourceSizeTotal: main.npdm (title profile)

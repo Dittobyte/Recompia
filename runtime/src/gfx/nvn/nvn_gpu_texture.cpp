@@ -6,6 +6,7 @@
 // level. Layouts are tracked per image (all levels and layers share one layout). Samplers are cached by their NVN state.
 // Readback (download_texture) copies a render target back and tiles it into the game's storage.
 #include "nvn_gpu_texture_internal.h"
+#include "nvn_thread.h"   // BigThread: the texture-arming worker gets a stack of its own (the guest code cannot exhaust it)
 
 namespace nxrt::nvn::be {
 static uint64_t g_wgen_next = 0;                        // render thread only (move_layout, the replay)
@@ -446,7 +447,9 @@ void tex_ww_arm_later(Texture* t, const TexGpu& g, bool have_hash, uint64_t hash
     std::lock_guard<std::mutex> lk(aq.mu);
     if (!aq.started) {
         aq.started = true;
-        std::thread(arm_worker).detach();
+        BigThread t;
+        t.start("nvn-tex-arm", 16, arm_worker);
+        t.detach();
     }
     ArmJob j;
     j.t = Ref<Texture>::share(t);

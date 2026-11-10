@@ -53,6 +53,8 @@ inline uint32_t rd32(const uint8_t* p) {
 // The SHA instructions (Intel since Ice Lake / Alder Lake, AMD since Zen): the same digest as block() at several times the speed. The
 // shader cache keys on this hash, and the game hashes every stage of every program it links (over a second of the boot on the portable
 // loop). Intrinsics, no inline assembly; chosen at run time from CPUID.
+// x86 only: the SHA-NI intrinsics and their `target` attribute do not exist for AArch64, where the portable loop below is what runs.
+#if defined(__x86_64__) || defined(_M_X64)
 bool have_shani() {
     static const bool yes = [] {
         int r[4];
@@ -96,6 +98,9 @@ __attribute__((target("sha,sse4.1,ssse3"))) void sha1_blocks_shani(uint32_t h[5]
     _mm_storeu_si128(reinterpret_cast<__m128i*>(h), _mm_shuffle_epi32(abcd, 0x1B));
     h[4] = static_cast<uint32_t>(_mm_extract_epi32(e0, 3));
 }
+#else
+bool have_shani() { return false; }
+#endif
 
 std::atomic<bool> g_shani_off{false};   // Sha1::force_portable (tests)
 
@@ -132,11 +137,13 @@ void Sha1::update(const void* data, size_t size) {
         block(buf_);
         used_ = 0;
     }
+#if defined(__x86_64__) || defined(_M_X64)
     if (size >= 64 && have_shani() && !g_shani_off.load(std::memory_order_relaxed)) {
         sha1_blocks_shani(h_, p, size / 64);
         p += size & ~size_t{63};
         size &= 63;
     }
+#endif
     for (; size >= 64; p += 64, size -= 64) block(p);
     std::memcpy(buf_, p, size);
     used_ = size;
@@ -1427,7 +1434,7 @@ bool ShaderCache::open(const std::string& dir) {
     archive_open();
     start_preload();
     if (const int ms = static_cast<int>(nxrt::config_get_int("nvn", "shader_rescan_ms", 1000)); ms > 0)
-        rescan_thread_ = std::thread([this, ms] { rescan_worker(ms); });
+        rescan_thread_.start("nvn-shader-rescan", 16, [this, ms] { rescan_worker(ms); });
     return true;
 }
 
@@ -1508,15 +1515,18 @@ void ShaderCache::start_preload() {
             static_cast<long long>(threads));
     pre_start_ms_ = now_ms();
     pre_live_.store(static_cast<int>(threads));
-    if (pack_file_ && !pack_.empty()) pack_prefetch_thread_ = std::thread([this] { pack_prefetch(); });
+    if (pack_file_ && !pack_.empty()) pack_prefetch_thread_.start("nvn-shader-pack-read", 16, [this] { pack_prefetch(); });
     if (pack_enabled()) {
         size_t missing = 0;
         for (const std::string& h : pre_list_)
             if (!pack_.count(h)) missing++;
         // A handful of new shaders is not worth rewriting a few hundred MB on the card: they are read from their files until more come.
-        if (missing >= 32 || (missing && missing * 50 >= pre_list_.size())) pack_build_thread_ = std::thread([this, missing] { pack_build(missing); });
+        if (missing >= 32 || (missing && missing * 50 >= pre_list_.size())) pack_build_thread_.start("nvn-shader-pack-write", 16, [this, missing] { pack_build(missing); });
     }
-    for (int64_t i = 0; i < threads; ++i) pre_threads_.emplace_back([this] { preload_worker(); });
+    for (int64_t i = 0; i < threads; ++i) {
+        pre_threads_.emplace_back();
+        pre_threads_.back().start("nvn-shader-preload", 16, [this] { preload_worker(); });   // SPIR-V reflection recurses
+    }
 }
 
 void ShaderCache::preload_worker() {
@@ -1625,7 +1635,7 @@ ShaderCache::~ShaderCache() {
     rescan_cv_.notify_all();
     if (rescan_thread_.joinable()) rescan_thread_.join();
     pack_stop_.store(true);
-    for (std::thread& t : pre_threads_)
+    for (BigThread& t : pre_threads_)
         if (t.joinable()) t.join();
     if (pack_prefetch_thread_.joinable()) pack_prefetch_thread_.join();
     if (pack_build_thread_.joinable()) pack_build_thread_.join();

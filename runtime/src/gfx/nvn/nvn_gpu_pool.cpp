@@ -30,6 +30,7 @@
 #include "nxrt/write_watch.h"
 #include "vk_gauges.h"
 #include "nvn_gpu_internal.h"
+#include "nvn_thread.h"
 #include "nvn_mirror_cap.h"
 
 namespace nxrt::nvn::be {
@@ -547,7 +548,7 @@ bool lazy_resident(const PoolGpu* g, uint64_t off, uint64_t size) {
 std::mutex g_pf_mu;
 std::condition_variable g_pf_cv;
 std::deque<Ref<MemoryPool>> g_pf_queue;
-std::thread g_pf_thread;
+BigThread g_pf_thread;
 bool g_pf_stop = false;
 
 void prefetch_loop() {
@@ -602,7 +603,7 @@ void prefetch_pool(MemoryPool* p) {
     if (g_pf_stop) return;
     int expect = 0;
     if (!p->prefetch.compare_exchange_strong(expect, 1)) return;
-    if (!g_pf_thread.joinable()) g_pf_thread = std::thread(prefetch_loop);
+    if (!g_pf_thread.joinable()) g_pf_thread.start("nvn-pool-import", 16, prefetch_loop);
     g_pf_queue.push_back(Ref<MemoryPool>::share(p));
     g_pf_cv.notify_all();
 }

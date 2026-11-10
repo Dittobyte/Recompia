@@ -12,7 +12,7 @@
 // Switch 2, 0x400 on Switch 1), buffer 1 the image (both MapAlias in-buffers). Reply: the 0x20-byte ApplicationAlbumEntry. Cmds 203
 // (Ex0, no ApplicationData) and 210 (Ex2, a user id list) share the raw layout and take the image as their largest buffer.
 // ApplicationAlbumEntry layout from libnx caps.h (CapsApplicationAlbumEntry v1: u64 size, u64 hash, AlbumFileDateTime, storage,
-// content, pad, unk_x1f = 1). The PNG is encoded by the Windows Imaging Component.
+// content, pad, unk_x1f = 1). The PNG is encoded by the Windows Imaging Component on Windows and by ImageIO on macOS.
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -27,11 +27,23 @@
 #include "nxrt/log.h"
 #include "services_internal.h"
 
+#if defined(_WIN32)
 #include <windows.h>
 #include <wincodec.h>
 
 #pragma comment(lib, "windowscodecs")
 #pragma comment(lib, "ole32")
+#else
+#include <windows.h>   // the POSIX shim (src/os/compat/windows.h): localtime_s and the exe path helpers
+
+#include <mach-o/dyld.h>
+
+#include <CoreFoundation/CoreFoundation.h>
+#include <CoreGraphics/CoreGraphics.h>
+#include <ImageIO/ImageIO.h>
+#include <climits>
+#include <cstdlib>
+#endif
 
 namespace nxrt::services {
 
@@ -47,10 +59,20 @@ constexpr uint8_t kStorageSd = 1;       // CapsAlbumStorage_Sd
 constexpr uint8_t kContentScreenshot = 0;
 
 std::filesystem::path exe_dir() {
+#if defined(_WIN32)
     wchar_t buf[MAX_PATH];
     const DWORD n = GetModuleFileNameW(nullptr, buf, MAX_PATH);
     if (n == 0 || n >= MAX_PATH) return std::filesystem::current_path();
     return std::filesystem::path(buf).parent_path();
+#else
+    // _NSGetExecutablePath may return a symlink or a relative path; realpath resolves both.
+    char buf[PATH_MAX];
+    uint32_t size = sizeof buf;
+    if (_NSGetExecutablePath(buf, &size) != 0) return std::filesystem::current_path();
+    char resolved[PATH_MAX];
+    const char* path = realpath(buf, resolved) ? resolved : buf;
+    return std::filesystem::path(path).parent_path();
+#endif
 }
 
 // UTF-8 text <-> path (C++20 keeps UTF-8 in char8_t): file names with non-ASCII characters keep their bytes in paths and in the log.
@@ -75,6 +97,7 @@ std::filesystem::path album_dir() {
 }
 
 bool album_write_png(const std::filesystem::path& file, const uint8_t* rgba, uint32_t width, uint32_t height, std::string* err) {
+#if defined(_WIN32)
     // 24-bit BGR rows (the album keeps no alpha; the game's alpha channel is whatever its render target held).
     const size_t stride = static_cast<size_t>(width) * 3;
     std::vector<uint8_t> bgr(stride * height);
@@ -124,6 +147,48 @@ bool album_write_png(const std::filesystem::path& file, const uint8_t* rgba, uin
         return false;
     }
     return true;
+#else
+    // ImageIO writes the PNG. The album keeps no alpha (the game's alpha channel is whatever its render target held), so
+    // the RGBA rows become RGBX and the CGImage is built with kCGImageAlphaNoneSkipLast.
+    const size_t stride = static_cast<size_t>(width) * 4;
+    std::vector<uint8_t> rgbx(stride * height);
+    for (size_t i = 0, n = static_cast<size_t>(width) * height; i < n; ++i) {
+        rgbx[i * 4 + 0] = rgba[i * 4 + 0];
+        rgbx[i * 4 + 1] = rgba[i * 4 + 1];
+        rgbx[i * 4 + 2] = rgba[i * 4 + 2];
+        rgbx[i * 4 + 3] = 0xFF;
+    }
+    CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+    CGDataProviderRef provider = CGDataProviderCreateWithData(nullptr, rgbx.data(), rgbx.size(), nullptr);
+    CGImageRef image = provider ? CGImageCreate(width, height, 8, 32, stride, space, kCGImageAlphaNoneSkipLast | kCGBitmapByteOrderDefault, provider,
+                                               nullptr, false, kCGRenderingIntentDefault)
+                                : nullptr;
+    bool ok = false;
+    if (image) {
+        const std::string path = file.string();
+        CFURLRef url = CFURLCreateFromFileSystemRepresentation(nullptr, reinterpret_cast<const UInt8*>(path.data()),
+                                                               static_cast<CFIndex>(path.size()), false);
+        if (url) {
+            CGImageDestinationRef dest = CGImageDestinationCreateWithURL(url, CFSTR("public.png"), 1, nullptr);
+            if (dest) {
+                CGImageDestinationAddImage(dest, image, nullptr);
+                ok = CGImageDestinationFinalize(dest);
+                CFRelease(dest);
+            }
+            CFRelease(url);
+        }
+        CGImageRelease(image);
+    }
+    if (provider) CGDataProviderRelease(provider);
+    CGColorSpaceRelease(space);
+    if (!ok) {
+        if (err) *err = "ImageIO PNG write failed";
+        std::error_code ec;
+        std::filesystem::remove(file, ec);
+        return false;
+    }
+    return true;
+#endif
 }
 
 namespace {

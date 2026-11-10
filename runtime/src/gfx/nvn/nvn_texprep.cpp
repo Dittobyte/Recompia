@@ -20,6 +20,7 @@
 #include "nxrt/gauge.h"
 #include "nxrt/log.h"
 #include "nvn_gpu_internal.h"
+#include "nvn_thread.h"
 
 namespace nxrt::nvn::be::texprep {
 namespace {
@@ -83,16 +84,23 @@ const bool g_hitch_registered = (nxrt::hitch_add_counter("texprep_staged_kb", []
 State& S() { return *g_state; }
 
 bool prepare_guarded(const Texture& t, const TexCaps& caps, PreparedTexture& out, bool& crashed) {
+#if defined(_WIN32)
     __try {
         return prepare_texture(t, caps, out);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         crashed = true;
         return false;
     }
+#else
+    bool ok = false;
+    if (!nxos_guard([&] { ok = prepare_texture(t, caps, out); })) crashed = true;
+    return ok;
+#endif
 }
 
 // Reads the storage under SEH: a page the game unmapped must not take the process down.
 bool hash_guarded(const Texture& t, uint64_t& h) {
+#if defined(_WIN32)
     __try {
         if (t.mem) {
             h = hash_bytes(t.mem, static_cast<size_t>(t.storage_size));
@@ -102,6 +110,18 @@ bool hash_guarded(const Texture& t, uint64_t& h) {
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
+#else
+    bool ok = false;
+    nxos_guard([&] {
+        if (t.mem) {
+            h = hash_bytes(t.mem, static_cast<size_t>(t.storage_size));
+            ok = true;
+        } else {
+            ok = texture_hash_virtual(t, h);     // a sparse texture: the mapped tiles, hashed where they are
+        }
+    });
+    return ok;
+#endif
 }
 
 uint64_t now_ns() { return ft::now_ns(); }
@@ -359,7 +379,11 @@ void init_once() {
         const unsigned hw = std::max(1u, std::thread::hardware_concurrency());
         int n = static_cast<int>(config_get_int("nvn", "tex_prep_threads", 0));
         if (n <= 0) n = static_cast<int>(std::clamp<unsigned>(hw / 3, 2, 8));
-        for (int i = 0; i < n; ++i) std::thread(worker_main).detach();
+        for (int i = 0; i < n; ++i) {
+            BigThread t;
+            t.start("nvn-texprep", 16, worker_main);
+            t.detach();
+        }
         g_enabled.store(1);
         g_tex_prep_on.store(true);
         NXLOG_I(kTag, "background texture preparation: %d threads, budget %llu MB, textures from %llu KB%s", n, static_cast<unsigned long long>(s.budget >> 20),

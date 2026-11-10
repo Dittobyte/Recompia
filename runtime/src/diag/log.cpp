@@ -141,7 +141,12 @@ const char* log_path() {
     return g_path.c_str();  // valid until the next log_init or log_shutdown
 }
 
-void log_set_thread_name(const char* name) { std::snprintf(t_name, sizeof t_name, "%s", name ? name : ""); }
+void log_set_thread_name(const char* name) {
+    std::snprintf(t_name, sizeof t_name, "%s", name ? name : "");
+#if !defined(_WIN32)
+    nxos_set_thread_name(t_name);   // the signal handler prints it without a libc call (an exhausted stack cannot take one)
+#endif
+}
 
 const char* log_thread_name() { return t_name; }
 

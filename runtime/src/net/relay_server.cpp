@@ -1053,7 +1053,9 @@ std::vector<FoundRelay> discover_relays(uint16_t port, int wait_ms) {
         fd_set r;
         FD_ZERO(&r);
         FD_SET(s, &r);
-        timeval tv{static_cast<long>(left / 1000000), static_cast<long>(left % 1000000)};
+        timeval tv{};
+        tv.tv_sec = static_cast<long>(left / 1000000);
+        tv.tv_usec = static_cast<decltype(tv.tv_usec)>(left % 1000000);   // long on Linux, int on Darwin
         const int k = ::select(0, &r, nullptr, nullptr, &tv);
         if (k < 0) break;
         if (k == 0) continue;   // the window is over (checked above)

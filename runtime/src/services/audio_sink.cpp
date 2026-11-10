@@ -77,6 +77,7 @@ std::shared_ptr<AudioSink> sink() {
         if (want == "paced") {
             chosen = make_paced_sink(config_get_double("audio", "paced_ppm", 0.0));
         } else if (want == "xaudio2" || want == "auto") {
+#if defined(_WIN32)
             chosen = make_xaudio2_sink();
             if (!chosen) {
                 NXLOG_W("audio", "XAudio2 is not available: using the null sink (no sound)");
@@ -86,8 +87,21 @@ std::shared_ptr<AudioSink> sink() {
             } else {
                 chosen->close();
             }
+#elif defined(__APPLE__)
+            chosen = make_coreaudio_sink();
+            if (!chosen || !chosen->open(48000, 2)) {   // the real open comes with the first frames; this only finds out whether a device is there
+                NXLOG_W("audio", "CoreAudio cannot open an output device: using the null sink (no sound)");
+                chosen.reset();
+            } else {
+                chosen->close();
+            }
+#else
+            NXLOG_W("audio", "no host audio output on this platform: using the null sink (no sound)");
+#endif
+        } else if (want == "coreaudio" && chosen) {
+            // the name is accepted on macOS only (the branch above); elsewhere it falls through to the warning
         } else if (want != "null") {
-            NXLOG_W("audio", "[audio] sink = %s is not a sink name (auto, xaudio2, paced, null): using the null sink", want.c_str());
+            NXLOG_W("audio", "[audio] sink = %s is not a sink name (auto, coreaudio, xaudio2, paced, null): using the null sink", want.c_str());
         }
         if (!chosen) chosen = std::make_shared<NullSink>();
         const std::string wav = config_get_str("audio", "wav_dump", "");

@@ -32,6 +32,7 @@
 #include "nxrt/lowlat.h"
 #include "vk_gauges.h"
 #include "nvn_gpu_internal.h"
+#include "nvn_thread.h"
 #include "nvn_impl.h"
 #include "nvn_pipeline.h"
 #include "nvn_present_pass.h"
@@ -137,7 +138,7 @@ struct Gpu {
     Counters ctr;
 
     // render thread
-    std::thread th;
+    BigThread th;
     std::mutex qmu;
     std::condition_variable qcv;
     std::deque<std::function<void()>> queue;
@@ -1534,7 +1535,7 @@ bool bring_up(gfx::Device& dev, gfx::Renderer* rend, FrameLimiter* limiter, bool
                        v == 2 ? "split" : "on", o.c_str(), v == 2 ? "own VkSubmitInfo2" : "one VkSubmitInfo2", static_cast<long long>(hold));
         else NXLOG_I(kTag, "one_submit off (%s%s)", o.c_str(), o == "auto" ? (can ? ", not Wine" : ", no frame batch or no submit thread") : "");
     }
-    gp->th = std::thread(render_loop);
+    gp->th.start("nvn-render", 32, render_loop);
     // wait for the thread id to be published
     for (int i = 0; i < 1000 && gp->tid == std::thread::id(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(1));
     if (rend) {

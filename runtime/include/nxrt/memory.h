@@ -15,19 +15,26 @@ namespace nxrt::mem {
 constexpr uint64_t kMainBase = 0x7100000000ull;     // main module image (the game): its lifted address, identity mapped
 constexpr uint64_t kRemoteBase = 0x7200000000ull;   // Switch 2 remote region (svcGetInfo 29/30): reserved address space
 constexpr uint64_t kRemoteSize = 0x100000000ull;   // 4 GiB
-constexpr uint64_t kHleBase = 0x7400000000ull;      // placeholder addresses for host functions (never mapped): see dispatch.h
+constexpr uint64_t kHleBase = 0x7F00000000ull;      // placeholder addresses for host functions (never mapped): see dispatch.h
 constexpr uint64_t kHleSize = 0x1000000ull;         // 16 bytes per thunk
 constexpr uint64_t kSdkBase = 0x7500000000ull;      // sdk / subsdk modules sit at their own bases from here on
 constexpr uint64_t kHeapBase = 0x7800000000ull;     // primary view of the heap section (svcSetHeapSize / nn::os memory heap)
 constexpr uint64_t kHeapMax = 0x300000000ull;       // 12 GiB for the heap view (Switch 2 applications use 8+ GiB)
-constexpr uint64_t kAliasBase = 0x6000000000ull;    // views of heap pages made on request (pools, shared memory, MapMemory)
-constexpr uint64_t kAliasSize = 0x200000000ull;     // 8 GiB
+constexpr uint64_t kAliasBase = 0x7300000000ull;    // views of heap pages made on request (pools, shared memory, MapMemory)
+constexpr uint64_t kAliasSize = 0x200000000ull;     // 8 GiB, between the remote region and the sdk slot
 constexpr uint64_t kStackBase = 0x7C00000000ull;    // guest thread stacks handed out by the runtime
 constexpr uint64_t kStackSize = 0x100000000ull;
 constexpr uint64_t kKernelBase = 0x7E00000000ull;   // TLS regions, main-thread stack, kernel-owned memory
 constexpr uint64_t kKernelSize = 0x100000000ull;
 constexpr uint64_t kPage = 0x1000;
 constexpr uint64_t kAllocGranularity = 0x10000;     // views of a section start at multiples of 64 KiB
+
+// The ASLR region GetInfo reports (svcGetInfo 0/1): where the SDK places its random mappings, the per-thread stack guards
+// above all. It must be memory the host can actually hand out at an exact address, which rules out the low 512 GiB on
+// macOS: the kernel reserves 0xfc0000000-0x7000000000 as a 385 GiB PROT_NONE guard in every process, and the executable
+// itself sits at 4-4.5 GiB. The slot below the main module is inside the guest segment and free of both.
+constexpr uint64_t kAslrBase = 0x7000000000ull;
+constexpr uint64_t kAslrSize = 0x100000000ull;      // 4 GiB, kAslrBase..kMainBase
 
 enum class Prot { None, R, RW, RX, RWX };
 

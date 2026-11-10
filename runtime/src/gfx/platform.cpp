@@ -9,12 +9,19 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <string>
 #include <vector>
 
 #include "nxrt/config.h"
 #include "nxrt/host_device.h"
 #include "nxrt/input.h"
 #include "nxrt/log.h"
+
+#if defined(__APPLE__)
+#include <cstdlib>
+#include <mach-o/dyld.h>
+#include <unistd.h>
+#endif
 
 namespace nxrt::platform {
 namespace {
@@ -375,6 +382,24 @@ void translate(const SDL_Event& ev) {
 
 bool init(const InitOptions& opt) {
     if (g_inited) return true;
+#if defined(__APPLE__)
+    // SDL loads libvulkan.1.dylib through dyld's search paths, not the executable's, so a window fails with "Failed to load
+    // Vulkan Portability library" although the runtime's own copy (vk_device.cpp: @executable_path/libvulkan.1.dylib) is
+    // right there. Point SDL at that file; a system-wide SDK or an explicit SDL_VULKAN_LIBRARY still wins.
+    if (!std::getenv("SDL_VULKAN_LIBRARY")) {
+        char exe[4096];
+        uint32_t n = sizeof exe;
+        if (::_NSGetExecutablePath(exe, &n) == 0) {
+            char real[4096];
+            const char* dir = ::realpath(exe, real) ? real : exe;
+            std::string lib(dir);
+            const size_t slash = lib.find_last_of('/');
+            lib.erase(slash == std::string::npos ? 0 : slash);
+            lib += "/libvulkan.1.dylib";
+            if (::access(lib.c_str(), R_OK) == 0) ::setenv("SDL_VULKAN_LIBRARY", lib.c_str(), 1);
+        }
+    }
+#endif
     // Hints must be set before SDL_Init. Raw, unaccelerated relative mouse; gamepads keep reporting when the window is
     // in the background.
     SDL_SetHint(SDL_HINT_MOUSE_RELATIVE_SYSTEM_SCALE, "0");
@@ -445,7 +470,13 @@ void* native_window() { return g_window; }
 
 void* native_hwnd() {
     if (!g_window) return nullptr;
+#if defined(_WIN32)
     return SDL_GetPointerProperty(SDL_GetWindowProperties(g_window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
+#else
+    // The Metal view: what a CAMetalLayer is attached to. VK_EXT_metal_surface takes it, and it is the macOS answer to
+    // "the native window handle" that platform.h promises (a CAMetalLayer wraps the NSView SDL created).
+    return SDL_GetPointerProperty(SDL_GetWindowProperties(g_window), SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, nullptr);
+#endif
 }
 
 void set_window_title(const char* title) {

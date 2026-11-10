@@ -89,10 +89,15 @@ bool to_wide(const std::string& s, std::wstring& out) {
 
 // Host paths that may exceed MAX_PATH get the extended-length prefix. The input must already use backslashes.
 std::wstring long_path(std::wstring p) {
+#if defined(_WIN32)
     std::replace(p.begin(), p.end(), L'/', L'\\');
     if (p.size() < kLongPath || p.compare(0, 4, L"\\\\?\\") == 0) return p;
     if (p.compare(0, 2, L"\\\\") == 0) return L"\\\\?\\UNC\\" + p.substr(2);
     return L"\\\\?\\" + p;
+#else
+    // POSIX has no MAX_PATH and no extended-length prefix; '\' is an ordinary character there, so the path is used as is.
+    return p;
+#endif
 }
 
 // One folder or file of the host tree. Layout fields are filled in once the tree is complete.

@@ -23,6 +23,8 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
+
+#include "nvn_thread.h"
 #if defined(_MSC_VER) && defined(_M_X64)
 #include <intrin.h>
 #endif
@@ -129,7 +131,7 @@ struct AsyncJob {
 std::mutex g_aw_mu;
 std::condition_variable g_aw_cv;
 std::deque<AsyncJob> g_aw_q;
-std::vector<std::thread> g_aw_threads;
+std::vector<BigThread> g_aw_threads;
 bool g_aw_stop = false;                              // stays set after pipeline_shutdown: later requests build at the draw / dispatch
 std::atomic<uint64_t> g_aw_built{0}, g_aw_failed{0}, g_aw_skipped{0};
 
@@ -170,7 +172,10 @@ bool aw_push(AsyncJob&& j, bool front) {
     if (g_aw_stop) return false;
     if (g_aw_threads.empty()) {
         const int n = static_cast<int>(std::clamp<int64_t>(nxrt::config_get_int("nvn", "async_whole_threads", 1), 1, 4));
-        for (int i = 0; i < n; ++i) g_aw_threads.emplace_back(aw_main);
+        for (int i = 0; i < n; ++i) {
+            g_aw_threads.emplace_back();
+            g_aw_threads.back().start("nvn-async-pipe", 16, aw_main);   // pipeline builds run the Metal shader compiler (deep)
+        }
         NXLOG_I(kTag, "async pipelines: %d background thread%s for pipelines that would be built at a draw or a dispatch", n, n == 1 ? "" : "s");
     }
     if (front) g_aw_q.push_front(std::move(j));
@@ -191,7 +196,7 @@ std::shared_ptr<PipeUpgrade> aw_queue(const GraphicsKey& key, const ProgLayout& 
 
 // Before the device is torn down: after prewarm_shutdown, before gpl_stop (pipeline_shutdown). A running build finishes first (join).
 void aw_stop() {
-    std::vector<std::thread> t;
+    std::vector<BigThread> t;
     {
         std::lock_guard<std::mutex> lk(g_aw_mu);
         g_aw_stop = true;
