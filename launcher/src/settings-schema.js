@@ -283,6 +283,11 @@ const GAMEPLAY = {
   },
   craft_search: { label: 'Search in the crafting screen' },
   title_quit: { label: 'Quit Game on the title screen' },
+  pokemon_cap_50: {
+    label: 'Extended Pokemon residents',
+    after: [{ id: 'pokemon_cap_limit', label: 'Resident Pokemon limit', type: 'slider', step: 1,
+      when: isOn('pokemon_cap_50'), ...fromSchema(pkp('pkp', 'pokemon_cap_limit')) }],
+  },
 };
 
 export const gameplayKeys = () => SCHEMAS.pkp.sections.find((s) => s.name === 'pkp').keys.filter((k) => k.group === 'gameplay').map((k) => k.key);
