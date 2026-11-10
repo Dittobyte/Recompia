@@ -18,7 +18,7 @@ struct Entry {
     bool on;              // effectively on now
 };
 
-// Every row of the settings table marked as a gameplay mod, then menu_in_game and taller_fov. Writes nothing.
+// Every row of the settings table marked as a gameplay mod, then menu_in_game, taller_fov and fix_4x3. Writes nothing.
 std::vector<Entry> snapshot();
 // One list per kind. wording: "Enabled gameplay mods: Camera aim, Craft search." / "none"; never empty.
 std::string text(const std::vector<Entry>& entries, Kind kind);

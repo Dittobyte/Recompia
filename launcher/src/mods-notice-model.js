@@ -11,6 +11,7 @@ export const MOD_LABELS = {
   title_quit: 'Quit Game',
   menu_in_game: "Mouse in the game's menus",
   taller_fov: 'Taller view on 16:10 screens',
+  fix_4x3: '4:3 Fix',
 };
 
 const isOn = (v) => v === true || v === '1' || v === 1;

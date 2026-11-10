@@ -26,6 +26,7 @@ constexpr Label kLabels[] = {
     {Key::TitleQuit, "Quit Game"},
     {Key::MenuInGame, "Mouse in the game's menus"},
     {Key::TallerFov, "Taller view on 16:10 screens"},
+    {Key::Fix4x3, "4:3 Fix"},
 };
 
 const char* label_of(const settings::Spec& sp) {
@@ -60,6 +61,7 @@ std::vector<Entry> snapshot() {
     }
     add(out, Key::MenuInGame, Kind::Experimental);
     add(out, Key::TallerFov, Kind::Experimental);
+    add(out, Key::Fix4x3, Kind::Experimental);
     return out;
 }
 

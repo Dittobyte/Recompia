@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { FIELDS, SECTIONS, gameplayKeys, readAll } from '../src/settings-schema.js';
 import { MOD_LABELS, modsNotice } from '../src/mods-notice-model.js';
 
-const EXP = ['menu_in_game', 'taller_fov'];
+const EXP = ['menu_in_game', 'taller_fov', 'fix_4x3'];
 const gk = gameplayKeys();
 for (const k of [...gk, ...EXP]) assert.ok(MOD_LABELS[k], `${k} has a notice label`);
 

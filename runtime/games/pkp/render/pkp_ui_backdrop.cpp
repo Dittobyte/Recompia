@@ -5,8 +5,8 @@
 // the canvas (a backdrop, a dim or frame filter, a fade square, the title's photo) ends at the 16:9 strip and the taller scene shows above
 // and below it. A pane that exactly fills the canvas (rectangle 0,0..1920,1080 from its world matrix, size and anchor) is scaled
 // by the ratio of the taller canvas to 1080 in both directions as it draws, so it covers the whole picture without changing its proportions (the
-// extra width falls outside the screen). Menus, text and buttons are not canvas-sized and stay where they are. 16:9 and wider pictures
-// install nothing. The panes are seen through the menu module's draw hooks (pkp_menu.h: it owns those addresses).
+// extra width falls outside the screen). Menus, text and buttons are not canvas-sized and stay where they are. [pkp] fix_4x3 (experimental,
+// off by default) turns it on; 16:9 and wider pictures install nothing. The panes are seen through the menu module's draw hooks (pkp_menu.h: it owns those addresses).
 #include "render/pkp_ui_backdrop.h"
 
 #include <atomic>
@@ -15,6 +15,7 @@
 
 #include "input/pkp_play_internal.h"
 #include "nxrt/log.h"
+#include "core/pkp_settings.h"
 #include "nxrt/memory.h"
 #include "ui/pkp_menu.h"
 
@@ -37,6 +38,7 @@ void on_pane_draw(uint64_t pane) {
 
 void install(const FeatureInstall&) {
     using namespace play_detail;
+    if (!settings::get_bool(settings::Key::Fix4x3)) return;   // [pkp] fix_4x3, experimental, off by default
     const Wide& w = wide();
     if (!(w.aspect < kAspect169) || close_to(w.aspect, kAspect169) || !w.ui_size || !mem::is_mapped(w.ui_size, 8)) return;
     const int32_t ui_h = rd<int32_t>(w.ui_size + 4);   // the layout camera's canvas height (pkp_play.cpp: 1920 wide, 1920 / aspect high)
