@@ -4,7 +4,9 @@ Parent project: [pokopia-native](https://github.com/xFractals/pokopia-native); e
 (last reviewed: pokopia-native 1.3.3, `035bd9c`). This fork builds on [the original Pokopia Recomp](https://github.com/drakolordx7/pokopia-recomp) 0.1.1. You still need your own copy
 of the game (version 2.0.1a): the download contains no game files.
 
-## Unreleased
+## 0.9.1 (build M: Markhor)
+
+**This is mainly a compliance update.** The launcher's artwork, the logo and icons, the README pictures and some wording in the code no longer use material from the game or its makers: they are neutral placeholders until we have art we can publish. Nothing about how the game plays changes because of this.
 
 **Update:** press **Update**, then **Set up again** once (new game hooks for the crafting Search button; your saves and shaders are kept).
 
