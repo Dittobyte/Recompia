@@ -73,14 +73,14 @@ export async function viewLogs() {
 
 /** Copies one block with the lines of pkp.log a handheld bug report needs (handheld-report-model.js), read through the redacting viewer command. */
 export async function copyHandheldReport(version, channel) {
-  let text;
+  let tail;
   try {
-    text = (await api.testingLogRead({ name: 'pkp.log' })).text;
+    tail = await api.testingLogRead({ name: 'pkp.log' });
   } catch (e) {
     toast(errText(e), 'error');
     return;
   }
-  const block = formatReport(extractReport(text), { version, channel });
+  const block = formatReport(extractReport(tail.text, tail.truncated), { version, channel });
   try {
     await navigator.clipboard.writeText(block);
     toast('Report copied. Paste it into your bug report.', 'ok');

@@ -1,6 +1,6 @@
 // Run: node scripts/test-handheld-report.mjs (no browser, no Tauri). The handheld report: what it keeps, what it removes.
 import assert from 'node:assert/strict';
-import { MAX_LINES, MAX_LINE_CHARS, extractReport, formatReport, scrub } from '../src/handheld-report-model.js';
+import { MAX_LINES, MAX_LINE_CHARS, TRUNCATED_NOTE, extractReport, formatReport, scrub } from '../src/handheld-report-model.js';
 
 let n = 0;
 const ok = (cond, msg) => { assert.ok(cond, msg); n += 1; };
@@ -12,9 +12,9 @@ const lacks = (s, part, msg) => ok(!s.includes(part), `${msg ?? part} not in: ${
 let s = scrub('opened C:\\Users\\Alice\\Documents\\pkp\\pkp.log');
 lacks(s, 'Alice'); has(s, '<path>\\pkp.log', 'windows home path becomes a marker');
 s = scrub('loaded /home/deck/.local/share/pkp/shaders');
-lacks(s, 'deck'); has(s, '/home/<user>/', 'linux home');
+lacks(s, 'deck'); has(s, 'loaded <path>', 'linux home');
 s = scrub('path /Users/bob/Library/pkp');
-lacks(s, 'bob'); has(s, '/Users/<user>/', 'mac home');
+lacks(s, 'bob'); has(s, '<path>', 'mac home');
 s = scrub('Z:\\home\\steam\\game\\pkp.exe');
 lacks(s, 'steam'); has(s, '<path>\\pkp.exe', 'wine home');
 s = scrub('shader cache D:\\Games\\Pokopia\\shader_cache\\a.bin was read');
@@ -54,7 +54,7 @@ const LOG = [
   '[00:00:05.000] uncaught C++ exception at /home/deck/x',
 ].join('\r\n');
 const r = extractReport(LOG);
-eq(r.lines.length, 10, 'only the matching lines (CRLF input)');
+eq(r.lines.length, 9, 'only the matching lines (CRLF input)');
 ok(r.lines.every((l) => !l.includes('\r')), 'no CR left');
 ok(!r.lines.some((l) => l.includes('unrelated') || l.includes('first line')), 'other lines are not copied');
 ok(!r.lines.join('\n').match(/deck\b.*home|\/home\/deck/), 'user removed from kept lines');
@@ -82,5 +82,54 @@ has(txt, 'your device', 'footer: device'); has(txt, 'your OS', 'footer: OS'); ha
 has(formatReport({ lines: ['a'], left_out: 7 }), '7 more matching lines', 'left-out note');
 has(formatReport(null), 'unknown', 'no arguments');
 
-assert.ok(n >= 15);
+// review fixes: long lines survive whole, the prefix is not counted
+const P = '[  0.004521 I t1234 main] ';
+const facts = `host: host facts: ${'gpu=AMD Radeon 780M vram=1024MiB gtt=8192MiB '.repeat(9)}end`;
+ok(facts.length > 400 && facts.length < MAX_LINE_CHARS, 'test line is the size of the real one');
+eq(extractReport(P + facts).lines[0], facts, 'host facts line kept whole, prefix stripped');
+const fp = `memory: footprint 3.21 GB (peak 3.40 GB, limit 8.0 GB); ${'commit reading 123 MB; '.repeat(20)}`;
+eq(extractReport(P + fp).lines[0], fp.trim(), 'footprint line kept whole');
+ok(MAX_LINE_CHARS >= 700, 'line cap is 700');
+ok(extractReport(P + 'host: ' + 'z'.repeat(2000)).lines[0].length <= MAX_LINE_CHARS, 'a longer line is cut');
+ok(!extractReport(P + 'host: handheld on').lines[0].includes('0.004521'), 'the log prefix is removed');
+
+// faults first, periodic lines thinned
+const mixed = [`${P}host: handheld on`, `${P}using GPU 0: AMD`, `${P}graphics device lost in submit (VK_ERROR_DEVICE_LOST)`];
+for (let i = 0; i < 500; i += 1) mixed.push(`${P}memory: footprint ${i}.0 GB`, `${P}hitch: ${i} frames in 10.0 s: mean 60`);
+mixed.push(`${P}hitch: frames have waited about 90 ms each on the GPU for the last 3 windows`, `${P}nvn: pool_copy: 900 MiB of shadows live, over the cap of 800 MiB`);
+const rm = extractReport(mixed.join('\n'));
+ok(rm.lines.length <= MAX_LINES, 'total cap');
+ok(rm.lines.some((l) => l.includes('device lost')), 'device lost kept');
+ok(rm.lines.some((l) => l.includes('waited about')), 'mid-run GPU wait kept');
+ok(rm.lines.some((l) => l.includes('over the cap')), 'pool_copy over the cap kept');
+ok(rm.lines.some((l) => l.includes('host: handheld')) && rm.lines.some((l) => l.includes('using GPU')), 'identity lines kept');
+eq(rm.lines.filter((l) => /footprint|frames in/.test(l)).length, 40, 'periodic lines thinned to the first 15 and last 25');
+const manyFaults = Array.from({ length: 300 }, (_, i) => `${P}vk: device lost ${i}`).join('\n');
+ok(extractReport(manyFaults).lines.length <= 40, 'faults capped at 40');
+ok(extractReport(manyFaults).lines[0].endsWith('0') && extractReport(manyFaults).lines.at(-1).endsWith('299'), 'first and last faults kept');
+
+// truncated flag
+const trunc = formatReport(extractReport(P + 'host: handheld on', true), { version: '1', channel: 'testing' });
+ok(trunc.split('\n').includes(TRUNCATED_NOTE), 'truncated note is a visible line');
+ok(!formatReport(extractReport(P + 'host: handheld on', false), {}).includes('NOTE:'), 'no note when the whole log was read');
+ok(trunc.indexOf('NOTE:') < trunc.indexOf('host: handheld'), 'the note comes before the lines');
+
+// scrub leaks
+lacks(scrub('C:\\Users/Bob\\x\\a.txt'), 'Bob'); lacks(scrub('C:\\Users/Bob\\x\\a.txt'), 'Users');
+lacks(scrub('D:/Games/Bob/pkp.exe'), 'Bob'); has(scrub('D:/Games/Bob/pkp.exe'), '<path>', 'forward-slash drive path');
+lacks(scrub('E:/Bob/'), 'Bob', 'drive path ending in a slash');
+eq(scrub('at 12:30 and 9:05:11'), 'at 12:30 and 9:05:11', 'clock times stay');
+lacks(scrub('share //NAS/share/a/b.bin ok'), 'NAS'); lacks(scrub('share \\\\NAS\\share\\a ok'), 'NAS');
+eq(scrub('http://example.org/x'), 'http://example.org/x', 'urls stay');
+lacks(scrub('/home/bob smith/x/y'), 'bob'); lacks(scrub('/home/bob smith/x/y'), 'smith');
+lacks(scrub('dir /home/bob smith'), 'smith', 'no later slash: to the end of the line');
+has(scrub('saved /home/bob/x and more'), 'and more', 'text after a path token stays');
+for (const p of ['/run/media/alice/SD/game', '/mnt/alice/game', '/media/alice/disk']) { lacks(scrub(p), 'alice', p); has(scrub(p), '<path>', p); }
+
+// crash wording
+ok(extractReport(`${P}texprep: scheduled 10, failed 0, crashed 3, over budget 0`).lines.length === 0, 'the stat word "crashed N" is not a fault');
+ok(extractReport(`${P}crash: HOST EXCEPTION at 0x1`).lines.length === 1, 'a real crash line is kept');
+ok(extractReport(`${P}aspect 1.7778 render resolution 1280x800`).lines.length === 0, 'the dropped picture topic matches nothing');
+
+assert.ok(n >= 60);
 console.log(`handheld report: ${n} checks passed`);
