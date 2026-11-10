@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The machine the runtime runs on (include/nxrt/host_device.h). Based on the Steam Deck detection in tinfoil-chewer's Linux fork
-// (tinfoil-chewer/pokopia-recomp-linux 8b150a4), widened to the Legion Go S and to Windows handhelds.
+// (tinfoil-chewer/pokopia-recomp-linux 8b150a4), widened to the handhelds in kBoards and to Windows.
 #include "nxrt/host_device.h"
 
 #include "nxrt/config.h"
@@ -37,6 +37,35 @@ std::string smbios(const char* value, const char* dmi_file) {
     return {};
 }
 
+// The boards that are handhelds, matched on the lower-cased SMBIOS product name or family. A prefix match unless exact. A name that
+// covers both AMD and Intel models is left out; the string of each row is in the comment beside it.
+struct BoardRule {
+    bool family;        // matched against product_family, else product_name
+    bool exact;
+    const char* text;
+};
+constexpr BoardRule kBoards[] = {
+    {false, true, "jupiter"},          // Steam Deck LCD
+    {false, true, "galileo"},          // Steam Deck OLED
+    {true, false, "legion go s"},      // Legion Go S: family "Legion Go S 8APU1" (its product names are SKU codes: 83L3, 83N6, ...)
+    {false, false, "rog ally"},        // ROG Ally and Ally X: product "ROG Ally RC71L_RC71L" / "ROG Ally X RC72LA_RC72LA", family "ROG Ally"
+    {true, false, "rog ally"},
+    {false, false, "rog xbox ally"},   // ROG Xbox Ally / Ally X: product "ROG Xbox Ally RC73YA_RC73YA" (HHD; the RC74X one spells XBOX)
+    {false, true, "83e1"},             // Legion Go (first model): product "83E1", version "Legion Go 8APU1" (HHD, DRM panel-orientation patch)
+    {false, true, "83n0"},             // Legion Go 2: product "83N0" (Bazzite log, HHD)
+    {false, true, "83n1"},             // Legion Go 2, other SKU (HHD)
+    {false, false, "claw a8"},         // MSI Claw A8 (Ryzen Z2 Extreme): product "Claw A8 BZ2EM" (CachyOS report, HHD); the other Claws are Intel
+};
+
+// The first rule the board matches, or null.
+const BoardRule* match_board(const std::string& product, const std::string& family) {
+    for (const BoardRule& r : kBoards) {
+        const std::string& v = r.family ? family : product;
+        if (r.exact ? v == r.text : v.rfind(r.text, 0) == 0) return &r;
+    }
+    return nullptr;
+}
+
 bool detect(std::string* why) {
     const std::string forced = text::lower_trim(config_get_str("host", "handheld", "auto"));
     if (forced == "1" || forced == "on" || forced == "true" || forced == "yes") return *why = "[host] handheld = on", true;
@@ -45,12 +74,9 @@ bool detect(std::string* why) {
     const DWORD n = GetEnvironmentVariableA("SteamDeck", env, sizeof env);
     if (n > 0 && n < sizeof env && text::lower_trim(std::string(env, n)) == "1") return *why = "Steam's SteamDeck=1", true;
     const std::string product = smbios("SystemProductName", "product_name"), family = smbios("SystemFamily", "product_family");
-    // Steam Deck LCD / OLED. The Go S's product names are SKU codes (83N6, ...), its family names the model: "Legion Go S 8APU1".
-    // ROG Ally and Ally X: product "ROG Ally RC71L_RC71L" / "ROG Ally X RC72LA_RC72LA", family "ROG Ally" (read on an Ally under CachyOS).
-    if (product == "jupiter" || product == "galileo" || family.rfind("legion go s", 0) == 0 || product.rfind("rog ally", 0) == 0 ||
-        family.rfind("rog ally", 0) == 0)
-        return *why = "board " + product + " / " + family, true;
-    *why = "not a known handheld (board '" + product + "' / '" + family + "')";
+    if (const BoardRule* r = match_board(product, family))
+        return *why = "board " + product + " / " + family + ", matched " + (r->family ? "family " : "product ") + (r->exact ? "= '" : "prefix '") + r->text + "'", true;
+    *why = "not a known handheld (board '" + product + "' / '" + family + "'; [host] handheld = on forces it)";
     return false;
 }
 

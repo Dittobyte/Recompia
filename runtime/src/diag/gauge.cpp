@@ -206,12 +206,18 @@ void monitor_run(double summary_s) {
     auto last_line = Clock::now() - std::chrono::seconds(10);
     uint64_t last_n = g_ring_n.load(std::memory_order_acquire);
     bool seen_frames = last_n > 0;
-    // #405: after a GPU reset the driver stays slow until a reboot, so every frame of a fresh run waits on the GPU. The first three summary
-    // windows all averaging over kStuckWaitMs of GPU sync wait per frame are reported once; later windows never count (a heavy scene).
+    // #405 / #309: the game thread spends most of every frame waiting on the GPU. After a GPU reset the driver stays slow until a reboot
+    // (#405, from the start of the run); on other machines a run that was fine slows down after a minute (#309). kStuckWindows summary
+    // windows in a row each averaging over kStuckWaitMs of GPU sync wait per frame are reported once; a normal window ends the stretch, so
+    // a later one is reported again (a heavy scene lasts a window or two).
     constexpr double kStuckWaitMs = 100.0;
     constexpr int kStuckWindows = 3;
     int stuck_windows = 0;
-    bool stuck_checked = false;
+    bool stuck_reported = false;
+    bool stuck_from_start = true;       // every window since the run began has been slow
+    double stuck_wait_sum = 0;
+    uint64_t stuck_frames = 0;
+    const auto run_start = Clock::now();
     uint64_t last_wait_ticks = g_phase[kHpGameSyncWait].load(std::memory_order_relaxed);
     for (;;) {
         {
@@ -247,15 +253,26 @@ void monitor_run(double summary_s) {
             const uint64_t wait_ticks = g_phase[kHpGameSyncWait].load(std::memory_order_relaxed);
             const double wait_ms = (double)(wait_ticks - last_wait_ticks) * 1000.0 / qpc_freq();
             last_wait_ticks = wait_ticks;
-            if (!stuck_checked && n > last_n) {
+            if (n > last_n) {
                 const double per_frame = wait_ms / (double)(n - last_n);
                 if (per_frame > kStuckWaitMs) {
-                    if (++stuck_windows == kStuckWindows) {
-                        NXLOG_W("hitch", "every frame has waited about %.0f ms on the GPU since the start of this run. If the system log shows a GPU reset, reboot the device: restarting the game does not clear it (#405)", per_frame);
-                        stuck_checked = true;
+                    stuck_wait_sum += wait_ms;
+                    stuck_frames += n - last_n;
+                    if (++stuck_windows >= kStuckWindows && !stuck_reported) {
+                        stuck_reported = true;
+                        const double avg = stuck_wait_sum / (double)stuck_frames;
+                        if (stuck_from_start)
+                            NXLOG_W("hitch", "every frame has waited about %.0f ms on the GPU since the start of this run. If the system log shows a GPU reset, reboot the device: restarting the game does not clear it (#405)", avg);
+                        else
+                            NXLOG_W("hitch", "frames have waited about %.0f ms each on the GPU for the last %d windows, after a normal start (%.0f s into the run). If the frame rate stays low, note what you were doing and any GPU reset or driver message in the system log (#309)",
+                                    avg, stuck_windows, std::chrono::duration<double>(now - run_start).count());
                     }
                 } else {
-                    stuck_checked = true;   // a normal window: this run is not in that state
+                    stuck_from_start = false;
+                    stuck_windows = 0;
+                    stuck_reported = false;
+                    stuck_wait_sum = 0;
+                    stuck_frames = 0;
                 }
             }
             diag::host_probe_tick(n > 0);
