@@ -216,7 +216,7 @@ pub fn locate(game_dir: &Path) -> (PathBuf, String) {
 pub fn target_key(save_dir: &Path, ini_uid: &str) -> String {
     let acc = save_dir.join("account");
     let mut metas: Vec<PathBuf> = fs::read_dir(&acc)
-        .map(|rd| rd.flatten().map(|e| e.path()).filter(|p| p.extension().map_or(false, |x| x == "meta") && meta_attr_matches(p)).collect())
+        .map(|rd| rd.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "meta") && meta_attr_matches(p)).collect())
         .unwrap_or_default();
     metas.sort_by_key(|m| std::cmp::Reverse(fs::metadata(m).and_then(|x| x.modified()).ok()));
     if let Some(stem) = metas.first().and_then(|m| m.file_stem()).and_then(|s| s.to_str()) {
@@ -301,7 +301,7 @@ pub fn import(save_dir: &Path, key: &str, src: &Path) -> Result<Report, String> 
     if let Ok(rd) = fs::read_dir(&acc) {
         for e in rd.flatten() {
             let name = e.file_name().to_string_lossy().to_string();
-            if ["work.", "journal."].iter().any(|k| name.strip_prefix(&stem).map_or(false, |r| r.starts_with(k))) || name == format!("{}commit", stem) {
+            if ["work.", "journal."].iter().any(|k| name.strip_prefix(&stem).is_some_and(|r| r.starts_with(k))) || name == format!("{}commit", stem) {
                 old.push(e.path());
             }
         }

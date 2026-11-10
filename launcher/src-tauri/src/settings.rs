@@ -155,7 +155,7 @@ pub fn ensure_play_paths(dir: &Path, exefs: &str, romfs: &str, romfs_base: &str,
         let full = if p.is_absolute() { p.to_path_buf() } else { dir.join(p) };
         fs::canonicalize(&full).unwrap_or(full)
     };
-    let romfs_was_ours = ini.get("fs", "romfs").map_or(true, |cur| cur.trim().is_empty() || resolve(&cur) == resolve(romfs));
+    let romfs_was_ours = ini.get("fs", "romfs").is_none_or(|cur| cur.trim().is_empty() || resolve(&cur) == resolve(romfs));
 
     // [fs] exefs and [fs] romfs: kept while they name an existing folder or .nup (the user may have pointed them elsewhere)
     for (key, value) in [("exefs", exefs), ("romfs", romfs)] {
@@ -168,7 +168,7 @@ pub fn ensure_play_paths(dir: &Path, exefs: &str, romfs: &str, romfs_base: &str,
             changed = true;
         }
     }
-    let romfs_is_ours = ini.get("fs", "romfs").map_or(false, |cur| resolve(&cur) == resolve(romfs));
+    let romfs_is_ours = ini.get("fs", "romfs").is_some_and(|cur| resolve(&cur) == resolve(romfs));
     if romfs_was_ours && romfs_is_ours {
         let want = if romfs_base.is_empty() { String::new() } else { portable(dir, romfs_base) };
         if ini.get("fs", "romfs_base").unwrap_or_default().trim() != want {

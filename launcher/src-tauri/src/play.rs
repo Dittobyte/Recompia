@@ -130,7 +130,7 @@ pub fn start(app: &AppHandle, game_dir: &Path, minimize: bool) -> Result<(), Str
         };
         let files = report_files(&dir, started);
         let crash_file = files.iter().any(|f| f.fresh && f.name != "pkp.log");
-        let crashed = crash_file || code.map_or(true, |c| c != 0);
+        let crashed = crash_file || (code != Some(0));
         let message = match (&wait_err, code) {
             (Some(e), _) => format!("Lost track of pkp.exe: {}", e),
             (None, Some(0)) => "pkp.exe exited normally.".to_string(),

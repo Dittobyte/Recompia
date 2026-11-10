@@ -59,7 +59,7 @@ fn pfs0(f: &mut File) -> Result<Vec<Entry>, String> {
         let (offset, size, at) = (u64_at(&toc, o)?, u64_at(&toc, o + 8)?, u32_at(&toc, o + 16)? as usize);
         let name = names.get(at..).and_then(|s| s.split(|&c| c == 0).next()).ok_or_else(damaged)?;
         let start = table.checked_add(offset).ok_or_else(damaged)?;
-        if start.checked_add(size).map_or(true, |end| end > len) {
+        if start.checked_add(size).is_none_or(|end| end > len) {
             return Err(damaged());
         }
         out.push(Entry { name: String::from_utf8_lossy(name).into_owned(), offset: start, size });
@@ -102,7 +102,7 @@ fn addon_romfs(nca: &Entry, h: &[u8]) -> Result<Option<AddOn>, String> {
     }
     let at = 0x18 + (levels - 2) * 24;
     let (off, size) = (u64_at(fs, at)?, u64_at(fs, at + 8)?);
-    if first.checked_add(off).and_then(|s| s.checked_add(size)).map_or(true, |end| end > last.min(nca.size)) {
+    if first.checked_add(off).and_then(|s| s.checked_add(size)).is_none_or(|end| end > last.min(nca.size)) {
         return Err(damaged());
     }
     Ok(Some(AddOn { id, start: nca.offset + first + off, size }))
@@ -122,7 +122,7 @@ impl Romfs {
         let at = |i: usize| u64_at(&img, i * 8).map(|v| v as usize);
         let (dirs, files, data) = ((at(3)?, at(4)?), (at(7)?, at(8)?), at(9)?);
         for (o, n) in [dirs, files] {
-            if o.checked_add(n).map_or(true, |e| e > img.len()) {
+            if o.checked_add(n).is_none_or(|e| e > img.len()) {
                 return Err(damaged());
             }
         }
