@@ -10,6 +10,10 @@ of the game (version 2.0.1a): the download contains no game files.
 
 **Testing build:** the gameplay extras (Camera aim, Running jump, Sort, Search, Quit Game) are now **off by default**; players coming from 0.9.0 who never set them lose them until they switch them on in Settings. A value already in `pkp.ini` is kept.
 
+### Screens narrower than 16:9
+- Added **4:3 Fix**, a very experimental option in Settings > Testing (Testing channel only, off by default) for 4:3, 16:10 and 3:2 screens: full-screen backgrounds, fades and dimming fill the whole picture instead of stopping at a 16:9 strip in the middle. Menus, text and buttons stay where they were. If you have a 4:3 or 16:10 screen, please try it and send `pkp.log` with what looked wrong. It needs a restart of the game to take effect
+- `pkp.log` also states how many megapixels a frame costs at the picture's shape
+
 ### Gameplay mods
 - Settings > Gameplay and `pkp.log` now show which gameplay mods and experimental features are on, so you can see at a glance what a start will use
 

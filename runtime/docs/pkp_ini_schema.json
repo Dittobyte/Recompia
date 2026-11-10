@@ -3,6 +3,7 @@
   "sections": [
     {"name": "pkp", "keys": [
         {"key": "taller_fov", "type": "bool", "default": "1", "env": "NXRT_PKP_TALLER_FOV", "doc": "Screens taller than 16:9: the taller view through the camera's FOV and aspect (off: 16:9 with bars). Next start."},
+        {"key": "fix_4x3", "type": "bool", "default": "0", "env": "NXRT_PKP_FIX_4X3", "doc": "Experimental: on screens narrower than 16:9 (4:3, 16:10), full-screen UI backgrounds, fades and dimming fill the whole picture instead of stopping at a 16:9 strip. Next start."},
         {"key": "render_override", "type": "bool", "default": "1", "env": "NXRT_PKP_RENDER_OVERRIDE", "doc": "Render the scene at the chosen internal size instead of the game's 1920x1080 layout. Next start."},
         {"key": "target_fix", "type": "choice", "default": "screen", "choices": ["off", "screen", "all"], "env": "NXRT_PKP_TARGET_FIX", "doc": "Render targets made at a literal 1920x1080 follow the render size: screen-relative ones, all, or none. Next start."},
         {"key": "scene_viewport_fix", "type": "bool", "default": "1", "env": "NXRT_PKP_SCENE_VIEWPORT_FIX", "doc": "Keep the 3D scene's viewport whole when it renders below its targets' size. Next start."},

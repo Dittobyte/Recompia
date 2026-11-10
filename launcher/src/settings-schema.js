@@ -310,6 +310,10 @@ const EXPERIMENTAL_ROWS = [
   { id: 'menu_in_game', label: "Mouse in the game's menus", type: 'toggle', ...fromSchema(pkp('pkp', 'menu_in_game')) },
   { id: 'taller_fov', label: 'Taller view on 16:10 screens', type: 'toggle', ...fromSchema(pkp('pkp', 'taller_fov')) },
 ];
+// Experimental and OFF by default: switch on only to try them and report back with pkp.log. Testing tab on the Testing channel.
+const EXPERIMENTAL_OFF_ROWS = [
+  { id: 'fix_4x3', label: '4:3 Fix (very experimental)', type: 'toggle', ...fromSchema(pkp('pkp', 'fix_4x3')) },
+];
 const isTesting = (v) => v.channel === 'testing';
 const showWhen = (on) => (rows) => rows.map((r) => ({ ...r, when: (v, e) => on(v) && (r.when ? r.when(v, e) : true) }));
 const onTesting = showWhen(isTesting);
@@ -549,7 +553,7 @@ export const SECTIONS = [
         rows: [
           { id: 'gameplay_note', type: 'note', note: () => ({ text: 'New ways of playing, on by default (switch them off here). They take effect the next time the game starts, and they need the game built with this version (Set up again once after an update).' }) },
           ...gameplayRows(),
-          { id: 'mods_notice', type: 'note', note: (_e, v) => ({ text: modsNotice(v, gameplayKeys(), EXPERIMENTAL_ROWS.map((r) => r.id)).text }) },
+          { id: 'mods_notice', type: 'note', note: (_e, v) => ({ text: modsNotice(v, gameplayKeys(), [...EXPERIMENTAL_ROWS, ...EXPERIMENTAL_OFF_ROWS].map((r) => r.id)).text }) },
         ],
       },
       {
@@ -716,6 +720,8 @@ export const SECTIONS = [
         rows: [
           { id: 'experimental_note', type: 'note', note: () => ({ text: 'Features still being tried, on by default: switch one off here if it causes trouble. They take effect the next time the game starts. Tell us what you find.' }) },
           ...onTesting(EXPERIMENTAL_ROWS),
+          { id: 'experimental_off_note', type: 'note', when: isTesting, note: () => ({ text: 'Very experimental and off by default. 4:3 Fix is for screens narrower than 16:9 (4:3, 16:10): full-screen backgrounds, fades and dimming fill the whole picture. If you have a 4:3 or 16:10 screen and try it, please send us pkp.log (Export and report above) and tell us what looked wrong.' }) },
+          ...onTesting(EXPERIMENTAL_OFF_ROWS),
         ],
       },
     ],

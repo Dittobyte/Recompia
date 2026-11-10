@@ -355,6 +355,7 @@ Pokopia's own keys, in the `[pkp]` section of the game ini (`pkp.ini`; `nxrt.ini
 | Section | Key | Default | Values | Environment variable | Meaning |
 |---|---|---|---|---|---|
 | `pkp` | `taller_fov` | `1` | `1` `0` | `NXRT_PKP_TALLER_FOV` | Screens taller than 16:9: the taller view through the camera's FOV and aspect (off: 16:9 with bars). Next start. |
+| `pkp` | `fix_4x3` | `0` | `1` `0` | `NXRT_PKP_FIX_4X3` | Experimental: on screens narrower than 16:9 (4:3, 16:10), full-screen UI backgrounds, fades and dimming fill the whole picture instead of stopping at a 16:9 strip. Next start. |
 | `pkp` | `render_override` | `1` | `1` `0` | `NXRT_PKP_RENDER_OVERRIDE` | Render the scene at the chosen internal size instead of the game's 1920x1080 layout. Next start. |
 | `pkp` | `target_fix` | `screen` | `off` `screen` `all` | `NXRT_PKP_TARGET_FIX` | Render targets made at a literal 1920x1080 follow the render size: screen-relative ones, all, or none. Next start. |
 | `pkp` | `scene_viewport_fix` | `1` | `1` `0` | `NXRT_PKP_SCENE_VIEWPORT_FIX` | Keep the 3D scene's viewport whole when it renders below its targets' size. Next start. |

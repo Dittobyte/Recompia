@@ -9,7 +9,9 @@
 // on each draw's flag store (pane in x0, x21 for 0x7101f77fe0); pane +216 is its layout (the draw reads [pane+0xd8]+0x2e0, the layout's
 // renderer, as 0x7101f56180 does). The scan then keeps only layouts drawn in the last kDrawnFrames frames.
 #include "ui/pkp_menu_internal.h"
+#include "ui/pkp_menu.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstdint>
@@ -50,6 +52,14 @@ bool drawn_recent(uint64_t lay) {
 }
 
 bool draw_hooks_live() { return g_draw_calls.load(std::memory_order_relaxed) != 0; }
+
+// Clients of the pane draw (pkp_menu.h): other modules that look at each pane as it draws.
+constexpr int kMaxClients = 4;
+std::atomic<PaneDrawClient> g_clients[kMaxClients];
+void run_clients(uint64_t pane) {
+    for (auto& c : g_clients)
+        if (PaneDrawClient fn = c.load(std::memory_order_acquire)) fn(pane);
+}
 
 // Each pane that went through a draw: the frame, and the world matrix, size and anchor as the draw read them (the rect is the drawn one,
 // whatever parent or animation moved it). Written by the drawing thread (the data, then the frame), read by the scan.
@@ -136,6 +146,7 @@ int hook_pane_draw(::Ctx* c, uint64_t, void* user) {
     } else {
         mark_with_ancestors(pane, frame);
     }
+    run_clients(pane);
     if (!lay || (lay == last_pane_lay && frame == last_frame)) return 0;
     last_pane_lay = lay;
     last_frame = frame;
@@ -157,3 +168,46 @@ bool pane_shown(uint64_t pane, uint32_t flags) {
 }
 
 }  // namespace nxrt::games::pkp::menu_detail
+
+namespace nxrt::games::pkp {
+
+void menu_add_pane_draw_client(PaneDrawClient fn) {
+    for (auto& c : menu_detail::g_clients) {
+        PaneDrawClient none = nullptr;
+        if (c.load(std::memory_order_relaxed) == fn || c.compare_exchange_strong(none, fn, std::memory_order_release)) return;
+    }
+}
+
+void menu_remove_pane_draw_client(PaneDrawClient fn) {
+    for (auto& c : menu_detail::g_clients) {
+        PaneDrawClient cur = fn;
+        c.compare_exchange_strong(cur, nullptr, std::memory_order_release);
+    }
+}
+
+bool menu_pane_rect(uint64_t pane, float* x0, float* y0, float* x1, float* y1) {
+    using namespace menu_detail;
+    const uint64_t mp = *reinterpret_cast<const uint64_t*>(pane + kPaneWorld);   // the draw builds its corners from this matrix
+    if (!mp) return false;
+    float m[16];
+    std::memcpy(m, reinterpret_cast<const void*>(mp), sizeof m);
+    for (float v : m)
+        if (!std::isfinite(v)) return false;
+    Pane p;
+    if (!rect_from(m, m[14], *reinterpret_cast<const uint32_t*>(pane + kPaneSize), *reinterpret_cast<const uint8_t*>(pane + kPaneAnchor), &p)) return false;
+    *x0 = p.x0;
+    *y0 = p.y0;
+    *x1 = p.x1;
+    *y1 = p.y1;
+    return true;
+}
+
+void menu_pane_scale(uint64_t pane, float k) {
+    using namespace menu_detail;
+    const uint32_t size = *reinterpret_cast<const uint32_t*>(pane + kPaneSize);   // two u16: width low, height high
+    const uint32_t w = std::min<uint32_t>(0xffff, static_cast<uint32_t>(std::lround((size & 0xffff) * k)));
+    const uint32_t h = std::min<uint32_t>(0xffff, static_cast<uint32_t>(std::lround((size >> 16) * k)));
+    *reinterpret_cast<uint32_t*>(pane + kPaneSize) = (h << 16) | w;
+}
+
+}  // namespace nxrt::games::pkp
