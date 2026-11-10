@@ -591,13 +591,13 @@ pub fn warm_up(game_dir: &Path, tools_dir: &Path, cancel: &AtomicBool) -> Result
     let scratch = cache_dir(game_dir).join("warmup");
     let _ = fs::remove_dir_all(&scratch);
     fs::create_dir_all(scratch.join("save")).map_err(|e| format!("cannot create {}: {}", scratch.display(), e))?;
-    if let Some(install) = tools_dir.parent() {
-        crate::host::sync_runtime_files(install, game_dir)?;
-    }
-    let mut cmd = crate::host::windows_program(&game_dir.join("pkp.exe"))?;
-    cmd.current_dir(game_dir).arg("--headless").args(["--max-seconds", &WARMUP_SECONDS.to_string()]).arg("--log").arg(crate::host::win_path(&scratch.join("warmup.log")));
+    let install = tools_dir.parent().unwrap_or(tools_dir);
+    let game = crate::host::Game::of(install);
+    crate::host::sync_runtime_files(game, install, game_dir)?;
+    let mut cmd = game.command(&game_dir.join(game.exe()))?;
+    cmd.current_dir(game_dir).arg("--headless").args(["--max-seconds", &WARMUP_SECONDS.to_string()]).arg("--log").arg(game.path(&scratch.join("warmup.log")));
     // environment variables win over pkp.ini
-    cmd.env("NXRT_FS_SAVE_DIR", crate::host::win_path(&scratch.join("save"))).env("NXRT_NVN_DUMP_MISSING", MISSING_REL).env("NXRT_AUDIO_SINK", "null");
+    cmd.env("NXRT_FS_SAVE_DIR", game.path(&scratch.join("save"))).env("NXRT_NVN_DUMP_MISSING", MISSING_REL).env("NXRT_AUDIO_SINK", "null");
     // it ends with exit code 124 when the time is up: any end is fine, a crash only means fewer blocks were collected. One
     // still running 4 minutes later (a first Proton start also makes its prefix) is stopped.
     if let Ok(false) = run_tool(cmd, cancel, false, None, Some(Duration::from_secs(WARMUP_SECONDS as u64 + 240)), |_| {}) {

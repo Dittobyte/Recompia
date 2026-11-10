@@ -69,8 +69,9 @@ pub fn start_setup(app: AppHandle, state: SetupArg, gentle: Option<bool>) -> Res
     let dir = game_dir_of(&cfg);
     let tools_dir = exe_dir().join("tools");
     let package_b = gamebuild::is_package_b(&tools_dir);
-    if !package_b && !dir.join("pkp.exe").is_file() {
-        return Err(format!("pkp.exe was not found in {}. Put the launcher next to pkp.exe or set the game folder in Settings.", dump::fwd(&dir)));
+    let exe = crate::host::Game::of(&exe_dir()).exe();
+    if !package_b && !dir.join(exe).is_file() {
+        return Err(format!("{} was not found in {}. Put the launcher next to {} or set the game folder in Settings.", exe, dump::fwd(&dir), exe));
     }
     // a pkp_rt.dll from another release than the tools: the build would finish and the game still refuse to start
     if package_b {

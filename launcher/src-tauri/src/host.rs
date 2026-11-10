@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! What the launcher does differently on Linux (SteamOS, the Steam Deck, Bazzite, ...). The game stays a Windows program.
+//! What the launcher does differently on Linux (SteamOS, the Steam Deck, Bazzite, ...).
+//!
+//! The game program is `Game`: pkp.exe everywhere, or, in a Linux package that carries the Linux runtime (libpkp_rt.so next
+//! to the launcher), `pkp`, a native Linux program that pkp_build.py links with `--target linux` and that starts without
+//! Proton. What follows describes pkp.exe on Linux; the native game needs only the shader translator to go through `runner`.
 //!
 //! On Windows the release's Windows tools run and pkp.exe starts directly. On Linux the launcher is a native program (Tauri
 //! draws it with WebKitGTK, so it needs no WebView2), the tools that only prepare files run as Linux programs from
@@ -85,6 +89,65 @@ pub fn windows_program(exe: &Path) -> Result<Command, String> {
             cmd.env(k, v);
         }
         Ok(cmd)
+    }
+}
+
+/// The Linux runtime a native Linux package carries next to the launcher (and Set up next to `pkp`).
+pub const NATIVE_RUNTIME: &str = "libpkp_rt.so";
+
+/// The game program of a package: pkp.exe (Windows, or through `runner` on Linux) or the native Linux `pkp`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Game {
+    pub native: bool,
+}
+
+impl Game {
+    /// The game of the package whose launcher is in `install_dir`: native when it is a Linux package with `NATIVE_RUNTIME`.
+    pub fn of(install_dir: &Path) -> Game {
+        Game { native: cfg!(not(windows)) && install_dir.join(NATIVE_RUNTIME).is_file() }
+    }
+
+    /// The program's file name in the game folder.
+    pub fn exe(self) -> &'static str {
+        if self.native { "pkp" } else { "pkp.exe" }
+    }
+
+    /// The runtime the program loads from its own folder.
+    pub fn runtime(self) -> &'static str {
+        if self.native { NATIVE_RUNTIME } else { "pkp_rt.dll" }
+    }
+
+    /// What pkp_build.py links the program against, in a package whose tools are in `tools_dir`.
+    pub fn link_runtime(self, tools_dir: &Path) -> PathBuf {
+        if self.native {
+            tools_dir.parent().unwrap_or(tools_dir).join(NATIVE_RUNTIME)
+        } else {
+            tools_dir.join("build").join("sdk").join("pkp_rt.lib")
+        }
+    }
+
+    /// pkp_build.py's --target.
+    pub fn build_target(self) -> &'static str {
+        if self.native { "linux" } else { "windows" }
+    }
+
+    /// A command that runs the program `exe`: directly when native, else as a Windows program (`windows_program`).
+    pub fn command(self, exe: &Path) -> Result<Command, String> {
+        if self.native { Ok(command(exe)) } else { windows_program(exe) }
+    }
+
+    /// `p` as the program sees it: unchanged when native, else as `win_path` gives it.
+    pub fn path(self, p: &Path) -> OsString {
+        if self.native { p.as_os_str().to_os_string() } else { win_path(p) }
+    }
+
+    /// The files the program loads from its own folder: the runtime and the ASTC decoders of `tools/textures`.
+    fn loads(self, name: &str) -> bool {
+        if self.native {
+            name == NATIVE_RUNTIME || (name.starts_with("libastcdec-") && name.ends_with(".so"))
+        } else {
+            name == "pkp_rt.dll" || (name.starts_with("astcdec-") && name.ends_with(".dll"))
+        }
     }
 }
 
@@ -474,12 +537,13 @@ fn unpack(archive: &Path, parent: &Path, name: &str) -> Result<(), String> {
 /// pkp.exe loads pkp_rt.dll and the ASTC decoders from its own folder. Set up builds pkp.exe into the game folder, which can
 /// be another folder than the release's: without these files Windows (Proton) ends it at once with STATUS_DLL_NOT_FOUND,
 /// shown as exit code 53 (#221). Copies what is missing or different from the launcher's folder; nothing when they are one.
-pub fn sync_runtime_files(src: &Path, game_dir: &Path) -> Result<(), String> {
+/// The native `pkp` the same with libpkp_rt.so and the decoders' .so files (`Game::loads`).
+pub fn sync_runtime_files(game: Game, src: &Path, game_dir: &Path) -> Result<(), String> {
     let canon = |d: &Path| std::fs::canonicalize(d).unwrap_or_else(|_| d.to_path_buf());
     if canon(src) == canon(game_dir) {
         return Ok(());
     }
-    let wanted = |n: &str| n == "pkp_rt.dll" || (n.starts_with("astcdec-") && n.ends_with(".dll"));
+    let wanted = |n: &str| game.loads(n);
     let Ok(rd) = std::fs::read_dir(src) else { return Ok(()) };
     for e in rd.flatten() {
         let name = e.file_name().to_string_lossy().to_string();

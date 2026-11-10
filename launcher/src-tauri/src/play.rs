@@ -71,9 +71,11 @@ pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config) -> Result<(), Strin
             return Err("The game is already running.".into());
         }
     }
-    let exe = game_dir.join("pkp.exe");
+    let game = crate::host::Game::of(&crate::paths::exe_dir());
+    let name = game.exe();
+    let exe = game_dir.join(name);
     if !exe.is_file() {
-        return Err(format!("pkp.exe was not found in {}. Put the launcher next to pkp.exe or set the game folder in Settings.", crate::dump::fwd(game_dir)));
+        return Err(format!("{} was not found in {}. Put the launcher next to {} or set the game folder in Settings.", name, crate::dump::fwd(game_dir), name));
     }
 
     let app2 = app.clone();
@@ -94,10 +96,10 @@ pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config) -> Result<(), Strin
             _ => String::new(),
         };
         // Calculate after shader preparation, immediately before the process starts, so a long preparation cannot age the offset.
-        let mut cmd = match crate::events::override_for(&dir).and_then(|clock| game_command(&exe, &dir, clock)) {
+        let mut cmd = match crate::events::override_for(&dir).and_then(|clock| game_command(game, &exe, &dir, clock)) {
             Ok(c) => c,
             Err(e) => {
-                set_status(&app2, Status { state: GameState::Exited, crashed: true, message: format!("Could not start pkp.exe: {}", e), ..Default::default() });
+                set_status(&app2, Status { state: GameState::Exited, crashed: true, message: format!("Could not start {}: {}", name, e), ..Default::default() });
                 return;
             }
         };
@@ -105,11 +107,11 @@ pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config) -> Result<(), Strin
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
-                set_status(&app2, Status { state: GameState::Exited, crashed: true, message: format!("Could not start pkp.exe: {}", e), ..Default::default() });
+                set_status(&app2, Status { state: GameState::Exited, crashed: true, message: format!("Could not start {}: {}", name, e), ..Default::default() });
                 return;
             }
         };
-        set_status(&app2, Status { state: GameState::Running, message: format!("pkp.exe started (process {})", child.id()), ..Default::default() });
+        set_status(&app2, Status { state: GameState::Running, message: format!("{} started (process {})", name, child.id()), ..Default::default() });
         if minimize {
             if let Some(w) = app2.get_webview_window("main") {
                 let _ = w.minimize();
@@ -136,10 +138,10 @@ pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config) -> Result<(), Strin
         let crash_file = files.iter().any(|f| f.fresh && f.name != "pkp.log");
         let crashed = crash_file || code.map_or(true, |c| c != 0);
         let message = match (&wait_err, code) {
-            (Some(e), _) => format!("Lost track of pkp.exe: {}", e),
-            (None, Some(0)) => "pkp.exe exited normally.".to_string(),
-            (None, Some(c)) => format!("pkp.exe exited with code {} (0x{:08X}).", c, c as u32),
-            (None, None) => "pkp.exe was ended by the system.".to_string(),
+            (Some(e), _) => format!("Lost track of {}: {}", name, e),
+            (None, Some(0)) => format!("{} exited normally.", name),
+            (None, Some(c)) => format!("{} exited with code {} (0x{:08X}).", name, c, c as u32),
+            (None, None) => format!("{} was ended by the system.", name),
         };
         set_status(&app2, Status { state: GameState::Exited, code, crashed, files, message: message + &prep + &shaders });
         if minimize {
@@ -152,11 +154,11 @@ pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config) -> Result<(), Strin
     Ok(())
 }
 
-/// How Play starts pkp.exe: in its folder, through Proton on Linux (host.rs). Every path (exefs, romfs, shader cache) comes
-/// from pkp.ini next to it.
-fn game_command(exe: &Path, dir: &Path, clock: Option<crate::events::ClockOverride>) -> Result<std::process::Command, String> {
-    crate::host::sync_runtime_files(&crate::paths::exe_dir(), dir)?;
-    let mut cmd = crate::host::windows_program(exe)?;
+/// How Play starts the game: in its folder, pkp.exe through Proton on Linux, the native pkp directly (host.rs). Every path (exefs,
+/// romfs, shader cache) comes from pkp.ini next to it.
+fn game_command(game: crate::host::Game, exe: &Path, dir: &Path, clock: Option<crate::events::ClockOverride>) -> Result<std::process::Command, String> {
+    crate::host::sync_runtime_files(game, &crate::paths::exe_dir(), dir)?;
+    let mut cmd = game.command(exe)?;
     cmd.current_dir(dir).args(["--log", "pkp.log"]);
     if let Some(clock) = clock {
         clock.apply_to(&mut cmd);
@@ -177,9 +179,10 @@ pub fn run_cli(game_dir: &Path, tools: &Path) -> i32 {
         eprintln!("{}", m);
         1
     };
-    let exe = game_dir.join("pkp.exe");
+    let game = crate::host::Game::of(tools.parent().unwrap_or(tools));
+    let exe = game_dir.join(game.exe());
     if !exe.is_file() || (crate::gamebuild::is_package_b(tools) && !crate::gamebuild::is_built(game_dir, tools)) {
-        return fail(format!("pkp.exe in {} is missing or from an older release: open the launcher and press Set up.", crate::dump::fwd(game_dir)));
+        return fail(format!("{} in {} is missing or from an older release: open the launcher and press Set up.", game.exe(), crate::dump::fwd(game_dir)));
     }
     if !crate::shaders::is_complete(game_dir) || !game_dir.join(crate::settings::PKP_INI).is_file() {
         return fail("Setup has not finished: open the launcher and press Set up.".into());
@@ -198,7 +201,7 @@ pub fn run_cli(game_dir: &Path, tools: &Path) -> i32 {
         Err(e) => return fail(e),
     };
     let backups = crate::savebackup::Watch::start(game_dir);   // the same save backups as Play in the window
-    let status = game_command(&exe, game_dir, clock).and_then(|mut c| c.status().map_err(|e| format!("Could not start pkp.exe: {}", e)));
+    let status = game_command(game, &exe, game_dir, clock).and_then(|mut c| c.status().map_err(|e| format!("Could not start {}: {}", game.exe(), e)));
     backups.finish();
     let code = match status {
         Ok(st) => st.code().unwrap_or(1),

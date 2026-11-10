@@ -369,11 +369,12 @@ pub fn game_running() -> bool {
         .map(|o| String::from_utf8_lossy(&o.stdout).to_lowercase().contains("pkp.exe"))
         .unwrap_or(false)
 }
-/// Linux: a process named pkp.exe (Wine names a Windows program's process after its exe), also one Steam started.
+/// Linux: a process named pkp.exe (Wine names a Windows program's process after its exe), also one Steam started, or the
+/// native game, named pkp.
 #[cfg(not(windows))]
 pub fn game_running() -> bool {
     fs::read_dir("/proc")
-        .map(|rd| rd.flatten().any(|e| fs::read_to_string(e.path().join("comm")).map(|c| c.trim() == "pkp.exe").unwrap_or(false)))
+        .map(|rd| rd.flatten().any(|e| fs::read_to_string(e.path().join("comm")).map(|c| matches!(c.trim(), "pkp.exe" | "pkp")).unwrap_or(false)))
         .unwrap_or(false)
 }
 

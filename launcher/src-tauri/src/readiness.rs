@@ -27,7 +27,7 @@ pub fn overview_of(cfg: &Config) -> Overview {
     Overview {
         game_dir: dump::fwd(&dir),
         default_game_dir: dump::fwd(&exe_dir()),
-        exe_exists: dir.join("pkp.exe").is_file(),
+        exe_exists: dir.join(crate::host::Game::of(&exe_dir()).exe()).is_file(),
         builds_exe: gamebuild::is_package_b(&exe_dir().join("tools")),
     }
 }
@@ -59,6 +59,9 @@ pub struct ReadyFacts {
     pub runtime_missing: bool,
     /// the release builds pkp.exe itself
     pub builds_exe: bool,
+    /// the game program's and its runtime's file names (host::Game): pkp.exe and pkp_rt.dll, or pkp and libpkp_rt.so
+    pub exe: &'static str,
+    pub runtime: &'static str,
     /// Current when the release does not build it
     pub built: gamebuild::Built,
     pub needs_retranslation: bool,
@@ -71,10 +74,10 @@ pub struct ReadyFacts {
 
 pub fn readiness_of(f: &ReadyFacts) -> Readiness {
     if !f.builds_exe && !f.exe_exists {
-        return Readiness::of("no_exe", format!("pkp.exe was not found in {}. Put the launcher next to pkp.exe.", f.game_dir));
+        return Readiness::of("no_exe", format!("{} was not found in {}. Put the launcher next to {}.", f.exe, f.game_dir, f.exe));
     }
     if f.exe_exists && f.runtime_missing {
-        return Readiness::of("no_runtime", format!("pkp_rt.dll was not found next to pkp.exe in {} nor next to the launcher. Extract the release again so the launcher's folder has it, or set the game folder in Settings.", f.game_dir));
+        return Readiness::of("no_runtime", format!("{} was not found next to {} in {} nor next to the launcher. Extract the release again so the launcher's folder has it, or set the game folder in Settings.", f.runtime, f.exe, f.game_dir));
     }
     let unfinished = || {
         if f.started {
@@ -151,6 +154,7 @@ pub fn readiness(cfg: &Config) -> Probe {
     let dir = game_dir_of(cfg);
     let tools_dir = exe_dir().join("tools");
     let builds_exe = gamebuild::is_package_b(&tools_dir);
+    let game = crate::host::Game::of(&exe_dir());
     // the base game's files now fill in an update that lacks them (#128): its shaders were never extracted, so Set up runs once more
     let base_changed = !paths.romfs_base.is_empty() && {
         let job = shaders::Job { game_dir: dir.clone(), romfs: PathBuf::from(&paths.romfs), romfs_base: Some(PathBuf::from(&paths.romfs_base)), main: PathBuf::new(), jobs: 1, idle: false, log: None, limit: 0, compact: false };
@@ -158,8 +162,10 @@ pub fn readiness(cfg: &Config) -> Probe {
     };
     let readiness = readiness_of(&ReadyFacts {
         game_dir: dump::fwd(&dir),
-        exe_exists: dir.join("pkp.exe").is_file(),
-        runtime_missing: !dir.join("pkp_rt.dll").is_file() && !exe_dir().join("pkp_rt.dll").is_file(),
+        exe_exists: dir.join(game.exe()).is_file(),
+        runtime_missing: !dir.join(game.runtime()).is_file() && !exe_dir().join(game.runtime()).is_file(),
+        exe: game.exe(),
+        runtime: game.runtime(),
         builds_exe,
         built: if builds_exe { gamebuild::built_state(&dir, &tools_dir) } else { gamebuild::Built::Current },
         needs_retranslation: shaders::needs_retranslation(&dir),

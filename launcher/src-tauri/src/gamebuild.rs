@@ -24,6 +24,8 @@ use std::time::Duration;
 pub struct Tools {
     pub python: PathBuf,
     pub script: PathBuf,
+    /// pkp_build.py's --target: "windows" (pkp.exe) or "linux" (the native pkp), from `host::Game`
+    pub target: &'static str,
 }
 
 /// Where setup writes its log lines (the launcher's setup.log); a closure so this file needs no crate-local import.
@@ -86,12 +88,13 @@ static CHECKED: std::sync::Mutex<Option<(CheckKey, Built)>> = std::sync::Mutex::
 
 /// Whether pkp.exe was built by this release's tools (`pkp_build.py --check`, the stamp's only implementation).
 pub fn built_state(game_dir: &Path, tools_dir: &Path) -> Built {
-    // before the stamp: a dll from another release than the tools makes every build useless, whatever pkp.exe is
-    let api = crate::runtime_api::check(game_dir, tools_dir);
+    let game = crate::host::Game::of(tools_dir.parent().unwrap_or(tools_dir));
+    // before the stamp: a runtime from another release than the tools makes every build useless, whatever the program is
+    let api = crate::runtime_api::check(game_dir, tools_dir, game.exe(), game.runtime());
     if let crate::runtime_api::Agreement::Mixed { dll, sdk } = api {
         return Built::Mixed { dll, sdk };
     }
-    let exe = game_dir.join("pkp.exe");
+    let exe = game_dir.join(game.exe());
     let done = game_dir.join("build").join("done.json");
     let (Ok(em), Ok(dm)) = (fs::metadata(&exe), fs::metadata(&done)) else {
         return Built::No;
@@ -113,7 +116,7 @@ pub fn built_state(game_dir: &Path, tools_dir: &Path) -> Built {
         return Built::Stale;
     };
     let mut cmd = crate::host::command(&tools.python);
-    cmd.arg("-I").arg(&tools.script).arg("--check").arg("--game").arg(game_dir);
+    cmd.arg("-I").arg(&tools.script).arg("--check").arg("--game").arg(game_dir).args(["--target", game.build_target()]);
     quiet(&mut cmd, false);
     let Ok(out) = cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status() else {
         return Built::Stale; // not cached: the next look tries again
@@ -132,9 +135,10 @@ pub fn find_tools(tools_dir: &Path) -> Result<Tools, String> {
     let python = crate::host::python(tools_dir);
     let script = tools_dir.join("build").join("pkp_build.py");
     let mut missing = Vec::new();
-    for p in [python.clone(), script.clone(), crate::host::zig(tools_dir)]
+    let runtime = crate::host::Game::of(tools_dir.parent().unwrap_or(tools_dir)).link_runtime(tools_dir);
+    for p in [python.clone(), script.clone(), crate::host::zig(tools_dir), runtime]
         .into_iter()
-        .chain(["build/sdk/pkp_rt.lib", "build/recomp/nxrecomp/__main__.py"].iter().map(|p| tools_dir.join(p)))
+        .chain(["build/recomp/nxrecomp/__main__.py"].iter().map(|p| tools_dir.join(p)))
     {
         if !p.is_file() {
             missing.push(p.display().to_string());
@@ -143,7 +147,7 @@ pub fn find_tools(tools_dir: &Path) -> Result<Tools, String> {
     if !missing.is_empty() {
         return Err(format!("The game build cannot run, missing: {}. Extract the release zip again so tools/ is complete.", missing.join("; ")));
     }
-    Ok(Tools { python, script })
+    Ok(Tools { python, script, target: crate::host::Game::of(tools_dir.parent().unwrap_or(tools_dir)).build_target() })
 }
 
 fn quiet(cmd: &mut Command, idle: bool) {
@@ -165,7 +169,7 @@ pub fn run(job: &Job, tools: &Tools, cancel: &AtomicBool, mut report: impl FnMut
     let _ = fs::remove_file(&cancel_file);
     let mut cmd = crate::host::command(&tools.python);
     cmd.arg("-I").arg(&tools.script).arg("--exefs").arg(&job.exefs).arg("--game").arg(&job.game_dir);
-    cmd.args(["--jobs", &job.jobs.max(1).to_string()]);
+    cmd.args(["--jobs", &job.jobs.max(1).to_string()]).args(["--target", tools.target]);
     quiet(&mut cmd, job.idle);
     let say = |t: &str| {
         if let Some(f) = &job.log {

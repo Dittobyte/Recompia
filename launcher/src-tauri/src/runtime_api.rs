@@ -4,6 +4,7 @@
 //! `PKP_RT_API` (game-build/src/pkp_rt_api.h) numbers the call between pkp.exe and pkp_rt.dll; the dll refuses an exe built for
 //! another number ("come from different releases"). Since API 2 both files export the number as the data symbol `pkp_rt_api`,
 //! read here from the PE export table without loading either file; a file without the export is from an earlier release (None).
+//! The native Linux pair (pkp and libpkp_rt.so, host.rs Game) exports it the same way, read from the ELF dynamic symbol table.
 //! The tools' number is the define in tools/build/sdk/pkp_rt_api.h, which the next link bakes into pkp.exe.
 //! gamebuild.rs's stamp says whether pkp.exe was built with these tools; this says whether it runs with this dll, which the stamp
 //! cannot see when an update put only some files in place (a new pkp_rt.dll next to old tools: Set up relinked nothing and the
@@ -38,13 +39,14 @@ pub fn agreement(exe: Option<u32>, dll: Option<u32>, sdk: Option<u32>) -> Agreem
     }
 }
 
-/// pkp.exe in the game folder, the pkp_rt.dll Play gives it (the launcher's copy, which host.rs sync_runtime_files puts next to
-/// the exe before the start; the game folder's own when the launcher has none) and the tools' header.
-pub fn check(game_dir: &Path, tools_dir: &Path) -> Agreement {
-    let launcher_dll = tools_dir.parent().unwrap_or(tools_dir).join("pkp_rt.dll");
-    let dll = if launcher_dll.is_file() { launcher_dll } else { game_dir.join("pkp_rt.dll") };
+/// The program `exe` in the game folder (pkp.exe, or pkp), the runtime `runtime` Play gives it (pkp_rt.dll or libpkp_rt.so: the
+/// launcher's copy, which host.rs sync_runtime_files puts next to the program before the start; the game folder's own when the
+/// launcher has none) and the tools' header.
+pub fn check(game_dir: &Path, tools_dir: &Path, exe: &str, runtime: &str) -> Agreement {
+    let launcher_dll = tools_dir.parent().unwrap_or(tools_dir).join(runtime);
+    let dll = if launcher_dll.is_file() { launcher_dll } else { game_dir.join(runtime) };
     let header = tools_dir.join("build").join("sdk").join("pkp_rt_api.h");
-    agreement(export_of(&game_dir.join("pkp.exe")), export_of(&dll), header_api(&header))
+    agreement(export_of(&game_dir.join(exe)), export_of(&dll), header_api(&header))
 }
 
 /// The number in `#define PKP_RT_API 2u` of a copy of pkp_rt_api.h; None without the file or the line.
@@ -55,9 +57,87 @@ pub fn header_api(header: &Path) -> Option<u32> {
     digits.parse().ok()
 }
 
-/// The value of the exported `pkp_rt_api` of a PE file; None when the file has no such export (or is no PE file).
+/// The value of the exported `pkp_rt_api` of a PE or ELF file; None when the file has no such export (or is neither).
 pub fn export_of(file: &Path) -> Option<u32> {
-    Pe::open(file)?.export(SYMBOL)
+    let mut magic = [0u8; 4];
+    File::open(file).ok()?.read_exact(&mut magic).ok()?;
+    if magic == *b"\x7fELF" {
+        Elf::open(file)?.export(&SYMBOL[..SYMBOL.len() - 1])
+    } else {
+        Pe::open(file)?.export(SYMBOL)
+    }
+}
+
+/// Just enough of ELF64 (little-endian) for one exported value: the section table, the dynamic symbol table (.dynsym, with its
+/// string table) and the section that holds the symbol's address. Every read is bounded by the file itself; anything odd gives None.
+struct Elf {
+    f: File,
+    /// (type, address, file offset, size, link) of every section
+    sections: Vec<(u32, u64, u64, u64, u32)>,
+}
+
+impl Elf {
+    const SHT_NOBITS: u32 = 8;
+    const SHT_DYNSYM: u32 = 11;
+
+    fn open(path: &Path) -> Option<Elf> {
+        let mut elf = Elf { f: File::open(path).ok()?, sections: Vec::new() };
+        let ident = elf.bytes(0, 6)?;
+        if ident[4] != 2 || ident[5] != 1 {
+            return None; // not ELF64 little-endian
+        }
+        let (shoff, shentsize, shnum) = (elf.u64(0x28)?, elf.u16(0x3A)? as u64, elf.u16(0x3C)? as u64);
+        if shentsize < 64 {
+            return None;
+        }
+        for i in 0..shnum.min(1 << 12) {
+            let s = shoff.checked_add(i * shentsize)?;
+            let section = (elf.u32(s + 4)?, elf.u64(s + 16)?, elf.u64(s + 24)?, elf.u64(s + 32)?, elf.u32(s + 40)?);
+            elf.sections.push(section);
+        }
+        Some(elf)
+    }
+
+    fn bytes(&mut self, off: u64, n: usize) -> Option<Vec<u8>> {
+        let mut b = vec![0u8; n];
+        self.f.seek(SeekFrom::Start(off)).ok()?;
+        self.f.read_exact(&mut b).ok()?;
+        Some(b)
+    }
+
+    fn u16(&mut self, off: u64) -> Option<u16> {
+        self.bytes(off, 2).map(|b| u16::from_le_bytes([b[0], b[1]]))
+    }
+
+    fn u32(&mut self, off: u64) -> Option<u32> {
+        self.bytes(off, 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+    }
+
+    fn u64(&mut self, off: u64) -> Option<u64> {
+        self.bytes(off, 8).map(|b| u64::from_le_bytes(b.try_into().unwrap()))
+    }
+
+    /// The u32 a defined dynamic symbol `name` (no terminator) points at.
+    fn export(&mut self, name: &[u8]) -> Option<u32> {
+        let &(_, _, symoff, symsize, link) = self.sections.iter().find(|s| s.0 == Self::SHT_DYNSYM)?;
+        let &(_, _, stroff, strsize, _) = self.sections.get(link as usize)?;
+        for i in 0..(symsize / 24).min(1 << 20) {
+            let sym = symoff + i * 24;
+            let (st_name, st_shndx, st_value) = (self.u32(sym)? as u64, self.u16(sym + 6)?, self.u64(sym + 8)?);
+            if st_shndx == 0 || st_name + name.len() as u64 >= strsize {
+                continue; // undefined here, or a name past the table
+            }
+            if self.bytes(stroff + st_name, name.len() + 1)? != [name, b"\0"].concat() {
+                continue;
+            }
+            let &(_, addr, off, _, _) = self
+                .sections
+                .iter()
+                .find(|&&(ty, addr, _, size, _)| ty != Self::SHT_NOBITS && st_value >= addr && st_value - addr + 4 <= size)?;
+            return self.u32(st_value - addr + off);
+        }
+        None
+    }
 }
 
 /// Just enough of the PE format for one exported value: the headers, the section table (virtual address to file offset) and
