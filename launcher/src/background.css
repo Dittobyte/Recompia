@@ -1,0 +1,5 @@
+/* The player's own background: a dim layer over the art and scrims, under #app (see background-apply.js). */
+html[data-bg="custom"] #bg::after { content: ""; position: absolute; inset: 0; background: rgba(0, 0, 0, var(--art-dim, .35)); pointer-events: none; z-index: 2; }
+/* the Testing mark and tag sit on arbitrary pictures: keep them readable */
+html[data-bg="custom"] .brand-mark-testing { filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .6)); }
+html[data-bg="custom"] .brand-tag { box-shadow: 0 1px 3px rgba(0, 0, 0, .5); }
