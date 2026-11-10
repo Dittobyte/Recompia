@@ -68,27 +68,23 @@ const char* pad_name(PromptStyle style, const PadSettings& pad, bool label_abxy,
     if (b == Btn::DPad) return style == PromptStyle::Xbox ? "xbox/dpad" : steam_set ? "steam/dpad" : "ps/dpad";
     PadSrc src = PadSrc::South;
     if (!source_for_button(pad, label_abxy, button_bit(b), &src)) return "";
-    // Indexed by PadSrc: the four face buttons, the shoulders, the triggers, Start, Back; the sticks and the d-pad have no icon.
+    // Indexed by PadSrc: the four face buttons, the shoulders, the triggers, Start, Back; the sticks and the d-pad have no icon. Every table lists all
+    // kPadSrcCount entries (a missing one would be a null name).
     static const char* const kXbox[kPadSrcCount] = {
         "xbox/a", "xbox/b", "xbox/x", "xbox/y", "xbox/lb", "xbox/rb", "xbox/lt", "xbox/rt", "xbox/menu", "xbox/view",
-        "", "", "", "", "", "", "", "", "", "", "", "",
+        "", "", "", "", "", "", "", "", "", "", "", "", "", "",
     };
     static const char* const kSteam[kPadSrcCount] = {
         "steam/a", "steam/b", "steam/x", "steam/y", "steam/lb", "steam/rb", "steam/lt", "steam/rt", "steam/menu", "steam/view",
         "", "", "", "", "", "",
-        "steam/rg", "steam/lg", "steam/rg", "steam/lg", "steam/lp", "steam/rp",   // the grips (upper and lower on a side share the icon) and the trackpad clicks
+        "steam/r4", "steam/l4", "steam/r5", "steam/l5", "steam/lp", "steam/rp",   // the four rear grips (RightPaddle1, LeftPaddle1, RightPaddle2, LeftPaddle2) and the trackpad clicks
+        "steam/guide", "steam/qam",   // the Steam button and the quick-access "..." button (Guide, Misc1)
     };
     static const char* const kPs[kPadSrcCount] = {
         "ps/cross", "ps/circle", "ps/square", "ps/triangle", "ps/l1", "ps/r1", "ps/l2", "ps/r2", "ps/options", "ps/create",
-        "", "", "", "", "", "", "", "", "", "", "", "",
+        "", "", "", "", "", "", "", "", "", "", "", "", "", "",
     };
-    const char* name = (style == PromptStyle::Xbox ? kXbox : steam_set ? kSteam : kPs)[static_cast<int>(src)];
-    // The Steam Deck has View and Menu like an Xbox pad; the Steam Controller's arrows (< and >) are not on it.
-    if (style == PromptStyle::SteamDeck) {
-        if (std::string_view(name) == "steam/menu") return "deck/menu";
-        if (std::string_view(name) == "steam/view") return "deck/view";
-    }
-    return name;
+    return (style == PromptStyle::Xbox ? kXbox : steam_set ? kSteam : kPs)[static_cast<int>(src)];
 }
 
 // Does binding b apply in context c? A binding of c applies; an `all` binding applies unless the same input has a binding of c itself.
