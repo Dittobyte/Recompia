@@ -1,6 +1,7 @@
 import '@fontsource-variable/inter/opsz.css';
 import './theme.css';
 import './layout.css';
+import './layout-modes.css';
 import './components.css';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import markUrl from './art/mark.svg';
