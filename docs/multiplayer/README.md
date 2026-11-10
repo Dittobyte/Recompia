@@ -38,6 +38,21 @@ What it cannot get past:
 - **A host on another port.** When 47600 is taken on the host (a second copy of the game), it listens on a port the system picks, and the
   sweep does not find it. Visit it by address with the port from its log.
 
+## Invites and Tailscale
+
+Instead of typing an address and a room code, the host can **copy an invite** and the friends **paste** it.
+
+- **Host:** on the launcher's Link Play page, press **Copy invite** beside an address (a same-network address, a Tailscale address, the
+  public address, or a relay). For Tailscale or the internet the invite includes the room code, so the host needs one: **New code**, or
+  start the game as host. Send the whole message to your friends in any chat.
+- **Friend:** open the Link Play page and paste the message into **Paste invite**. The launcher fills in the address and the room code and
+  picks the right mode (Same network, or Internet with Visit), then the usual steps in the game apply.
+- **Tailscale:** the game counts Tailscale's addresses (100.64.0.0/10) as internet play, so every player needs internet play and the
+  host's room code. The invite does this for you: on the host's Internet page, with **Through a relay** off, the page lists the host's
+  Tailscale address; **Copy invite** next to it, and the friends paste. Tailscale has no automatic discovery in the game (the LAN sweep
+  skips VPN adapters), so the address always travels in the invite.
+- An invite is plain text and carries the room code: share it only with the people you want to play with.
+
 ## Ports and firewall
 
 | Port | Who | What |
