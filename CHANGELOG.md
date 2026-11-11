@@ -4,6 +4,7 @@
 
 - New **Show on Discord while playing** in the launcher's Settings: shows "Playing Recompia" and how long you have played on your Discord profile while the game runs. Off by default; Discord must be open. Update only: no shader rebuild, no Set up again
 - Fixed the Pokédex tabs showing "Time" as their title after the Settings screen had been opened (#494)
+- The Discord links in the launcher, the READMEs and the website now use the new invite, discord.recompia.com. Update only: no shader rebuild, no Set up again
 
 ### macOS
 - The game runs on Apple Silicon Macs. This is the first release with a macOS build: the runtime, the lifted game and the launcher are native arm64 programs, so there is no Proton, no Vulkan driver to install and no `pkp_rt.dll`
