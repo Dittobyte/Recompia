@@ -29,6 +29,11 @@ find "$res/tools/build/recomp" -name __pycache__ -type d -exec rm -rf {} + 2>/de
 cp "$repo/tools/shaders/ampere/extract_corpus.py" "$res/tools/"
 cp -R "$repo/work/harness" "$res/tools/harness"
 cp "$repo/game-build/src/pkp_stub.cpp" "$repo/game-build/src/pkp_rt_api.h" "$res/tools/build/sdk/"
+# macOS has no Vulkan loader of its own: MoltenVK ships with the package (with its licence) and Set up copies it next to pkp,
+# which is where volk looks for libvulkan.1.dylib.
+moltenvk=$(brew --prefix molten-vk 2>/dev/null || echo /opt/homebrew/opt/molten-vk)
+cp "$moltenvk/lib/libMoltenVK.dylib" "$res/tools/build/sdk/libvulkan.1.dylib"
+cp "$moltenvk/LICENSE" "$res/tools/build/sdk/LICENSE-MoltenVK.txt"
 cp "$repo/runtime/cmake/guest_segment.py" "$res/tools/build/sdk/"
 cp "$repo/work/build/rtb/libpkp_rt.dylib" "$res/tools/build/sdk/"
 # No Python in the bundle: Set up fetches python-build-standalone and the lz4 and capstone wheels into tools/macos, as the
