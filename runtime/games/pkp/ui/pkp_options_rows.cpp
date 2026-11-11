@@ -217,13 +217,20 @@ constexpr Row kGameplay[] = {
     key_row("Shoulder camera: side", "Moves the camera to the side so your character no longer blocks the view, in blocks. Right is positive, left negative; 0 is the game's own camera.", Key::CameraShoulderSide, 0.1, "%+.1f"),
     key_row("Shoulder camera: height", "Moves the camera up, in blocks. 0 is the game's own camera.", Key::CameraShoulderHeight, 0.1, "%+.1f"),
 };
+
+// The launcher's online presence (launcher/src-tauri/src/online.rs, which reads the key every few seconds while the game runs): its own
+// tab so it is easy to find. The online name and the reset stay in the launcher.
+constexpr Row kOnline[] = {
+    key_row("Share that I am online", "While the game runs, the launcher tells the Recompia online server that you are playing: your online name from the launcher (empty: anonymous), the version, Windows or Linux, and how many Pokemon have a home in your save. Never your save or your user ID. Off unless you switch it on.", Key::OnlinePresence),
+};
 // clang-format on
 
 }  // namespace
 
 constinit const RowList kSoundRows = rows_of(kSound), kDisplayRows = rows_of(kDisplay), kPerformanceRows = rows_of(kPerformance),
                         kGraphicsRows = rows_of(kGraphics), kPictureRows = rows_of(kPicture), kMouseRows = rows_of(kMouse),
-                        kControllerRows = rows_of(kController), kGameplayRows = rows_of(kGameplay);
+                        kControllerRows = rows_of(kController), kGameplayRows = rows_of(kGameplay),
+                        kOnlineRows = rows_of(kOnline);
 
 void refresh_audio_devices() {
     g_devices.clear();
