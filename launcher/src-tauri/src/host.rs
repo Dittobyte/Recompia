@@ -206,14 +206,15 @@ pub fn macos_set_up_install(
     std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {}", dir.display(), e))?;
     crate::settings::ensure_play_paths(&dir, &chosen.exefs, &chosen.romfs, &chosen.romfs_base, &report.aoc_dir)?;
     let tools_dir = crate::paths::exe_dir().join("tools");
+    let writable = tools_dir_for(&dir);
     if crate::gamebuild::is_package_b(&tools_dir) {
         // Linux and macOS fetch their native tools once (Python with lz4 and capstone; macOS compiles with Apple clang)
-        let ready = prepare_tools(&tools_dir, cancel, &mut |done, total, message| progress("tools", done, total, &message))?;
+        let ready = prepare_tools(&writable, cancel, &mut |done, total, message| progress("tools", done, total, &message))?;
         if !ready {
             return Err("Setup paused.".into());
         }
         if !crate::gamebuild::is_built(&dir, &tools_dir) {
-            let tools = crate::gamebuild::find_tools(&tools_dir)?;
+            let tools = crate::gamebuild::find_tools(&tools_dir, &dir)?;
             let exefs = {
                 let ini = crate::settings::read(&dir);
                 let p = ini.pkp.get("fs.exefs").cloned().unwrap_or_default();
@@ -555,7 +556,13 @@ pub fn free_bytes(dir: &Path) -> Option<u64> {
 
 /// Opens a file in its default app, a folder in the file manager, or a link in the browser.
 pub fn open(target: &std::ffi::OsStr) -> Result<(), String> {
-    let opener = if cfg!(windows) { "explorer.exe" } else { "xdg-open" };
+    let opener = if cfg!(windows) {
+        "explorer.exe"
+    } else if cfg!(target_os = "macos") {
+        "open"   // xdg-open does not exist on macOS, so the Setup log and folder buttons did nothing
+    } else {
+        "xdg-open"
+    };
     let mut child = command(opener).arg(target).spawn().map_err(|e| format!("Could not open {}: {}", target.to_string_lossy(), e))?;
     // reaped, so no exited opener lingers as a zombie while the launcher runs
     std::thread::spawn(move || child.wait());
@@ -780,6 +787,17 @@ const ZIG: Pinned = Pinned {
     size: 57_332_648,
     sha256: "1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026",
 };
+
+/// Where the fetched tools go: next to the AppImage on Linux (exe_dir is the .AppImage's folder), and in the game folder on
+/// macOS, because the launcher runs from inside a bundle that must not be written to (a signature covers it, and
+/// /Applications may be owned by another account).
+pub fn tools_dir_for(game_dir: &Path) -> PathBuf {
+    if cfg!(target_os = "macos") {
+        game_dir.join("tools")
+    } else {
+        crate::paths::exe_dir().join("tools")
+    }
+}
 
 /// The Linux Python can run the release's scripts.
 fn python_ready(py: &Path) -> bool {

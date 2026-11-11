@@ -111,7 +111,7 @@ pub fn built_state(game_dir: &Path, tools_dir: &Path) -> Built {
         }
     }
     // missing tools: Stale, so Set up runs and names what is missing
-    let Ok(tools) = find_tools(tools_dir) else {
+    let Ok(tools) = find_tools(tools_dir, game_dir) else {
         return Built::Stale;
     };
     let mut cmd = crate::host::command(&tools.python);
@@ -130,8 +130,11 @@ pub fn is_built(game_dir: &Path, tools_dir: &Path) -> bool {
     built_state(game_dir, tools_dir) == Built::Current
 }
 
-pub fn find_tools(tools_dir: &Path) -> Result<Tools, String> {
-    let python = crate::host::python(tools_dir);
+pub fn find_tools(tools_dir: &Path, game_dir: &Path) -> Result<Tools, String> {
+    // The Python is fetched into the writable tools folder (the game folder on macOS, next to the AppImage on Linux); the
+    // script, the lifter and the runtime library ship inside the package.
+    let fetched = crate::host::python(&crate::host::tools_dir_for(game_dir));
+    let python = if fetched.is_file() { fetched } else { crate::host::python(tools_dir) };
     let script = tools_dir.join("build").join("pkp_build.py");
     let mut required = vec![python.clone(), script.clone()];
     // macOS compiles with Apple clang and links libpkp_rt.dylib; the Windows and Linux packages carry Zig and pkp_rt.lib.

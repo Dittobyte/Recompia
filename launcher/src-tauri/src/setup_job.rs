@@ -115,7 +115,7 @@ pub fn start_setup(app: AppHandle, state: SetupArg, gentle: Option<bool>) -> Res
                     }
                 }
                 if package_b && !gamebuild::is_built(&dir, &tools_dir) {
-                    let tools = gamebuild::find_tools(&tools_dir)?;
+                    let tools = gamebuild::find_tools(&tools_dir, &dir)?;
                     let job = gamebuild::Job { game_dir: dir.clone(), exefs, jobs: build_jobs, idle: gentle, log: Some(log.clone()) };
                     let built = gamebuild::run(&job, &tools, &st.cancel, |t| {
                         emit(shaders::Progress { state: RunState::Running, phase: t.phase, done: t.done, total: t.total, message: t.message })
@@ -206,7 +206,7 @@ pub fn start_setup(app: AppHandle, state: SetupArg, gentle: Option<bool>) -> Res
             log(&format!("Windows programs run with: {}", host::runner()?.label));
             // no build yet, or one from an older release (stale tools stamp): build pkp.exe (again)
             if package_b && !gamebuild::is_built(&build_job.game_dir, &tools_dir) {
-                let tools = gamebuild::find_tools(&tools_dir)?;
+                let tools = gamebuild::find_tools(&tools_dir, &build_job.game_dir)?;
                 let built = gamebuild::run(&build_job, &tools, &st.cancel, |t| {
                     emit(shaders::Progress { state: RunState::Running, phase: t.phase, done: t.done, total: t.total, message: t.message })
                 })?;

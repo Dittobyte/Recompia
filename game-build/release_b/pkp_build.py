@@ -93,6 +93,13 @@ CREATE_NO_WINDOW = 0x08000000
 BELOW_NORMAL = 0x00004000
 
 
+def _release_lock(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
 def say(kind, *parts):
     print('@' + kind + ' ' + ' '.join(str(p) for p in parts), flush=True)
 
@@ -644,6 +651,23 @@ def main():
     cancel_file = os.path.join(build, 'cancel')
     if os.path.exists(cancel_file):
         os.remove(cancel_file)
+    # One build at a time per game folder: two used to wipe lift/ and obj/ under each other (the stamp check clears them),
+    # which showed up as a compiler error on a source that had just been generated.
+    lock_file = os.path.join(build, 'lock')
+    if os.path.exists(lock_file):
+        try:
+            pid = int(open(lock_file).read().strip() or 0)
+        except (OSError, ValueError):
+            pid = 0
+        if pid and pid != os.getpid():
+            try:
+                os.kill(pid, 0)          # a live build still holds it
+                raise Fail('Another Set up is building this game folder already (process %d).' % pid)
+            except ProcessLookupError:
+                pass
+            except PermissionError:
+                raise Fail('Another Set up is building this game folder already (process %d).' % pid)
+    open(lock_file, 'w').write(str(os.getpid()))
     t0 = time.time()
     times = {}
     try:
@@ -703,16 +727,20 @@ def main():
                 shutil.rmtree(os.path.join(build, d), ignore_errors=True)
         done = dict(stamp, exe_sha256=sha256(exe), seconds=times, finished=time.strftime('%Y-%m-%d %H:%M:%S'))
         write_json(os.path.join(build, 'done.json'), done)
-        progress('finish', 1, 1, 'pkp.exe is ready (%d s)' % (time.time() - t0))
+        progress('finish', 1, 1, '%s is ready (%d s)' % ('pkp' if DARWIN else 'pkp.exe', time.time() - t0))
+        _release_lock(lock_file)
         return 0
     except Cancelled:
         say('cancelled', 'Build paused. Set up again continues where it stopped.')
+        _release_lock(lock_file)
         return 2
     except Fail as e:
         say('error', str(e).replace('\n', '\\n'))
+        _release_lock(lock_file)
         return 1
     except Exception as e:            # an unexpected failure: say what it was, plainly
         say('error', '%s: %s' % (type(e).__name__, str(e).replace('\n', '\\n')))
+        _release_lock(lock_file)
         return 1
 
 
