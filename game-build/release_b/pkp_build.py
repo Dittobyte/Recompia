@@ -93,6 +93,19 @@ CREATE_NO_WINDOW = 0x08000000
 BELOW_NORMAL = 0x00004000
 
 
+def replace_file(src, dst):
+    """Copy src over dst even when dst is read-only: a Homebrew dylib is 0444, and a player (or a test) may have put one
+    there by hand, which made the copy fail with PermissionError and left the build half done."""
+    try:
+        os.remove(dst)
+    except FileNotFoundError:
+        pass
+    except PermissionError:
+        os.chmod(dst, 0o644)
+        os.remove(dst)
+    shutil.copy2(src, dst)
+
+
 def _release_lock(path):
     try:
         os.remove(path)
@@ -613,10 +626,10 @@ def link(runner, lib, game, env):
     if DARWIN:
         # The exe loads the runtime from its own folder (-rpath @executable_path), as pkp.exe finds pkp_rt.dll beside it, and
         # volk dlopen()s libvulkan.1.dylib from the same place: the package ships MoltenVK under that name.
-        shutil.copy2(os.path.join(SDK, RUNTIME_LIB), os.path.join(game, RUNTIME_LIB))
+        replace_file(os.path.join(SDK, RUNTIME_LIB), os.path.join(game, RUNTIME_LIB))
         vulkan = os.path.join(SDK, 'libvulkan.1.dylib')
         if os.path.isfile(vulkan):
-            shutil.copy2(vulkan, os.path.join(game, 'libvulkan.1.dylib'))
+            replace_file(vulkan, os.path.join(game, 'libvulkan.1.dylib'))
     progress('link', 1, 1, '%s built' % exe)
     return dst
 
