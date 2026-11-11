@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "nxrt/config.h"
 
-#include "nxrt/ini_edit.h"
-
 #include "nxrt/log.h"
 #include "nxrt/text.h"
+#include "ini_line.h"
 
 #include <atomic>
 #include <cerrno>
@@ -188,44 +187,11 @@ bool parse_double(const std::string& raw, double& out) {
     return true;
 }
 
-// Parses one ini line into the current section and stores key/value pairs in `out`.
+// Parses one ini line (ini_line.h) into the current section and stores key/value pairs in `out`.
 void parse_line(const std::string& line, std::string& section, std::unordered_map<std::string, std::string>& out) {
-    std::string s = trim(line);
-    if (s.empty()) return;
-    char c0 = s[0];
-    if (c0 == ';' || c0 == '#') return;  // whole-line comment
-    if (c0 == '[') {
-        size_t close = s.find(']');
-        if (close == std::string::npos) return;  // garbage
-        section = lower(trim(s.substr(1, close - 1)));
-        return;
-    }
-    size_t eq = s.find('=');
-    if (eq == std::string::npos) return;  // garbage
-    std::string key = lower(trim(s.substr(0, eq)));
-    if (key.empty()) return;
-    std::string rest = s.substr(eq + 1);
-    std::string value;
-    size_t first = rest.find_first_not_of(" \t");
-    if (first != std::string::npos && rest[first] == '"') {
-        // quoted: take the text between the quotes verbatim; anything after the closing quote is ignored
-        size_t close = rest.find('"', first + 1);
-        if (close != std::string::npos)
-            value = rest.substr(first + 1, close - first - 1);
-        else
-            value = trim(rest.substr(first + 1));
-    } else {
-        // unquoted: a ';' or '#' that follows whitespace starts a comment
-        size_t cut = rest.size();
-        for (size_t i = 1; i < rest.size(); ++i) {
-            if ((rest[i] == ';' || rest[i] == '#') && is_space(rest[i - 1])) {
-                cut = i;
-                break;
-            }
-        }
-        value = trim(rest.substr(0, cut));
-    }
-    out[canon_id(section, key)] = value;
+    ini_line::Line l = ini_line::parse(line);
+    if (l.kind == ini_line::Kind::Section) section = std::move(l.name);
+    else if (l.kind == ini_line::Kind::Key) out[canon_id(section, l.name)] = std::move(l.value);
 }
 
 std::unordered_map<std::string, std::string> parse_ini(const std::string& text) {
@@ -288,12 +254,6 @@ void config_set(const char* section, const char* key, const char* value) {
         g_ini[canon_id(S(section), S(key))] = S(value);
     }
     bump_gen();
-}
-
-bool config_save_key(const char* path, const char* section, const char* key, const char* value, std::string* err) {
-    if (!ini_save_key(path, section, key, value, err)) return false;
-    config_set(section, key, value);
-    return true;
 }
 
 bool config_cache_env(bool on) {

@@ -33,6 +33,7 @@ if(TARGET nxrt_gfx)
         "${_pkp}/core/pkp_mods_notice.cpp"
         "${_pkp}/core/pkp_save_uuid.cpp"
         "${_pkp}/core/pkp_settings.cpp"
+        "${_pkp}/core/pkp_view_offset.cpp"
         # render
         "${_pkp}/render/pkp_render_size.cpp"
         "${_pkp}/render/pkp_render_targets.cpp"
@@ -43,11 +44,14 @@ if(TARGET nxrt_gfx)
         "${_pkp}/render/pkp_quality.cpp"
         "${_pkp}/render/pkp_taa.cpp"
         "${_pkp}/render/pkp_ui_backdrop.cpp"
+        "${_pkp}/render/pkp_shoulder_camera.cpp"
+        "${_pkp}/render/pkp_view_projection.cpp"
         # input
         "${_pkp}/input/pkp_play.cpp"
         "${_pkp}/input/pkp_mouse_camera.cpp"
         "${_pkp}/input/pkp_mouse_mode.cpp"
         "${_pkp}/input/pkp_aim.cpp"
+        "${_pkp}/input/pkp_aim_debug.cpp"
         "${_pkp}/input/pkp_jump.cpp"
         "${_pkp}/input/pkp_kbm.cpp"
         # ui
@@ -57,6 +61,8 @@ if(TARGET nxrt_gfx)
         "${_pkp}/ui/pkp_menu_pick.cpp"
         "${_pkp}/ui/pkp_menu_in_game.cpp"
         "${_pkp}/ui/pkp_options.cpp"
+        "${_pkp}/ui/pkp_options_rows.cpp"
+        "${_pkp}/ui/pkp_options_time.cpp"
         "${_pkp}/ui/pkp_key_guide.cpp"
         "${_pkp}/ui/pkp_title.cpp"
         "${_pkp}/ui/pkp_sort.cpp"
