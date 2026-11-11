@@ -4,7 +4,7 @@ The pickup point for native macOS (arm64) support. It compares the two ports tha
 proposes an order of work. No port code is in this change.
 
 Method: every statement about a port comes from reading its diff. Line references are `A:n` for the anonymous patch and `P:n` for
-the diff of #525 (against its merge base on `main`, `a799f18`). What has to be shown on a Mac is listed in section 7.
+the diff of #525 (against its merge base on `main`, `a799f18`). What has to be shown on a Mac is listed in section 8.
 
 ## 1. The two ports
 
@@ -147,7 +147,37 @@ Taking P as it stands is the shortest route to something that runs, at the cost 
 the list in section 3 has to be cleared first either way. Taking A as it stands is not recommended: it does not build, it
 spreads through the files that change most often, and its unguarded changes reach Windows players.
 
-## 7. To be shown on a Mac
+## 7. For the author of #525
+
+Findings that may save time on the branch, in the order they are likely to matter. Each is a reading of the diff; section 8 has
+what a Mac has to show.
+
+1. **A likely cause of the intermittent boot hang.** A thread created `CREATE_SUSPENDED` waits on its condition variable while
+   its suspend count is above zero (P:8523-8527). The Apple branch of `ResumeThread` calls `thread_resume` and lowers the count
+   but never signals that condition variable (P:8672-8677); the non-Apple branch does (P:8683). `kernel/thread.cpp` creates
+   every guest thread suspended and resumes it at once, so a new thread that reaches its wait before the creator resumes it
+   stays there. The branch attributes the hang to the MoltenVK pipeline cache (P:4804-4807); this would hang the same way with
+   or without it.
+2. **Fault direction.** The signal handler reports every `SIGSEGV` and `SIGBUS` as a write (P:10052-10058), because Darwin gives
+   no direction in `siginfo`. The exception syndrome register has it: the patch reads `uc_mcontext->__es.__esr`, takes bit 6
+   (WnR) as write and exception classes `0x20` / `0x21` as an instruction fault (A:7455-7471). With that, a read fault on a
+   no-access page is no longer handed to write watch as a write.
+3. **`SIGPIPE`.** Nothing in the branch ignores it or sets `SO_NOSIGPIPE`, and `relay_server.cpp` and `tcp.cpp` call `send` on
+   TCP sockets, so a Link Play peer that disconnects can end the process. The patch sets `SO_NOSIGPIPE` on each TCP socket
+   (A:7827-7828, A:8110-8111) and ignores the signal process-wide in `win_sock.h` (A:8299); the per-socket option is the
+   narrower fix.
+4. **Heap sections.** Sections are `shm_open` plus `ftruncate`, mapped `MAP_SHARED` (P:11614-11712). The patch backs the heap
+   with a named Mach memory entry (`mach_make_memory_entry_64` with `MAP_MEM_NAMED_CREATE`, A:6882-6909) and maps alias views
+   of it with `mach_vm_map` (A:7023-7071): no name in the POSIX shared-memory namespace, nothing to unlink after a crash. Worth
+   measuring against each other.
+5. **Launcher gaps the patch covers.** Save import from other emulators looks under `~/Library/Application Support`
+   (`saveimport.rs`, with the usual environment overrides), and the Link Play page lists this Mac's addresses through
+   `getifaddrs` and the default route (`lan.rs`). The branch touches neither file.
+6. **What reaches the other platforms** is listed in section 3: the `launcher.cmake` include, the four unguarded POSIX sources,
+   the `CONTEXT` field names in `crash.cpp`, the build lock in `pkp_build.py`, the guest layout move, and `launch.rs` line
+   endings.
+
+## 8. To be shown on a Mac
 
 - The runtime, the demo and the game build and start on arm64 macOS from a clean checkout.
 - The `ResumeThread` reading in section 3 against the boot hang.
