@@ -70,8 +70,10 @@ This Testing build adds logging and a few device checks, and changes no frame-ra
   - Still not: it changes nothing about how the game runs; it only helps reports. Not shown on Windows
 
 ### Graphics driver resets
-- `pkp.log` now says when every frame of a run waits on the graphics card from the start, which is what a driver reset on a Linux handheld looks like. The game cannot fix it: reboot the device. The README's common problems say so too
-- It also notices a run that starts fine and then slows down: when frames wait on the graphics card for three summary windows in a row, `pkp.log` says when it began (before, it only looked at the start of a run). It is a note for bug reports, not a fix
+- `pkp.log` now notices a slowdown that starts partway through a run, not only at the start
+  - Before: it only looked at the first minutes of a run and at one kind of wait, so a handheld that played the title screen fine and slowed to about 10 fps once the world loaded was never noticed
+  - Now: when three summary windows in a row (about 30 seconds) run under 20 fps with the game thread mostly waiting, `pkp.log` says when it began and how much of the time was waiting; the 10-second `hitch:` line also shows the share of waiting in each window, which helps tune the check from real logs
+  - Still not: it is a note for bug reports, not a fix. After a graphics driver reset on a Linux handheld only a reboot of the device clears it; the README's common problems say so too
 
 ### Screens narrower than 16:9
 - Added **4:3 Fix**, a very experimental option in Settings > Testing (Testing channel only, off by default) for 4:3, 16:10 and 3:2 screens: full-screen backgrounds, fades and dimming fill the whole picture instead of stopping at a 16:9 strip in the middle. Menus, text and buttons stay where they were. If you have a 4:3 or 16:10 screen, please try it and send `pkp.log` with what looked wrong. It needs a restart of the game to take effect
