@@ -337,6 +337,13 @@ function gameplayRows() {
   ]);
 }
 
+// Asked when frame generation is switched on without AMD's DLL (pages/settings/dlss.js): the download is the only way, and it is a file of AMD's.
+export const FRAMEGEN_DOWNLOAD = {
+  title: t('Download the frame generation file?'),
+  html: `<p>${t('Frame generation needs AMD\'s amd_fidelityfx_framegeneration_vk.dll, which does not come with the launcher. It comes from AMD\'s FidelityFX SDK repository on GitHub (version 2.4.0, MIT licence), its hash is checked, and it goes into the upscalers\\fsr3 folder of the game.')}</p>`,
+  ok: t('Download'),
+};
+
 export const DLSS_DOWNLOAD = {
   title: t('Download DLSS?'),
   html: `<p>NVIDIA licenses this file separately, so it does not come with the launcher. It comes from NVIDIA's DLSS repository on GitHub, and its version and hash are checked.</p>
@@ -403,6 +410,11 @@ export const SECTIONS = [
           },
           { id: 'vsync', label: t('VSync'), type: 'toggle', ...fromSchema(controls('display', 'vsync')) },
           { id: 'fps_show', label: t('Frame rate counter'), type: 'toggle', ...fromSchema(controls('fps', 'show')) },
+          // AMD FSR 3.1: an extra frame between the game's, the 3D picture only. It needs AMD's DLL (the release does not carry it), so a switch-on without it
+          // is refused with a message (controls.js, guard) and the note says what to do.
+          { id: 'framegen', label: t('Frame generation'), type: 'toggle', guard: 'framegen', lock: (env) => env.dlssBusy, ...fromSchema(controls('framegen', 'enabled')) },
+          { id: 'framegen_note', type: 'note', when: (v, env) => !env.framegenDll,
+            note: () => ({ text: t('Needs AMD\'s amd_fidelityfx_framegeneration_vk.dll. Switching this on offers to download it into the upscalers\\fsr3 folder of the game.') }) },
         ],
       },
     ],
@@ -663,6 +675,7 @@ export const SECTIONS = [
             note: () => ({ text: t("Choose the folder that holds the same files and folders as the game's romfs (for example LD_C0_R.BIN at its top level), not the folder around it. Its files replace the game's files with the same path.") }),
           },
           { id: 'minimize_on_play', label: t('Minimise while playing'), type: 'toggle', at: config('minimize_on_play'), def: false },
+          { id: 'discord_presence', label: t('Show on Discord while playing'), type: 'toggle', at: config('discord_presence'), def: false },
         ],
       },
       {

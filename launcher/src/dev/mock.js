@@ -327,7 +327,7 @@ function handle(cmd, args) {
     case 'testing_log_read': return { name: args.name, text: Array.from({ length: 400 }, (_, i) => `[${String(i).padStart(4, '0')}] ${i % 37 === 0 ? 'ERROR vk: device lost (mock)' : 'info: frame ok'}`).join('\n'), truncated: true, bytes: 1_300_000 };
     case 'testing_logs_export': return { path: 'C:\\Games\\testing-logs\\PokopiaTesting-logs-0.9.1-beta.1-20261109-230000.zip', dir: 'C:\\Games\\testing-logs', files: ['report.txt', 'pkp.log'], bytes: 1_345_000 };
     case 'testing_logs_open_dir': console.info('[mock] open testing-logs'); return null;
-    case 'get_config': return { dump_dir: dumpDir, game_dir: '', minimize_on_play: false, gentle_build: false, loose_shaders: looseShaders, channel: mockChannel };
+    case 'get_config': return { dump_dir: dumpDir, game_dir: '', minimize_on_play: false, discord_presence: false, gentle_build: false, loose_shaders: looseShaders, channel: mockChannel };
     case 'save_config': looseShaders = !!args.config.loose_shaders; mockChannel = args.config.channel || 'stable'; return null;
     case 'get_overview': return { game_dir: GAME_DIR, default_game_dir: GAME_DIR, exe_exists: sc.exe_exists, builds_exe: true };
     case 'pick_folder': return 'D:/Dumps/Pokopia';
@@ -355,6 +355,8 @@ function handle(cmd, args) {
     case 'compact_shaders': return runRepack('compact');
     case 'expand_shaders': return runRepack('expand').then((r) => r.finished);
     case 'cancel_shader_storage': repackStop = true; return null;
+    case 'framegen_status': return false;
+    case 'fetch_framegen': return runTicks('dlss-progress', (i, n) => ({ done: i, total: n, message: 'Downloading amd_fidelityfx_framegeneration_vk.dll' })).then(() => null);
     case 'dlss_status': return { available: true, present: false, dir: `${GAME_DIR}/upscalers/streamline` };
     case 'fetch_dlss': return runTicks('dlss-progress', (i, n) => ({ done: i, total: n, message: 'Downloading nvngx_dlss.dll' })).then(() => null);
     case 'repair_plan': return { changes: [

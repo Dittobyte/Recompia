@@ -1,20 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Changing one value of an ini file without disturbing the rest of it: comments, key order, blank lines, other sections and the file's
-// line endings stay as they were. The parsing rules are config.h's: sections and keys are case-insensitive, a quoted value is taken
-// verbatim, an unquoted one ends at a ';' or '#' that follows white space, the last line that sets a key wins.
+// Changing one value of an ini file the way a person would: the line of `key` in `[section]` gets the new value and every other line,
+// comment, blank line, unknown key and the file's line endings stay as they are. Names are case-insensitive and lines are read with the
+// config reader's own grammar (nxrt/config.h, src/diag/ini_line.h). The runtime's twin of the launcher's ini editor (launcher ini.rs).
 #pragma once
 #include <string>
+#include <string_view>
 
 namespace nxrt {
 
-// `text` with [section] key = value set. An existing key's value is replaced in place (its last line, with any comment after it kept);
-// a missing key is added after the last line of the section; a missing section is added at the end. A value that would not read back
-// as itself unquoted (empty, edge white space, a quote, ';' or '#') is written in double quotes. Pure: no file, no global state.
-std::string ini_with_value(const std::string& text, const std::string& section, const std::string& key, const std::string& value);
+// `text` with [section] key = value. Every line of the key in the section gets the value in place (its spelling, the spacing around '='
+// and a trailing comment stay); a missing key is added as "key = value" after the section's last line, a missing section at the end.
+// The value is quoted when the reader would otherwise cut or trim it (a ';' or '#' after white space, white space at either end); line
+// breaks in it are dropped. The line ending is the text's own (CRLF when it has one, else LF; an empty text gets CRLF).
+std::string ini_set_value(std::string_view text, std::string_view section, std::string_view key, std::string_view value);
 
-// Applies ini_with_value to the file at `path` (a missing file counts as empty and is created) and replaces it atomically: the new
-// text goes to "<path>.tmp" and is renamed over the file, so a reader never sees half a file. False with the reason in *err (when given)
-// if the file cannot be read or written; the old file is then untouched.
-bool ini_save_key(const char* path, const char* section, const char* key, const char* value, std::string* err = nullptr);
+// The same on a file on disk, written through write_file_atomic (nxrt/file_write.h); the file is left alone when nothing changes. The file
+// must exist: a missing file is an error (*err), never created, since where the settings file lives is the caller's to decide.
+bool ini_file_set_value(const std::string& path, std::string_view section, std::string_view key, std::string_view value, std::string* err);
 
 }  // namespace nxrt
