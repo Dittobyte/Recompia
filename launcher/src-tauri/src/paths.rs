@@ -39,10 +39,13 @@ pub fn default_game_dir() -> PathBuf {
 }
 
 pub fn game_dir_of(cfg: &Config) -> PathBuf {
-    if cfg.game_dir.trim().is_empty() {
+    let chosen = cfg.game_dir.trim();
+    // A game folder inside an .app is never the real one: an earlier build offered exe_dir() (the bundle's Contents) as the
+    // default, and saving the settings wrote it back. Ignore it, so the next save heals the file.
+    if chosen.is_empty() || chosen.contains(".app/") {
         default_game_dir()
     } else {
-        PathBuf::from(cfg.game_dir.trim())
+        PathBuf::from(chosen)
     }
 }
 

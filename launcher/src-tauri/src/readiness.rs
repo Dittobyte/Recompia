@@ -26,8 +26,10 @@ pub fn overview_of(cfg: &Config) -> Overview {
     let dir = game_dir_of(cfg);
     Overview {
         game_dir: dump::fwd(&dir),
-        default_game_dir: dump::fwd(&exe_dir()),
-        exe_exists: dir.join("pkp.exe").is_file(),
+        // the folder a fresh install starts from, not the launcher's own: inside a .app that is the bundle's Contents, and
+        // the settings page offered it as the Install folder (a save then wrote it back, and Set up and Play worked in it)
+        default_game_dir: dump::fwd(&crate::paths::default_game_dir()),
+        exe_exists: crate::host::game_exe(&dir).is_file(),
         builds_exe: gamebuild::is_package_b(&exe_dir().join("tools")),
     }
 }
