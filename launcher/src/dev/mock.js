@@ -131,6 +131,7 @@ let dumpDir = sc.dump ? 'D:/Dumps/Pokopia' : '';
 let relay = null;
 let mockSteam = { found: true, running: false, accounts: 1, game_added: 0, launcher_added: 0 };
 let mockChannel = 'stable';
+let mockOnline = { online_asked: false, online_name: '', online_salt: 'mock-salt' };   // the switch itself is pkp.online_presence
 let mockRepair = null;
 // the builds the launcher offers, as list_builds returns them, for a launcher that is 0.8.1-beta.6
 const BACK = ['The game files may have to be built again for the older version, so Set up again can be asked (about 15 to 20 minutes).', 'Files that only the newer version has stay in the folder; they are not removed.'];
@@ -327,8 +328,11 @@ function handle(cmd, args) {
     case 'testing_log_read': return { name: args.name, text: Array.from({ length: 400 }, (_, i) => `[${String(i).padStart(4, '0')}] ${i % 37 === 0 ? 'ERROR vk: device lost (mock)' : 'info: frame ok'}`).join('\n'), truncated: true, bytes: 1_300_000 };
     case 'testing_logs_export': return { path: 'C:\\Games\\testing-logs\\PokopiaTesting-logs-0.9.1-beta.1-20261109-230000.zip', dir: 'C:\\Games\\testing-logs', files: ['report.txt', 'pkp.log'], bytes: 1_345_000 };
     case 'testing_logs_open_dir': console.info('[mock] open testing-logs'); return null;
-    case 'get_config': return { dump_dir: dumpDir, game_dir: '', minimize_on_play: false, discord_presence: false, gentle_build: false, loose_shaders: looseShaders, channel: mockChannel };
-    case 'save_config': looseShaders = !!args.config.loose_shaders; mockChannel = args.config.channel || 'stable'; return null;
+    case 'get_config': return { dump_dir: dumpDir, game_dir: '', minimize_on_play: false, discord_presence: false, gentle_build: false, loose_shaders: looseShaders, channel: mockChannel, ...mockOnline };
+    case 'save_config':
+      looseShaders = !!args.config.loose_shaders; mockChannel = args.config.channel || 'stable';
+      mockOnline = { online_asked: !!args.config.online_asked, online_name: args.config.online_name ?? '', online_salt: args.config.online_salt ?? '' };
+      return null;
     case 'get_overview': return { game_dir: GAME_DIR, default_game_dir: GAME_DIR, exe_exists: sc.exe_exists, builds_exe: true };
     case 'pick_folder': return 'D:/Dumps/Pokopia';
     case 'pick_nup': return 'D:/Downloads/pokopia-2.0.1a.nup';

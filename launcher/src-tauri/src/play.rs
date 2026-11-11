@@ -118,7 +118,9 @@ pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config) -> Result<(), Strin
         // the player's save backups: a timer while the game runs (when switched on), one more copy once it has ended
         let backups = crate::savebackup::Watch::start(&dir);
         let presence = crate::presence::Watch::start(discord);
+        let online = crate::online::Watch::start(&app2, &dir);
         let result = child.wait();
+        online.finish();
         presence.finish();
         backups.finish();
         let (code, wait_err) = match result {

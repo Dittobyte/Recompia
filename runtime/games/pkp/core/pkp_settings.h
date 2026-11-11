@@ -63,6 +63,7 @@ enum class Key : uint8_t {
     TitleQuit,
     OptionsMenu,
     EventsFile,
+    OnlinePresence,
     Count
 };
 

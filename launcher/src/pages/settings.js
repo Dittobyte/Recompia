@@ -15,6 +15,7 @@ import { createWriter } from './settings/writer.js';
 import { createControls } from './settings/controls.js';
 import { createDlss } from './settings/dlss.js';
 import { createFramegen } from './settings/framegen.js';
+import { createOnlineActions } from './settings/online.js';
 import { createProfileActions } from './settings/profiles.js';
 import { createSaveActions } from './settings/saves.js';
 import { createSteamActions } from './settings/steam.js';
@@ -62,7 +63,7 @@ export async function render(el, ctx) {
   const dlssModule = createDlss(h);
   const controls = createControls(h, dlssModule, createFramegen(h));
   const modules = [controls, dlssModule, createProfileActions(h), createSaveActions(h), createSteamActions(h),
-    createRepairActions(h), createUpdateActions(h), createGameActions(h), createTestingActions()];
+    createRepairActions(h), createUpdateActions(h), createGameActions(h), createTestingActions(), createOnlineActions(h)];
   const ACTIONS = Object.assign({}, ...modules.map((m) => m.actions));
 
   el.addEventListener('change', (e) => {

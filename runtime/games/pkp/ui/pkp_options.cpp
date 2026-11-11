@@ -130,6 +130,7 @@ Tab kTabs[] = {
     {nullptr, 1, nullptr, 0},   // Game
     {nullptr, 2, nullptr, 0},   // Camera
     tab(nullptr, 3, kSoundRows),
+    tab("Online", 13, kOnlineRows),   // first of ours: the launcher's online presence, easy to find (group 13: the next free one)
     tab("Display", 4, kDisplayRows),
     tab("Performance", 5, kPerformanceRows),
     tab("Graphics", 6, kGraphicsRows),

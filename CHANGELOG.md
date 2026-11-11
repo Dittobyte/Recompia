@@ -99,6 +99,12 @@ This Testing build adds logging and a few device checks, and changes no frame-ra
 - Settings > Gameplay and `pkp.log` now show which gameplay mods and experimental features are on, so you can see at a glance what a start will use
 - Fixed the Pokédex tabs showing "Time" as their title after the Settings screen had been opened (#494)
 
+### Online presence (opt-in)
+- New **Share that I am online** switch, off by default, easy to find in three places: the **Online** chip on Home, the **Online** group at the top of Settings > Game, and a new **Online** tab in the game's own Settings screen (all three are the same switch, `[pkp] online_presence` in `pkp.ini`)
+  - Before: the launcher sent nothing about you to any Recompia server
+  - Now: while it is on and the game runs, the launcher tells the Recompia online server you are playing: an optional online name (empty: anonymous), your version, Windows or Linux, and how many Pokémon have a home in your save. Your save, profile nickname and user ID are never sent. Switching it off in the game takes you off the list within a few seconds. The first time you press Play, the launcher asks once whether to switch it on; the answer is no unless you pick yes. **Reset my online ID** (Settings > Game) starts a new ID. No shader rebuild; the game's Online tab comes with this build's **Set up again**
+  - Still not: recompia.com has no page that shows who is online yet, and the online name can only be typed in the launcher
+
 ### The Testing tab
 - Added a **Testing** tab to Settings, shown only on the Testing channel: send logs, read them, and switch the features still being tried on or off
   - **Export and report** makes one zip of `pkp.log`, `pkp.log.prev`, the crash files, `setup.log` and `pkp.ini`, opens its folder (`testing-logs` next to `pkp.exe`) and the bug report form. Drag the zip into the form: the launcher has no GitHub login, so nothing is uploaded for you
