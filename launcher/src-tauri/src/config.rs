@@ -19,9 +19,9 @@ pub struct Config {
     pub minimize_on_play: bool,
     /// Show "Playing Recompia" on the player's Discord profile while the game runs (presence.rs). Off unless the player switches it on.
     pub discord_presence: bool,
-    /// Tell api.recompia.com that this player is online while the game runs (online.rs): online name, build, device and the
-    /// Pokemon-at-home count. Sends data off the PC, so it is off unless the player switches it on.
-    pub online_presence: bool,
+    /// The first Play after online presence came asked once whether to switch it on (home.js); never asked again. The switch itself is
+    /// pkp.ini [pkp] online_presence (online.rs), shared with the game's own Settings screen.
+    pub online_asked: bool,
     /// The name online.rs sends; empty (the default): anonymous. The profile's nickname is never sent.
     pub online_name: String,
     /// Random, made the first time online presence starts; with the profile uid it makes the online ID (online.rs token_of). Only
