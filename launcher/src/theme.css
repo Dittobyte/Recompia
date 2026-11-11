@@ -186,6 +186,9 @@
   --logo-url: url("./art/logo-koi.png");     /* the hand-drawn Recompia logo, on Home and in the sidebar */
   --mark-url: url("./art/mark-koi.png");     /* its "r" on its own, where the sidebar shows only the mark (icons, top or bottom) */
   --mark-shadow: none;                       /* the mark is a cut-out shape, not a square icon */
+  --brand-url: url("./art/mark-koi.png");    /* the sidebar's top-left corner shows the "r", the app icon (src-tauri/icons) */
+  --mark-testing-url: url("./art/mark-koi-testing.png");   /* on the Testing channel: the "r" with the Testing hammer, as the Testing app icon */
+  --brand-testing-logo: none;                /* ...which then stands alone in the corner */
   --art-position: 50% 56%;
   --color-bg: #08201f;
   --color-menu: #12332f;

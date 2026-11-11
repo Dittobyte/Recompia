@@ -104,6 +104,7 @@ This Testing build adds logging and a few device checks, and changes no frame-ra
   - Before: a new install started with Sunrise, and on Home the Koi's Camp picture was cropped to fill the window, so the sidebar, the logo and the release cards covered some of its characters
   - Now: on Home the Koi's Camp picture sits in the space beside the sidebar and above the release cards, its edges fading into a blurred copy, and the logo moves up into the sky so it no longer covers the characters; a colour theme you already picked is kept (the **Colours** button in the sidebar changes it)
   - Still not: your own background picture (Layout > Appearance) still fills the whole window
+- The launcher's app icon (Windows, the taskbar and the Steam shortcut icons) is now the leafy "r" of the new logo; Testing builds show it with the Testing hammer. With Koi's Camp, the same "r" sits in the sidebar's top-left corner
 
 ### Online presence (opt-in)
 - New **Share that I am online** switch, off by default, easy to find in three places: the **Online** chip on Home, the **Online** group at the top of Settings > Game, and a new **Online** tab in the game's own Settings screen (all three are the same switch, `[pkp] online_presence` in `pkp.ini`)
