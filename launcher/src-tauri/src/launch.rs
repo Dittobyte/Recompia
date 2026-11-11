@@ -15,11 +15,15 @@ pub fn play(app: AppHandle) -> Result<(), String> {
     ensure_idle(&app, &[Need::Update, Need::Storage])?;
     let cfg = load_config(&app);
     let probe = readiness(&cfg);
-    let (Some(paths), "ready") = (probe.paths, probe.readiness.kind) else {
+    if probe.readiness.kind != "ready" {
         return Err(probe.readiness.detail);
-    };
+    }
     let dir = game_dir_of(&cfg);
-    settings::ensure_play_paths(&dir, &paths.exefs, &paths.romfs, &paths.romfs_base, &paths.aoc_dir)?;
+    // macOS: Set up wrote pkp.ini from the player's dump and there is no dump choice to apply here, so readiness carries no
+    // paths. Everywhere else they name the exefs and romfs to write.
+    if let Some(paths) = probe.paths {
+        settings::ensure_play_paths(&dir, &paths.exefs, &paths.romfs, &paths.romfs_base, &paths.aoc_dir)?;
+    }
     profiles::apply_active(&dir)?;
     play::start(&app, &dir, &cfg)
 }
