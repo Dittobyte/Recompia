@@ -105,6 +105,15 @@ pub fn start_setup(app: AppHandle, state: SetupArg, gentle: Option<bool>) -> Res
             };
             let result = (|| -> Result<Option<usize>, String> {
                 // the package builds the game from the player's dump; a tree that carries no tools uses a CMake build
+                if package_b {
+                    // Linux and macOS fetch their native tools once (Python with lz4 and capstone; macOS compiles with Apple clang)
+                    let ready = host::prepare_tools(&tools_dir, &st.cancel, &mut |done, total, message| {
+                        emit(shaders::Progress { state: RunState::Running, phase: "tools".into(), done, total, message })
+                    })?;
+                    if !ready {
+                        return Ok(None);
+                    }
+                }
                 if package_b && !gamebuild::is_built(&dir, &tools_dir) {
                     let tools = gamebuild::find_tools(&tools_dir)?;
                     let job = gamebuild::Job { game_dir: dir.clone(), exefs, jobs: build_jobs, idle: gentle, log: Some(log.clone()) };

@@ -27,11 +27,8 @@ find "$res/tools/build/recomp" -name __pycache__ -type d -exec rm -rf {} + 2>/de
 cp "$repo/game-build/src/pkp_stub.cpp" "$repo/game-build/src/pkp_rt_api.h" "$res/tools/build/sdk/"
 cp "$repo/runtime/cmake/guest_segment.py" "$res/tools/build/sdk/"
 cp "$repo/work/build/rtb/libpkp_rt.dylib" "$res/tools/build/sdk/"
-# The lifter needs a Python with capstone, lz4 and pyelftools. PKP_PYTHON_BUNDLE names a standalone Python tree (bin/python3
-# plus its lib) to ship; without it the package uses the Mac's own python3 and Set up installs the wheels.
-if [ -n "${PKP_PYTHON_BUNDLE:-}" ]; then
-    cp -R "$PKP_PYTHON_BUNDLE" "$res/tools/python"
-fi
+# No Python in the bundle: Set up fetches python-build-standalone and the lz4 and capstone wheels into tools/macos, as the
+# Linux package does (host.rs prepare_tools). macOS compiles with the Apple clang of the Command Line Tools.
 
 # The dylib is loaded from Contents/Frameworks, so the executable looks there first.
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$app/Contents/MacOS/PokopiaLauncher" 2>/dev/null || true

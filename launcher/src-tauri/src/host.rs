@@ -370,8 +370,8 @@ pub fn python(tools_dir: &Path) -> PathBuf {
     if cfg!(windows) {
         tools_dir.join("python").join("python.exe")
     } else if cfg!(target_os = "macos") {
-        // The macOS package carries its own Python and the lifter's wheels next to the launcher, as the Windows one does.
-        tools_dir.join("python").join("bin").join("python3")
+        // Fetched by prepare_tools at first Set up, as on Linux (there is no bundled Python in the macOS package).
+        tools_dir.join("macos").join("python").join("bin").join("python3")
     } else {
         tools_dir.join("linux").join("python").join("bin").join("python3")
     }
@@ -691,6 +691,28 @@ const WHEELS: [Pinned; 2] = [
         sha256: "273fd8d747d2e35c88f91450be51a603ecfaafb00d96d9f315dcb8689c86193e",
     },
 ];
+// The macOS tools: python-build-standalone 20261013 (its SHA256SUMS) and the two wheels from PyPI. No Zig: the build uses the
+// Apple clang of the Command Line Tools.
+const PYTHON_MACOS: Pinned = Pinned {
+    file: "cpython-3.13.16+20261013-aarch64-apple-darwin-install_only_stripped.tar.gz",
+    url: "https://github.com/astral-sh/python-build-standalone/releases/download/20261013/cpython-3.13.16%2B20261013-aarch64-apple-darwin-install_only_stripped.tar.gz",
+    size: 25_268_458,
+    sha256: "16a5332fb0dcb77f163fc8f8cbccd95be1644cc53e68e5d2a79f50afd6680a0e",
+};
+const WHEELS_MACOS: [Pinned; 2] = [
+    Pinned {
+        file: "lz4-4.4.5-cp313-cp313-macosx_11_0_arm64.whl",
+        url: "https://files.pythonhosted.org/packages/8f/3f/ea3334e59de30871d773963997ecdba96c4584c5f8007fd83cfc8f1ee935/lz4-4.4.5-cp313-cp313-macosx_11_0_arm64.whl",
+        size: 207_163,
+        sha256: "b424df1076e40d4e884cfcc4c77d815368b7fb9ebcd7e634f937725cd9a8a72a",
+    },
+    Pinned {
+        file: "capstone-5.0.9-py3-none-macosx_11_0_arm64.whl",
+        url: "https://files.pythonhosted.org/packages/42/9a/4eecfbc94961cda70301fd13de69042be1943bee456e37bc1369840601b1/capstone-5.0.9-py3-none-macosx_11_0_arm64.whl",
+        size: 1_202_361,
+        sha256: "fc269c5082e17d7f9f265cd6980e2fdc6ab572df913951d76db0357e06b8001d",
+    },
+];
 const ZIG: Pinned = Pinned {
     file: "zig-x86_64-linux-0.17.0.tar.xz",
     url: "https://ziglang.org/download/0.17.0/zig-x86_64-linux-0.17.0.tar.xz",
@@ -705,26 +727,31 @@ fn python_ready(py: &Path) -> bool {
     c.status().map(|s| s.success()).unwrap_or(false)
 }
 
-/// Linux: fetches the native build tools into `tools/linux` (python/ with lz4 and capstone, zig/) unless they are there.
-/// `report(done, total, text)` gets the download progress. Ok(false) = cancelled. Windows: nothing to do.
+/// Linux and macOS: fetches the native build tools into `tools/linux` or `tools/macos` (python/ with lz4 and capstone, and
+/// zig/ on Linux) unless they are there. `report(done, total, text)` gets the download progress. Ok(false) = cancelled.
+/// Windows: nothing to do, the package bundles them.
 pub fn prepare_tools(tools_dir: &Path, cancel: &AtomicBool, report: &mut dyn FnMut(u64, u64, String)) -> Result<bool, String> {
     if cfg!(windows) {
         return Ok(true);
     }
-    let linux = tools_dir.join("linux");
+    let macos = cfg!(target_os = "macos");
+    let what = if macos { "macOS" } else { "Linux" };
+    let (python_pin, wheels): (&Pinned, &[Pinned]) = if macos { (&PYTHON_MACOS, &WHEELS_MACOS) } else { (&PYTHON, &WHEELS) };
+    let platform = tools_dir.join(if macos { "macos" } else { "linux" });
     let (py, zig) = (python(tools_dir), zig(tools_dir));
     let py_ok = python_ready(&py);
-    if py_ok && zig.is_file() {
+    let zig_ok = macos || zig.is_file();   // macOS compiles with Apple clang
+    if py_ok && zig_ok {
         return Ok(true);
     }
-    let dl = linux.join("downloads");
+    let dl = platform.join("downloads");
     std::fs::create_dir_all(&dl).map_err(|e| format!("cannot create {}: {}", dl.display(), e))?;
     let mut need: Vec<&Pinned> = Vec::new();
     if !py_ok {
-        need.push(&PYTHON);
-        need.extend(WHEELS.iter());
+        need.push(python_pin);
+        need.extend(wheels.iter());
     }
-    if !zig.is_file() {
+    if !zig_ok {
         need.push(&ZIG);
     }
     let total: u64 = need.iter().map(|p| p.size).sum();
@@ -732,7 +759,7 @@ pub fn prepare_tools(tools_dir: &Path, cancel: &AtomicBool, report: &mut dyn FnM
     for p in &need {
         let mb = |b: u64| b as f64 / (1u64 << 20) as f64;
         let ok = fetch(p, &dl, cancel, &mut |n| {
-            report(done + n, total, format!("Downloading the Linux build tools: {:.0} of {:.0} MB", mb(done + n), mb(total)))
+            report(done + n, total, format!("Downloading the {} build tools: {:.0} of {:.0} MB", what, mb(done + n), mb(total)))
         })?;
         if !ok {
             return Ok(false);
@@ -740,19 +767,19 @@ pub fn prepare_tools(tools_dir: &Path, cancel: &AtomicBool, report: &mut dyn FnM
         done += p.size;
     }
     if !py_ok {
-        report(total, total, "Installing the Linux build tools: Python...".into());
-        unpack(&dl.join(PYTHON.file), &linux, "python")?;
+        report(total, total, format!("Installing the {} build tools: Python...", what));
+        unpack(&dl.join(python_pin.file), &platform, "python")?;
         let mut cmd = command(&py);
         cmd.args(["-I", "-m", "pip", "install", "-q", "--no-index", "--no-deps", "--no-compile", "--disable-pip-version-check", "--no-warn-script-location"]);
-        cmd.args(WHEELS.iter().map(|w| dl.join(w.file)));
+        cmd.args(wheels.iter().map(|w| dl.join(w.file)));
         let out = cmd.output().map_err(|e| format!("could not start {}: {}", py.display(), e))?;
         if !out.status.success() || !python_ready(&py) {
             return Err(format!("Installing lz4 and capstone into {} failed: {}", py.display(), String::from_utf8_lossy(&out.stderr).trim()));
         }
     }
-    if !zig.is_file() {
-        report(total, total, "Installing the Linux build tools: Zig...".into());
-        unpack(&dl.join(ZIG.file), &linux, "zig")?;
+    if !zig_ok {
+        report(total, total, format!("Installing the {} build tools: Zig...", what));
+        unpack(&dl.join(ZIG.file), &platform, "zig")?;
     }
     let _ = std::fs::remove_dir_all(&dl);
     Ok(true)
@@ -853,6 +880,19 @@ pub fn sync_runtime_files(src: &Path, game_dir: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "downloads about 27 MB from python-build-standalone and PyPI"]
+    fn prepare_tools_fetches_a_working_python() {
+        let dir = std::env::temp_dir().join(format!("pkp_tools_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let mut last = String::new();
+        let ok = prepare_tools(&dir, &cancel, &mut |_, _, m| last = m).unwrap();
+        assert!(ok);
+        assert!(python_ready(&python(&dir)), "the fetched Python cannot import lz4 and capstone: {last}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
     use std::fs;
 
     #[test]

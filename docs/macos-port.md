@@ -628,6 +628,13 @@ cmake -S game-build -B build/rtb -G Ninja -DCMAKE_BUILD_TYPE=Release -DPKP_RT_DL
 cmake --build build/rtb -j 6
 ```
 
+The release is a DMG (`launcher/scripts/make-dmg.sh`): `PokopiaLauncher.app` with the runtime dylib, the lifter and the SDK
+sources inside it, and an Applications shortcut, so it installs the way a Mac app does. The package carries no game code and
+no Python: Set up fetches python-build-standalone and the lz4 and capstone wheels into `tools/macos` at the first run, the
+way the Linux package does, and compiles with the Apple clang of the Command Line Tools. The game folder (`pkp`, `pkp.ini`,
+`shader_cache`, saves) is created in `~/Library/Application Support/Recompia/game`, because the bundle may sit in
+`/Applications`.
+
 That writes `libpkp_rt.dylib` (the runtime and the game module) and `pkp` (`src/pkp_stub.cpp` plus the lifted modules,
 linking `@rpath/libpkp_rt.dylib`). The executable carries the `__GUEST` segment, because the main executable's Mach-O
 header is what reserves the range before libmalloc runs. `src/pkp_rt.exports` is the counterpart of `pkp_rt.def`: the
