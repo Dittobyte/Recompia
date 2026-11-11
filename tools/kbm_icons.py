@@ -19,7 +19,26 @@ except ImportError:
     sys.exit("Pillow is needed: python3 -m pip install pillow")
 
 FONT = "/System/Library/Fonts/Helvetica.ttc"
+# The letter cut-outs need a bold sans face; the first one that exists wins, so the tool runs on the platform that builds
+# the release (macOS ships Helvetica, the Linux runners install fonts-dejavu-core, Windows has Arial).
+FONT_CANDIDATES = [
+    FONT,
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "C:/Windows/Fonts/arialbd.ttf",
+    "C:/Windows/Fonts/arial.ttf",
+]
 WHITE = (255, 255, 255, 255)
+
+
+def face(px: int):
+    for path in FONT_CANDIDATES:
+        if os.path.exists(path):
+            return ImageFont.truetype(path, px)
+    try:
+        return ImageFont.load_default(size=px)   # Pillow >= 10.1
+    except TypeError:
+        return ImageFont.load_default()
 
 
 def cap(w: int, h: int, label: str, out_dir: str, name: str, font_px: int = 34) -> None:
@@ -27,7 +46,7 @@ def cap(w: int, h: int, label: str, out_dir: str, name: str, font_px: int = 34) 
     d = ImageDraw.Draw(mask)
     d.rounded_rectangle([1, 1, w - 2, h - 2], radius=max(6, min(w, h) // 7), fill=255)
     if label:
-        font = ImageFont.truetype(FONT, font_px)
+        font = face(font_px)
         x0, y0, x1, y1 = d.textbbox((0, 0), label, font=font)
         tw, th = x1 - x0, y1 - y0
         # cut the label out of the cap (alpha 0), centred, a hair high so it sits optically centred

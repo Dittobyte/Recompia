@@ -241,13 +241,11 @@ jobs:
             gh release create $env:REL_TAG --target $env:GITHUB_SHA (Get-Item build/rel/*.zip).FullName build/rel/SHA256SUMS.txt --title $title --notes-file build/notes.md
           }
 
-  # The Linux package: built on Linux, no Proton and no Wine. The launcher is the AppImage, the runtime is libpkp_rt.so (the
-  # Linux build of the same sources), the shader translator is the linux-x64 publish, and a player's Set up compiles pkp for
-  # x86_64-linux-gnu with the Zig the launcher fetches. The Windows zip is only the payload donor (assets, fonts, icons,
-  # licences, the recompiler and pkp_build.py: all platform-neutral). A tag adds it to the release; manual runs without
-  # release_tag only build it (artifact).
+  # The Linux package: built on Linux from this checkout, no Proton, no Wine and nothing taken from the Windows build. The
+  # launcher is the AppImage, the runtime is libpkp_rt.so (the Linux build of the same sources), the shader translator is the
+  # linux-x64 publish, and a player's Set up compiles pkp for x86_64-linux-gnu with the Zig the launcher fetches. A tag adds it
+  # to the release; manual runs without release_tag only build it (artifact). No `needs`: it runs beside the Windows job.
   linux:
-    needs: release
     # Ubuntu 22.04: the AppImage then needs glibc 2.35 (Ubuntu 22.04, Debian 12, Mint 21, SteamOS), not 24.04's 2.39
     runs-on: ubuntu-22.04
     timeout-minutes: 60
@@ -259,23 +257,30 @@ jobs:
           if [ -n "$REL_TAG" ]; then v=${REL_TAG#v}; else v=0.0.0; fi
           echo "VERSION=$v" >> "$GITHUB_ENV"
 
+      # 22.04 ships Python 3.10 and CMake 3.22; nxrecomp needs 3.11+ (find_package(Python3 3.11) in recomp/cmake/NxRecomp.cmake)
+      # and the runtime needs CMake 3.25 (docs/linux-port.md §4).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Packages
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libsoup-3.0-dev file \
             g++ ninja-build pkg-config libvulkan-dev libx11-dev libxext-dev libxrandr-dev libxi-dev libxcursor-dev \
             libxfixes-dev libxss-dev libxtst-dev libwayland-dev libxkbcommon-dev libdrm-dev libudev-dev libasound2-dev \
-            libpulse-dev libgbm-dev
+            libpulse-dev libgbm-dev fonts-dejavu-core
 
       - name: CMake
-        # 22.04 ships 3.22 and the runtime needs 3.25 (docs/linux-port.md §4)
         run: |
-          python3 -m pip install --user "cmake>=3.28"
+          python3 -m pip install --upgrade "cmake>=3.28" pillow
           cmake --version
+          python3 --version
 
       - name: Runtime (libpkp_rt.so)
         run: |
           cmake -S game-build -B build/rtdll -G Ninja -DCMAKE_BUILD_TYPE=Release \
+                -DPython3_EXECUTABLE="$(command -v python3)" \
                 -DPKP_RT_DLL=ON -DPKP_RELEASE=ON "-DPKP_VERSION=$VERSION"
           cmake --build build/rtdll --target pkp_rt
           file build/rtdll/libpkp_rt.so
@@ -344,41 +349,25 @@ jobs:
           dotnet publish -c Release -r linux-x64 --self-contained true tools/shaders/harness/SpirvHarness.csproj -o build/harness
           build/harness/spirv_harness --help > /dev/null
 
-      - uses: actions/download-artifact@v4
-        with:
-          name: PokopiaRecomp-${{ env.VERSION }}-win64
-          path: build/win
-
       - name: Package
         run: |
-          mkdir -p build/stage build/rel
-          unzip -q build/win/PokopiaRecomp-$VERSION-win64.zip -d build/stage
-          pkg=build/stage/PokopiaRecomp-$VERSION
-          test -d "$pkg/tools/build" || { echo "unexpected zip layout"; ls build/stage; exit 1; }
-          # The Windows zip is the payload donor: the recompiler, pkp_build.py, the assets, the fonts, the input icons, the
-          # licences (all platform-neutral). Everything only Windows can run or load goes; the Linux build of each binary comes in.
-          rm -rf "$pkg/PokopiaLauncher.exe" "$pkg/Play.bat" "$pkg/tools/python" "$pkg/tools/build/zig" \
-                 "$pkg/pkp_rt.dll" "$pkg"/astcdec-*-shared.dll "$pkg/upscalers" "$pkg/tools/spirv_harness" \
-                 "$pkg/tools/build/sdk/pkp_rt.lib" "$pkg/tools/build/sdk/pkp.rc" "$pkg/tools/build/sdk/pkp.manifest"
-          install -m 755 build/rtdll/libpkp_rt.so "$pkg/libpkp_rt.so"
-          install -m 755 build/rtdll/libpkp_rt.so "$pkg/tools/build/sdk/libpkp_rt.so"
-          cp -a build/harness "$pkg/tools/harness"
-          sed "s/@VERSION@/$VERSION/g" game-build/release_b/README.linux.txt > "$pkg/README.txt"
-          # machine translations of that README (README.<lang>.txt), when the repository has them
-          for t in game-build/release_b/README.linux.*.txt; do
-            [ -f "$t" ] || continue
-            lang="${t#game-build/release_b/README.linux.}"; lang="${lang%.txt}"
-            sed "s/@VERSION@/$VERSION/g" "$t" > "$pkg/README.$lang.txt"
+          mkdir -p build/rel
+          sh launcher/scripts/make-linux.sh build/rel "$VERSION"
+          # what the launcher and Set up look for: a missing one is a broken package, not a slow one
+          pkg="build/rel/PokopiaRecomp-$VERSION"
+          for f in PokopiaLauncher.AppImage libpkp_rt.so README.txt tools/build/pkp_build.py tools/build/dump_hashes.json \
+                   tools/build/sdk/libpkp_rt.so tools/build/sdk/pkp_stub.cpp tools/build/sdk/pkp_rt_api.h \
+                   tools/build/sdk/fonts/DejaVuSans.ttf tools/build/sdk/kbm_icons tools/build/recomp/nxrecomp/__main__.py \
+                   tools/harness/spirv_harness tools/shaders/extract_corpus.py assets/prompts/prompt_icons.pak; do
+            test -e "$pkg/$f" || { echo "::error::missing $f in the package"; find "$pkg" -maxdepth 3 | head -40; exit 1; }
           done
-          install -m 755 launcher/src-tauri/target/release/bundle/appimage/*.AppImage "$pkg/PokopiaLauncher.AppImage"
-          tar -C build/stage -czf build/rel/PokopiaRecomp-$VERSION-linux-x64.tar.gz PokopiaRecomp-$VERSION
-          (cd build/rel && sha256sum -b PokopiaRecomp-$VERSION-linux-x64.tar.gz | tee linux.sha256)
+          test -x "$pkg/tools/harness/spirv_harness"
           ls -la build/rel
 
       - name: Smoke test (the AppImage starts and finds tools/)
         run: |
           sudo apt-get install -y -q --no-install-recommends xvfb
-          cd build/stage/PokopiaRecomp-$VERSION
+          cd "build/rel/PokopiaRecomp-$VERSION"
           (APPIMAGE_EXTRACT_AND_RUN=1 timeout 20 xvfb-run -a ./PokopiaLauncher.AppImage > ../launch.log 2>&1; echo "exit $?" >> ../launch.log) || true
           cat ../launch.log
           grep -q "exit 124" ../launch.log || { echo "the launcher did not keep running"; exit 1; }
@@ -509,7 +498,7 @@ jobs:
   # One checksum file for the whole release: the per-platform jobs upload their archives, and this reads them back once all
   # three are done, so no two jobs append to SHA256SUMS.txt at the same time.
   publish:
-    needs: [linux, macos]
+    needs: [release, linux, macos]
     if: always() && (github.ref_type == 'tag' || inputs.release_tag != '')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
