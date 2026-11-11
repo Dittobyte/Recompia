@@ -584,7 +584,9 @@ def link(runner, lib, game, env):
     if DARWIN:
         # Apple clang, the runtime dylib next to the exe (@rpath), and the guest segment in the Mach-O header afterwards.
         cmd = list(CLANGXX) + CXXFLAGS + ['-I', SDK, '-I', os.path.join(lib, 'gen'), os.path.join(SDK, 'pkp_stub.cpp')] + libs + [
-            os.path.join(SDK, RUNTIME_LIB), '-o', tmp, '-Wl,-stack_size,0x8000000', '-Wl,-rpath,@executable_path']
+            os.path.join(SDK, RUNTIME_LIB), '-o', tmp, '-Wl,-stack_size,0x8000000', '-Wl,-rpath,@executable_path',
+            # guest_segment.py adds a load command for __GUEST after the link, which needs room in the header.
+            '-Wl,-headerpad,0x4000']
         rc, tail = runner.run(cmd, env=env, cwd=SDK)
         if rc != 0:
             raise Fail('Linking %s failed (exit %d):\n%s' % (exe, rc, tail))
@@ -601,6 +603,13 @@ def link(runner, lib, game, env):
         clear_high_entropy_va(tmp)
     dst = os.path.join(game, exe)
     os.replace(tmp, dst)
+    if DARWIN:
+        # The exe loads the runtime from its own folder (-rpath @executable_path), as pkp.exe finds pkp_rt.dll beside it, and
+        # volk dlopen()s libvulkan.1.dylib from the same place: the package ships MoltenVK under that name.
+        shutil.copy2(os.path.join(SDK, RUNTIME_LIB), os.path.join(game, RUNTIME_LIB))
+        vulkan = os.path.join(SDK, 'libvulkan.1.dylib')
+        if os.path.isfile(vulkan):
+            shutil.copy2(vulkan, os.path.join(game, 'libvulkan.1.dylib'))
     progress('link', 1, 1, '%s built' % exe)
     return dst
 
