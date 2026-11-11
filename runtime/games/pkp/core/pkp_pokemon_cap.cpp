@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Pokopia v2.0.1a resident limit and active-appearance budget.
 // Ported from the Eglantine cap's default (non-staged) behavior. The game
-// still has 64 actor slots; a 100-resident setting cannot create 100 actors.
+// still has 64 actor slots, which is also the configured resident maximum.
 #include "core/pkp_pokemon_cap.h"
 #include "core/pkp_resident_census.h"
 
@@ -24,7 +24,7 @@ constexpr std::uint64_t kActiveBudget = 0xc; // u32, original 30
 constexpr std::uint32_t kOriginalLiving = 25;
 constexpr std::uint32_t kOriginalObjects = 30;
 constexpr std::uint32_t kPoolSize = 64;
-constexpr std::uint32_t kMaximumLiving = 100;
+constexpr std::uint32_t kMaximumLiving = 64;
 constexpr std::uint32_t kVisitorHeadroom = 14; // the remaining slots with 50 residents
 
 struct State {
@@ -72,7 +72,7 @@ void game_frame(::Ctx*) {
         return;
     }
 
-    // Eglantine's parameter forcing, with its unsigned 64-100 underflow fixed:
+    // Eglantine's parameter forcing with object headroom bounded by the pool:
     // never lower a previously admitted population during the same session.
     const auto target_living = std::max(g.requested, living);
     const auto desired_objects = std::max(objects, target_living + kVisitorHeadroom);
@@ -123,9 +123,6 @@ void install(const FeatureInstall& in) {
     g.requested = static_cast<std::uint32_t>(settings::get_int(settings::Key::PokemonCapLimit));
     NXLOG_I("pkp", "pokemon cap: %s, requested %u living (physical actor pool: 64)",
             g.enabled ? "enabled" : "disabled", g.requested);
-    if (g.enabled && g.requested > kPoolSize)
-        NXLOG_W("pkp", "pokemon cap: requested %u exceeds the 64-slot actor pool; only the living parameter reaches that value",
-                g.requested);
 }
 
 void remove() {

@@ -37,7 +37,7 @@
         {"key": "title_quit", "type": "bool", "default": "1", "env": "NXRT_PKP_TITLE_QUIT", "group": "gameplay", "doc": "A Quit Game key guide on the title screen. Next start."},
         {"key": "options_menu", "type": "bool", "default": "1", "env": "NXRT_PKP_OPTIONS_MENU", "doc": "The PC settings as tabs and rows of the game's own Settings screen. Next start."},
         {"key": "pokemon_cap_50", "type": "bool", "default": "1", "env": "NXRT_PKP_POKEMON_CAP_50", "group": "gameplay", "doc": "Enable the experimental resident Pokemon limit (default 31). Next start."},
-        {"key": "pokemon_cap_limit", "type": "int", "default": "31", "min": 25, "max": 100, "clamped": true, "env": "NXRT_PKP_POKEMON_CAP_LIMIT", "doc": "Requested living Pokemon limit; object and active-actor budgets are bounded by the game's 64-slot pool. Next start."}
+        {"key": "pokemon_cap_limit", "type": "int", "default": "31", "min": 25, "max": 64, "clamped": true, "env": "NXRT_PKP_POKEMON_CAP_LIMIT", "doc": "Requested living Pokemon limit; object and active-actor budgets are bounded by the game's 64-slot pool. Next start."}
     ]}
   ],
   "retired": []
