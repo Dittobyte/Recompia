@@ -617,6 +617,24 @@ the game folder either way.
 it), `--preflight` prints the checks and `--readiness` prints what Play would see. The window's Play starts `pkp` in that
 folder with `--log pkp.log`; the shader steps of the Windows release are skipped (the game is native, the tools are not).
 
+### Release model
+
+A macOS release follows the Windows one (`PKP_RT_DLL`, release model b): the runtime is a shared library and the game is an
+executable that links it, so a release can replace the runtime without rebuilding the game.
+
+```sh
+cmake -S game-build -B build/rtb -G Ninja -DCMAKE_BUILD_TYPE=Release -DPKP_RT_DLL=ON \
+      -DPKP_LIB_DIR="$PWD/work/build/pkp"
+cmake --build build/rtb -j 6
+```
+
+That writes `libpkp_rt.dylib` (the runtime and the game module) and `pkp` (`src/pkp_stub.cpp` plus the lifted modules,
+linking `@rpath/libpkp_rt.dylib`). The executable carries the `__GUEST` segment, because the main executable's Mach-O
+header is what reserves the range before libmalloc runs. `src/pkp_rt.exports` is the counterpart of `pkp_rt.def`: the
+same symbols, and an export list is also what makes the linker include the static objects that define them.
+
+Without `PKP_RT_DLL` the build is unchanged: one static `pkp`, which is what development uses.
+
 ### The shader cache
 
 The game renders only with a translated shader cache; without one every program stays unlinked and the window is black.
