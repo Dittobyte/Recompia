@@ -5,7 +5,8 @@
 # for the game in the folder the .app sits in.
 set -eu
 here=$(cd "${1:?usage: make-app.sh <play folder with PokopiaLauncher, pkp and pkp.ini> [version]}" && pwd)
-version=${2:-0.1.1}
+# the release version: the launcher's manifest, unless make-dmg.sh names one
+version=${2:-$(sed -nE 's/^[[:space:]]*"version": "([^"]+)".*/\1/p' "$(dirname "$0")/../src-tauri/tauri.conf.json" | head -1)}
 app="$here/PokopiaLauncher.app"
 bin="$here/PokopiaLauncher"
 

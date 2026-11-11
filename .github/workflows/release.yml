@@ -413,6 +413,10 @@ jobs:
       - name: Launcher
         working-directory: launcher
         run: |
+          if [ -n "$REL_TAG" ]; then   # the launcher window and the bundle show the release's version
+            sed -i '' -E "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+            sed -i '' -E "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+          fi
           npm ci --no-audit --no-fund
           npm run tauri build
           mkdir -p ../work/play
