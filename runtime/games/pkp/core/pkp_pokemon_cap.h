@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Pokémon Pokopia: resident cap 50 feature (game parameter limits only).
+// Pokémon Pokopia: configurable resident cap and active-appearance budget.
 #pragma once
 #include "core/pkp_feature.h"
 
