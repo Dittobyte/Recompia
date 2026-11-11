@@ -89,6 +89,7 @@ else:
     CXXFLAGS = compile_flags.ZIG_MINGW
     COMPILER = [ZIG, 'c++']             # the compile command before the flags (tests put a fake one here)
 CACHE_MB = 3072                         # default size cap of <game>/build/objcache
+EXE = 'pkp' if DARWIN else 'pkp.exe'    # the game executable the build links and --check looks for
 CREATE_NO_WINDOW = 0x08000000
 BELOW_NORMAL = 0x00004000
 
@@ -187,18 +188,18 @@ def libs_current(lib, stamp):
 
 def check(game):
     """Whether pkp.exe and <game>/build/done.json were built with this package's tools: (current, reason)."""
-    if not os.path.isfile(os.path.join(game, 'pkp.exe')):
-        return False, 'pkp.exe is not built yet'
+    if not os.path.isfile(os.path.join(game, EXE)):
+        return False, '%s is not built yet' % EXE
     done = read_json(os.path.join(game, 'build', 'done.json'))
     if not isinstance(done, dict):
-        return False, 'pkp.exe has no finished build record'
+        return False, '%s has no finished build record' % EXE
     if done.get('format') != FORMAT or not isinstance(done.get('tools'), dict):
-        return False, 'pkp.exe was built by an older release'
+        return False, '%s was built by an older release' % EXE
     want = tool_stamp()
     changed = [k for k in want if done['tools'].get(k) != want[k]]
     if changed:
         return False, 'this release changes ' + ', '.join(changed)
-    return True, 'pkp.exe matches this release'
+    return True, '%s matches this release' % EXE
 
 
 def read_json(path):

@@ -88,12 +88,16 @@ static CHECKED: std::sync::Mutex<Option<(CheckKey, Built)>> = std::sync::Mutex::
 
 /// Whether pkp.exe was built by this release's tools (`pkp_build.py --check`, the stamp's only implementation).
 pub fn built_state(game_dir: &Path, tools_dir: &Path) -> Built {
-    // before the stamp: a dll from another release than the tools makes every build useless, whatever pkp.exe is
+    // before the stamp: a dll from another release than the tools makes every build useless, whatever pkp.exe is.
+    // macOS links the runtime into pkp (libpkp_rt.dylib) and has no pkp_rt.dll to compare, so the check does not apply.
+    #[cfg(target_os = "macos")]
+    let api = crate::runtime_api::Agreement::Agree;
+    #[cfg(not(target_os = "macos"))]
     let api = crate::runtime_api::check(game_dir, tools_dir);
     if let crate::runtime_api::Agreement::Mixed { dll, sdk } = api {
         return Built::Mixed { dll, sdk };
     }
-    let exe = game_dir.join("pkp.exe");
+    let exe = crate::host::game_exe(game_dir);   // pkp on macOS, pkp.exe elsewhere
     let done = game_dir.join("build").join("done.json");
     let (Ok(em), Ok(dm)) = (fs::metadata(&exe), fs::metadata(&done)) else {
         return Built::No;
