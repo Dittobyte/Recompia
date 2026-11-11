@@ -51,11 +51,17 @@ pub const CANCELLED: &str = "Update cancelled.";
 
 #[cfg(windows)]
 const ASSET_SUFFIX: &str = "-win64.zip";
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+// No macOS artifact is published yet, so nothing matches and the page offers no update. The name is the one a macOS
+// release will use.
+const ASSET_SUFFIX: &str = "-macos-arm64.zip";
+#[cfg(not(any(windows, target_os = "macos")))]
 const ASSET_SUFFIX: &str = "-linux-x64.tar.gz";
 #[cfg(windows)]
 const PACKAGE_LAUNCHER: &str = "PokopiaLauncher.exe";
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+const PACKAGE_LAUNCHER: &str = "PokopiaLauncher.app";
+#[cfg(not(any(windows, target_os = "macos")))]
 const PACKAGE_LAUNCHER: &str = "PokopiaLauncher.AppImage";
 
 /// Top-level names that belong to the player. make-release.ps1 refuses to ship most of them; `apply` skips them all the same.

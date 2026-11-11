@@ -35,9 +35,17 @@ fn tools(tools_dir: &Path) -> (PathBuf, PathBuf) {
 }
 
 pub fn status(game_dir: &Path, tools_dir: &Path) -> Status {
-    let (py, script) = tools(tools_dir);
     let dir = target_dir(game_dir);
-    Status { available: py.is_file() && script.is_file(), present: dir.join("nvngx_dlss.dll").is_file(), dir: crate::dump::fwd(&dir) }
+    // macOS: the DLSS upscaler is off in this build (its SDK is Windows only), so there is nothing to download.
+    #[cfg(target_os = "macos")]
+    {
+        return Status { available: false, present: dir.join("nvngx_dlss.dll").is_file(), dir: crate::dump::fwd(&dir) };
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let (py, script) = tools(tools_dir);
+        Status { available: py.is_file() && script.is_file(), present: dir.join("nvngx_dlss.dll").is_file(), dir: crate::dump::fwd(&dir) }
+    }
 }
 
 /// Runs the download. Progress lines are `@progress download <done> <total> <text>`, a failure is `@error <text>`.
@@ -47,6 +55,10 @@ pub fn fetch(game_dir: &Path, tools_dir: &Path, report: impl FnMut(Progress)) ->
 
 /// Runs the script for `file` ("dlss", or "framegen": AMD's frame generation DLL, framegen.rs) into `dir`.
 pub fn fetch_file(file: &str, dir: &Path, tools_dir: &Path, mut report: impl FnMut(Progress)) -> Result<(), String> {
+    // macOS: neither upscaler exists there, both SDKs are Windows only.
+    if cfg!(target_os = "macos") {
+        return Err("DLSS and frame generation are not available on macOS: their SDKs are Windows only.".into());
+    }
     let (py, script) = tools(tools_dir);
     if !script.is_file() {
         return Err("This package has no download tool. Extract the release zip again so tools/ is complete.".into());

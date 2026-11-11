@@ -1,7 +1,7 @@
 # macOS support: port plan
 
 Status: **the game runs on Apple Silicon** — M0–M3 done, M4 done except Link Play against a peer and a real gamepad,
-M5 done, M6 partial (launcher, `.app`, CI and the shader pipeline done; AVFoundation movies and notarization open).
+M5 done, M6 partial (launcher, `.app`, CI and the shader pipeline done; movies untested, signing and notarization open).
 §7 is the evidence log; §8 is the operational guide (build, lift, run, launcher, shader cache, memory, traps).
 
 Target: a native `arm64` macOS build of `pkp` (Apple Silicon), running the same lifted game libraries the Windows
@@ -182,12 +182,15 @@ already provides a clock-only sink for tests. `audio_xaudio2.cpp` (611 lines) be
 (AVAudioEngine or a raw `AudioUnit`/`AudioQueue` output unit with the same non-blocking `write()` contract, the
 same underrun accounting, and the same device-loss → stand-in → retry ladder). Selectable via `[audio] sink`.
 
-### D10 — Video through AVFoundation / VideoToolbox
+### D10 — Video: the lifted library plus the host VP9 decoder, not AVFoundation
 
-`runtime/src/media/movie_mf.cpp` (1,539 lines) is Media Foundation; the `movie::` object layout it implements is
-Nintendo's, not Microsoft's, so the protocol layer survives and only the demux/decode backend changes
-(`AVAssetReader` + `VTDecompressionSession`, or the already-present libvpx path for VP8/9 —
-`runtime/cmake/media_deps.cmake`).
+The original plan was an AVFoundation backend mirroring `movie_mf.cpp`. The game's two movies settle it differently:
+`movie_asset/ounce/MV01.webm` and `MV02.webm` are VP9 in WebM (370 MB and 136 MB), and AVFoundation has no WebM demuxer.
+
+They do not need one. The lifted `movie::` library in subsdk0 carries the Matroska demuxer (the nandroid port) and calls
+`nn::codec` for the VP9 decode, which `src/media/video_codec.cpp` already answers with libvpx (pools, NV12 readback and
+fences included). That is the same path Windows calls `[media] movie = off`; on macOS it is the only path, because
+Media Foundation does not exist there. What is missing is a test, not a backend: no run has reached a movie yet.
 
 ### D11 — Launcher: use the Tauri one; leave `apps/launcher` to the end
 
@@ -371,14 +374,17 @@ native stack; `[diag] ftrace` timings are sane.
 
 ### M6 — Media, launcher, packaging
 
-> **Status 2026-11-10.** Launcher: done. `.app` bundle: `launcher/scripts/make-app.sh` (ad-hoc signed; the game folder is
-> the one the bundle sits in). CI: `.github/workflows/macos.yml`. libvpx: found in Homebrew, so VP9/VP8 decode on the
-> host. Open: `movie_avf.cpp` (AVFoundation/VideoToolbox; until then the lifted `movie::` library runs and needs NVDEC),
-> Developer ID signing and notarization, and an `arm64-apple-macos` target in `pkp_build.py`.
+> **Status 2026-11-11.** Launcher: done, including the Steam shortcut (macOS keeps Steam in `Library/Application
+> Support`). `.app` bundle: `launcher/scripts/make-app.sh` (ad-hoc signed; the game folder is the one the bundle sits in).
+> CI: `.github/workflows/macos.yml`. libvpx: found in Homebrew, so VP9/VP8 decode on the host, which is what the movies
+> need (D10). Open: a run that reaches a movie, Developer ID signing and notarization, and an `arm64-apple-macos` target
+> in `pkp_build.py`. A one-click release also needs a design decision: the Windows release ships a prebuilt game exe and
+> relinks it against `pkp_rt.dll`, while the macOS build is one static binary.
 
 Work:
 
-1. `runtime/src/media/movie_mf.cpp` → `movie_avf.cpp` (D10).
+1. Movies: play one. The lifted `movie::` demuxer and the host VP9 decoder are both in place (D10); nothing has reached
+   a movie yet.
 2. `launcher/` — macOS build of the Tauri app: replace the `pkp.exe`/`vulkan-1.dll`/`.bat` assumptions, point the
    shader-cache pipeline at the bundled `spirv_harness`, keep the disk-space and Vulkan checks
    (`launcher/README.md` steps 1–3).
@@ -539,7 +545,7 @@ non-MSVC branch was exercised, not just written.
 ### Still open
 
 See §8 "What is left": Link Play against a `pokopia-native` peer, a real gamepad, the `fs_volume` XPC check, a
-`tt_runner` executable, AVFoundation movies, signing and notarization, an `arm64-apple-macos` target in `pkp_build.py`,
+`tt_runner` executable, a movie played end to end, signing and notarization, an `arm64-apple-macos` target in `pkp_build.py`,
 and the GPU-bound frame rate in the world.
 
 ## 8. Running the port on a Mac
@@ -676,8 +682,8 @@ run must fit the host, and the launcher stops the game at the kernel's critical 
 
 - **M4**: Link Play against a `pokopia-native` peer (the relay half is verified), a gamepad with a real pad, the
   `fs_volume` XPC check, and a `tt_runner` executable (the testtools code is in the library; no target builds a runner).
-- **M6**: `movie_avf.cpp` (AVFoundation/VideoToolbox) for the game's videos — the lifted `movie::` library runs today and
-  needs NVDEC; Developer ID signing and notarization (the `.app` is ad-hoc signed); an `arm64-apple-macos` target in
-  `pkp_build.py` (macOS builds through CMake).
+- **M6**: a movie played end to end (the lifted `movie::` demuxer and the host VP9 decoder are in place, D10); Developer ID
+  signing and notarization (the `.app` is ad-hoc signed); an `arm64-apple-macos` target in `pkp_build.py` (macOS builds
+  through CMake), and a release design for a static binary.
 - **Performance**: the M3 is GPU-bound at ~25 fps in the world (present blocks 41–49 ms, the render thread idle); the
   render scale is the lever. The pool shadow copy's bookkeeping, if it ever comes back, is the other.
