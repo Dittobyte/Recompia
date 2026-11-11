@@ -314,6 +314,8 @@ const gameplaySchema = () => SCHEMAS.pkp.sections.find((s) => s.name === 'pkp').
 export const gameplayKeys = () => gameplaySchema().map((k) => k.key);
 /** A mod's switch (not the setting of another switch). */
 export const isGameplaySwitch = (k) => k.group === 'gameplay' && !k.parent;
+/** The mods whose switch the launcher shows (a hidden mod has no field, so its value is unknown here): what the mods notice lists. pkp.log's `mods:` line covers all. */
+export const gameplaySwitchKeys = () => gameplaySchema().filter((k) => isGameplaySwitch(k) && !k.hidden).map((k) => k.key);
 
 function gameplayRow(k) {
   const g = GAMEPLAY[k.key];
@@ -600,7 +602,7 @@ export const SECTIONS = [
         rows: [
           { id: 'gameplay_note', type: 'note', note: () => ({ text: t('New ways of playing: switch each one on or off here. They take effect the next time the game starts, and they need the game built with this version (Set up again once after an update).') }) },
           ...gameplayRows(),
-          { id: 'mods_notice', type: 'note', note: (_e, v) => ({ text: modsNotice(v, gameplayKeys(), [...EXPERIMENTAL_ROWS, ...EXPERIMENTAL_OFF_ROWS].map((r) => r.id)).text }) },
+          { id: 'mods_notice', type: 'note', note: (_e, v) => ({ text: modsNotice(v, gameplaySwitchKeys(), [...EXPERIMENTAL_ROWS, ...EXPERIMENTAL_OFF_ROWS].map((r) => r.id)).text }) },
         ],
       },
       {

@@ -57,7 +57,8 @@ std::vector<Entry> snapshot() {
     std::vector<Entry> out;
     for (int i = 0; i < static_cast<int>(Key::Count); ++i) {
         const Key k = static_cast<Key>(i);
-        if (settings::spec(k).gameplay) add(out, k, Kind::Gameplay);
+        const settings::Spec& sp = settings::spec(k);
+        if (sp.gameplay && sp.parent == Key::Count) add(out, k, Kind::Gameplay);   // the mods' switches, not their settings (camera_aim_reach)
     }
     add(out, Key::MenuInGame, Kind::Experimental);
     add(out, Key::TallerFov, Kind::Experimental);
