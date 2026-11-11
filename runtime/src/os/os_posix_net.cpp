@@ -25,6 +25,9 @@
 #include <poll.h>
 #include <string.h>
 #include <unistd.h>
+#if !defined(__APPLE__)
+#include <sys/ioctl.h>
+#endif
 
 #include <algorithm>
 #include <string>
@@ -193,6 +196,13 @@ int nxos_getsockopt(SOCKET s, int level, int name, char* value, int* len) {
 // ----------------------------------------------------------------------------------------------------------------
 namespace {
 
+// One AF_INET datagram socket for the MTU queries (SIOCGIFMTU needs a socket to issue the ioctl on); process lifetime, never
+// closed, as the handle Windows' GetAdaptersAddresses keeps internally.
+int g_if_mtu_sock() {
+    static const int s = static_cast<int>(::socket(AF_INET, SOCK_DGRAM, 0));
+    return s;
+}
+
 struct Adapter {
     std::string name;
     unsigned long if_type = IF_TYPE_ETHERNET_CSMACD;
@@ -219,6 +229,12 @@ std::vector<Adapter> collect_adapters() {
 #if defined(__APPLE__)
             it->mtu = i->ifa_data ? static_cast<unsigned long>(static_cast<struct if_data*>(i->ifa_data)->ifi_mtu)
                                   : 1500ul;
+#else
+            // Linux keeps the MTU in the kernel, not in getifaddrs' ifa_data (that is the per-address stats block).
+            struct ifreq ifr = {};
+            std::snprintf(ifr.ifr_name, sizeof ifr.ifr_name, "%s", i->ifa_name);
+            if (::ioctl(g_if_mtu_sock(), SIOCGIFMTU, &ifr) == 0 && ifr.ifr_mtu > 0)
+                it->mtu = static_cast<unsigned long>(ifr.ifr_mtu);
 #endif
         }
         unsigned long prefix = 0;

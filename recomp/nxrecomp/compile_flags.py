@@ -42,3 +42,7 @@ def for_arch(arch, kind):
     return base + _arch_flags(arch or platform.machine())
 ZIG_MINGW = (['-target', 'x86_64-windows-gnu', '-mcpu=x86_64+cx16', '-std=c++20', '-O1', '-w', '-fno-exceptions', '-fno-rtti']
              + SEMANTIC + ['-fno-threadsafe-statics'])
+# The same object code for a Linux package: the guest code's meaning does not change with the host, only the target triple does
+# (x86_64-linux-gnu), and the flags stay identical to the mingw build's so a fix to one is a fix to both.
+ZIG_LINUX = (['-target', 'x86_64-linux-gnu', '-mcpu=x86_64+cx16', '-std=c++20', '-O1', '-w', '-fno-exceptions', '-fno-rtti']
+             + SEMANTIC + ['-fno-threadsafe-statics'])

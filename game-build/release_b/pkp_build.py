@@ -49,6 +49,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 RECOMP = os.path.join(HERE, 'recomp')
 SDK = os.path.join(HERE, 'sdk')
 DARWIN = sys.platform == 'darwin'
+LINUX = sys.platform.startswith('linux')
 # Windows: the bundled Zig. Linux (the native launcher): a Linux build of the same Zig version, which it fetches into
 # tools/linux/zig (PKP_ZIG overrides it); it cross-compiles the same x86_64-windows-gnu objects
 ZIG = (os.path.join(HERE, 'zig', 'zig.exe') if os.name == 'nt'
@@ -60,6 +61,10 @@ LIFTER = ['nxrecomp', 'include/nxrecomp', 'games/pkp/CMakeLists.txt', 'games/pkp
 # what the link takes from sdk/ besides the lifted objects and the runtime library (stamped on its own, as 'runtime')
 if DARWIN:
     SDK_FILES = ['pkp_stub.cpp', 'pkp_rt_api.h', 'guest_segment.py']
+elif LINUX:
+    # Linux needs no resource script (pkp.rc/pkp.manifest are Windows) and no guest segment (the runtime reserves the range
+    # itself with MAP_FIXED_NOREPLACE).
+    SDK_FILES = ['pkp_stub.cpp', 'pkp_rt_api.h']
 else:
     SDK_FILES = ['pkp_stub.cpp', 'pkp_rt_api.h', 'pkp.rc', 'pkp.manifest']
 
@@ -84,12 +89,18 @@ if DARWIN:
     TARGET_ARCH = 'arm64' if platform.machine() in ('arm64', 'aarch64') else platform.machine()
     CXXFLAGS = compile_flags.for_arch(TARGET_ARCH, 'clang') + ['-std=c++20']
     COMPILER = CLANGXX
+elif LINUX:
+    # Linux: the same bundled Zig, targeting x86_64-linux-gnu (so the package needs no system compiler), and the runtime as a
+    # shared object the exe finds next to itself (-rpath $ORIGIN). No guest segment: the runtime reserves the guest ranges.
+    RUNTIME_LIB = 'libpkp_rt.so'
+    CXXFLAGS = compile_flags.ZIG_LINUX
+    COMPILER = [ZIG, 'c++']
 else:
     RUNTIME_LIB = 'pkp_rt.lib'
     CXXFLAGS = compile_flags.ZIG_MINGW
     COMPILER = [ZIG, 'c++']             # the compile command before the flags (tests put a fake one here)
 CACHE_MB = 3072                         # default size cap of <game>/build/objcache
-EXE = 'pkp' if DARWIN else 'pkp.exe'    # the game executable the build links and --check looks for
+EXE = 'pkp' if (DARWIN or LINUX) else 'pkp.exe'    # the game executable the build links and --check looks for
 CREATE_NO_WINDOW = 0x08000000
 BELOW_NORMAL = 0x00004000
 
@@ -599,7 +610,7 @@ def archive(runner, obj, lib, stamp, env):
 
 def link(runner, lib, game, env):
     libs = [os.path.join(lib, 'pkp_%s.a' % m[0]) for m in MODULES]
-    exe = 'pkp' if DARWIN else 'pkp.exe'
+    exe = 'pkp' if (DARWIN or LINUX) else 'pkp.exe'
     tmp = os.path.join(lib, exe)
     modheader.write(GAME.modules, os.path.join(lib, 'gen', 'nx_modules.gen.h'))     # the module list pkp_stub.cpp includes
     if DARWIN:
@@ -614,6 +625,16 @@ def link(runner, lib, game, env):
         rc, tail = runner.run([sys.executable, os.path.join(SDK, 'guest_segment.py'), tmp], env=env)
         if rc != 0:
             raise Fail('Reserving the guest address space failed (exit %d):\n%s' % (rc, tail))
+    elif LINUX:
+        # Zig targeting x86_64-linux-gnu. The exe finds libpkp_rt.so next to itself (-rpath $ORIGIN, the ELF equivalent of
+        # @executable_path), and the main thread's stack is the same 128 MiB the Windows /STACK and the Mach-O -stack_size give it.
+        # --strip-debug: Zig's Linux output carries full DWARF (1.4 GB against 278 MB stripped); the symbol table stays, so the
+        # crash reporter's host frames still resolve.
+        cmd = list(COMPILER) + CXXFLAGS + ['-I', SDK, '-I', os.path.join(lib, 'gen'), os.path.join(SDK, 'pkp_stub.cpp')] + libs + [
+            os.path.join(SDK, RUNTIME_LIB), '-o', tmp, '-Wl,-rpath,$ORIGIN', '-Wl,-z,stack-size=134217728', '-Wl,--strip-debug']
+        rc, tail = runner.run(cmd, env=env, cwd=SDK)
+        if rc != 0:
+            raise Fail('Linking %s failed (exit %d):\n%s' % (exe, rc, tail))
     else:
         cmd = [ZIG, 'c++', '-target', 'x86_64-windows-gnu', '-mcpu=x86_64+cx16', '-O1', '-fno-exceptions', '-fno-rtti', '-I', SDK, '-I', os.path.join(lib, 'gen'),
                os.path.join(SDK, 'pkp_stub.cpp'), os.path.join(SDK, 'pkp.rc')] + libs + [os.path.join(SDK, 'pkp_rt.lib'),
@@ -624,13 +645,15 @@ def link(runner, lib, game, env):
         clear_high_entropy_va(tmp)
     dst = os.path.join(game, exe)
     os.replace(tmp, dst)
-    if DARWIN:
-        # The exe loads the runtime from its own folder (-rpath @executable_path), as pkp.exe finds pkp_rt.dll beside it, and
-        # volk dlopen()s libvulkan.1.dylib from the same place: the package ships MoltenVK under that name.
+    if DARWIN or LINUX:
+        # The exe loads the runtime from its own folder (-rpath @executable_path / $ORIGIN), as pkp.exe finds pkp_rt.dll beside it.
         replace_file(os.path.join(SDK, RUNTIME_LIB), os.path.join(game, RUNTIME_LIB))
-        vulkan = os.path.join(SDK, 'libvulkan.1.dylib')
-        if os.path.isfile(vulkan):
-            replace_file(vulkan, os.path.join(game, 'libvulkan.1.dylib'))
+        if DARWIN:
+            # volk dlopen()s libvulkan.1.dylib from the same place: the package ships MoltenVK under that name. Linux uses the
+            # system Vulkan loader and its ICDs, so there is nothing to copy.
+            vulkan = os.path.join(SDK, 'libvulkan.1.dylib')
+            if os.path.isfile(vulkan):
+                replace_file(vulkan, os.path.join(game, 'libvulkan.1.dylib'))
         # What the game reads next to its executable: the keyboard and mouse prompt icons (pkp_kbm.cpp, without them the
         # prompts keep the game's own Switch sprites) and the shared font.
         # (names of their own: `dst` is the executable this function returns, and main hashes it)
@@ -737,7 +760,7 @@ def main():
             compile_all(runner, gen, obj, a.jobs, env, make_cache(os.path.join(build, 'objcache'), a.cache_mb, compiler))
             times['compile'] = round(time.time() - t, 1)
         t = time.time()
-        progress('link', 0, 1, 'Linking %s' % ('pkp' if DARWIN else 'pkp.exe'))
+        progress('link', 0, 1, 'Linking %s' % EXE)
         if not reuse:
             archive(runner, obj, lib, libstamp, env)
         try:
@@ -756,7 +779,7 @@ def main():
                 shutil.rmtree(os.path.join(build, d), ignore_errors=True)
         done = dict(stamp, exe_sha256=sha256(exe), seconds=times, finished=time.strftime('%Y-%m-%d %H:%M:%S'))
         write_json(os.path.join(build, 'done.json'), done)
-        progress('finish', 1, 1, '%s is ready (%d s)' % ('pkp' if DARWIN else 'pkp.exe', time.time() - t0))
+        progress('finish', 1, 1, '%s is ready (%d s)' % (EXE, time.time() - t0))
         _release_lock(lock_file)
         return 0
     except Cancelled:

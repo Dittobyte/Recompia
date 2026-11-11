@@ -141,12 +141,12 @@ pub fn find_tools(tools_dir: &Path, game_dir: &Path) -> Result<Tools, String> {
     let python = if fetched.is_file() { fetched } else { crate::host::python(tools_dir) };
     let script = tools_dir.join("build").join("pkp_build.py");
     let mut required = vec![python.clone(), script.clone()];
-    // macOS compiles with Apple clang and links libpkp_rt.dylib; the Windows and Linux packages carry Zig and pkp_rt.lib.
+    // macOS compiles with Apple clang and links libpkp_rt.dylib; the Windows and Linux packages carry Zig and the runtime as
+    // pkp_rt.lib (Windows, linked in) or libpkp_rt.so (Linux, found next to the exe at run time).
     if !cfg!(target_os = "macos") {
         required.push(crate::host::zig(tools_dir));
     }
-    let runtime = if cfg!(target_os = "macos") { "build/sdk/libpkp_rt.dylib" } else { "build/sdk/pkp_rt.lib" };
-    required.extend([runtime, "build/recomp/nxrecomp/__main__.py"].iter().map(|p| tools_dir.join(p)));
+    required.extend([crate::host::runtime_lib_rel(), "build/recomp/nxrecomp/__main__.py"].iter().map(|p| tools_dir.join(p)));
     let mut missing = Vec::new();
     for p in required {
         if !p.is_file() {

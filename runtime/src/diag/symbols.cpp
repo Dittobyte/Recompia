@@ -13,6 +13,8 @@
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
 #include <mach-o/loader.h>
+#elif defined(__linux__)
+#include <link.h>   // dl_iterate_phdr, ElfW
 #endif
 #endif
 
@@ -382,6 +384,32 @@ void symbols_snapshot_images() {
         ++k;
     }
     g_img_n = k;
+#elif defined(__linux__)
+    // dl_iterate_phdr walks the loaded objects while holding the dynamic loader's lock, which is exactly what the report may
+    // not do (a faulting thread can be inside it). The list is taken once at startup, into the same fixed table.
+    // dlpi_name is empty for the executable itself, which lands in slot 0 for symbols_main_base.
+    dl_iterate_phdr(
+        [](struct dl_phdr_info* info, size_t, void*) -> int {
+            uintptr_t lo = ~uintptr_t{0}, hi = 0;
+            for (int i = 0; i < info->dlpi_phnum; ++i) {
+                const ElfW(Phdr)& ph = info->dlpi_phdr[i];
+                if (ph.p_type != PT_LOAD) continue;
+                const uintptr_t v = static_cast<uintptr_t>(info->dlpi_addr + ph.p_vaddr);
+                if (v < lo) lo = v;
+                if (v + static_cast<uintptr_t>(ph.p_memsz) > hi) hi = v + static_cast<uintptr_t>(ph.p_memsz);
+            }
+            if (hi <= lo) return 0;
+            if (g_img_n >= static_cast<int>(sizeof g_imgs / sizeof g_imgs[0])) return 1;
+            const char* path = info->dlpi_name;
+            const char* slash = (path && *path) ? std::strrchr(path, '/') : nullptr;
+            const char* name = slash ? slash + 1 : path;
+            g_imgs[g_img_n].lo = lo;
+            g_imgs[g_img_n].hi = hi;
+            std::snprintf(g_imgs[g_img_n].name, sizeof g_imgs[g_img_n].name, "%s", (name && *name) ? name : "exe");
+            ++g_img_n;
+            return 0;
+        },
+        nullptr);
 #endif
 }
 

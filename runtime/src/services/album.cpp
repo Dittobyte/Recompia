@@ -34,15 +34,18 @@
 #pragma comment(lib, "windowscodecs")
 #pragma comment(lib, "ole32")
 #else
-#include <windows.h>   // the POSIX shim (src/os/compat/windows.h): localtime_s and the exe path helpers
+#include <windows.h>   // the POSIX shim (src/os/compat/windows.h): GetModuleFileNameA and the exe path helpers
 
-#include <mach-o/dyld.h>
+#include <climits>
+#include <cstdlib>
 
+#if defined(__APPLE__)
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreGraphics/CoreGraphics.h>
 #include <ImageIO/ImageIO.h>
-#include <climits>
-#include <cstdlib>
+#else
+#include "miniz.h"   // the zlib stream inside the PNG (third_party/miniz)
+#endif
 #endif
 
 namespace nxrt::services {
@@ -65,13 +68,11 @@ std::filesystem::path exe_dir() {
     if (n == 0 || n >= MAX_PATH) return std::filesystem::current_path();
     return std::filesystem::path(buf).parent_path();
 #else
-    // _NSGetExecutablePath may return a symlink or a relative path; realpath resolves both.
+    // The shim answers this for every POSIX target (_NSGetExecutablePath on macOS, /proc/self/exe on Linux).
     char buf[PATH_MAX];
-    uint32_t size = sizeof buf;
-    if (_NSGetExecutablePath(buf, &size) != 0) return std::filesystem::current_path();
-    char resolved[PATH_MAX];
-    const char* path = realpath(buf, resolved) ? resolved : buf;
-    return std::filesystem::path(path).parent_path();
+    const DWORD n = GetModuleFileNameA(nullptr, buf, sizeof buf);
+    if (n == 0 || n >= sizeof buf) return std::filesystem::current_path();
+    return std::filesystem::path(buf).parent_path();
 #endif
 }
 
@@ -147,7 +148,7 @@ bool album_write_png(const std::filesystem::path& file, const uint8_t* rgba, uin
         return false;
     }
     return true;
-#else
+#elif defined(__APPLE__)
     // ImageIO writes the PNG. The album keeps no alpha (the game's alpha channel is whatever its render target held), so
     // the RGBA rows become RGBX and the CGImage is built with kCGImageAlphaNoneSkipLast.
     const size_t stride = static_cast<size_t>(width) * 4;
@@ -183,6 +184,71 @@ bool album_write_png(const std::filesystem::path& file, const uint8_t* rgba, uin
     CGColorSpaceRelease(space);
     if (!ok) {
         if (err) *err = "ImageIO PNG write failed";
+        std::error_code ec;
+        std::filesystem::remove(file, ec);
+        return false;
+    }
+    return true;
+#else
+    // Linux: zlib writes the PNG (third_party/miniz, the same library the save repair uses). One IDAT of unfiltered rows,
+    // 8-bit RGB, no interlacing: the album keeps no alpha, so the RGBA rows lose theirs.
+    const size_t stride = static_cast<size_t>(width) * 3;
+    std::vector<uint8_t> raw((stride + 1) * height);
+    for (size_t y = 0; y < height; ++y) {
+        uint8_t* row = raw.data() + y * (stride + 1);
+        row[0] = 0;   // filter type 0: none
+        for (size_t x = 0; x < width; ++x) {
+            const uint8_t* px = rgba + (y * width + x) * 4;
+            row[1 + x * 3 + 0] = px[0];
+            row[1 + x * 3 + 1] = px[1];
+            row[1 + x * 3 + 2] = px[2];
+        }
+    }
+    mz_ulong zlen = mz_compressBound(static_cast<mz_ulong>(raw.size()));
+    std::vector<uint8_t> z(zlen);
+    if (mz_compress2(z.data(), &zlen, raw.data(), static_cast<mz_ulong>(raw.size()), MZ_BEST_SPEED) != MZ_OK) {
+        if (err) *err = "zlib compression failed";
+        return false;
+    }
+    z.resize(zlen);
+
+    auto be32 = [](uint8_t* d, uint32_t v) {
+        d[0] = static_cast<uint8_t>(v >> 24);
+        d[1] = static_cast<uint8_t>(v >> 16);
+        d[2] = static_cast<uint8_t>(v >> 8);
+        d[3] = static_cast<uint8_t>(v);
+    };
+    std::vector<uint8_t> png{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
+    auto chunk = [&](const char type[4], const std::vector<uint8_t>& data) {
+        uint8_t head[8];
+        be32(head, static_cast<uint32_t>(data.size()));
+        std::memcpy(head + 4, type, 4);
+        png.insert(png.end(), head, head + 8);
+        png.insert(png.end(), data.begin(), data.end());
+        mz_ulong crc = mz_crc32(mz_crc32(0, nullptr, 0), head + 4, 4);
+        if (!data.empty()) crc = mz_crc32(crc, data.data(), data.size());
+        uint8_t tail[4];
+        be32(tail, static_cast<uint32_t>(crc));
+        png.insert(png.end(), tail, tail + 4);
+    };
+    std::vector<uint8_t> ihdr(13);
+    be32(ihdr.data(), width);
+    be32(ihdr.data() + 4, height);
+    ihdr[8] = 8;    // bit depth
+    ihdr[9] = 2;    // colour type: truecolour (RGB)
+    chunk("IHDR", ihdr);
+    chunk("IDAT", z);
+    chunk("IEND", {});
+
+    std::FILE* f = std::fopen(file.string().c_str(), "wb");
+    if (!f) {
+        if (err) *err = std::string("cannot create ") + file.string();
+        return false;
+    }
+    const bool ok = std::fwrite(png.data(), 1, png.size(), f) == png.size();
+    const bool closed = std::fclose(f) == 0;
+    if (!ok || !closed) {
+        if (err) *err = "PNG write failed";
         std::error_code ec;
         std::filesystem::remove(file, ec);
         return false;

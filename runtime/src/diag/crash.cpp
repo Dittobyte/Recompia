@@ -141,6 +141,20 @@ bool write_file(const std::string& path, const std::string& text) {
     return ok && done == text.size();
 }
 
+// The register file the report prints. Win32's CONTEXT names the x64 registers Rip/Rsp/Rbp and has no link register; the POSIX
+// shim's arm64-shaped CONTEXT (src/os/nx_os.h) calls them pc/sp/fp and carries lr. Two accessors keep the report code shared.
+#if defined(_WIN32)
+static inline uintptr_t ctx_pc(const CONTEXT* cx) { return static_cast<uintptr_t>(cx->Rip); }
+static inline uintptr_t ctx_sp(const CONTEXT* cx) { return static_cast<uintptr_t>(cx->Rsp); }
+static inline uintptr_t ctx_fp(const CONTEXT* cx) { return static_cast<uintptr_t>(cx->Rbp); }
+static inline uintptr_t ctx_lr(const CONTEXT*) { return 0; }   // x64 returns through the stack
+#else
+static inline uintptr_t ctx_pc(const CONTEXT* cx) { return static_cast<uintptr_t>(cx->pc); }
+static inline uintptr_t ctx_sp(const CONTEXT* cx) { return static_cast<uintptr_t>(cx->sp); }
+static inline uintptr_t ctx_fp(const CONTEXT* cx) { return static_cast<uintptr_t>(cx->fp); }
+static inline uintptr_t ctx_lr(const CONTEXT* cx) { return static_cast<uintptr_t>(cx->lr); }
+#endif
+
 // Builds the whole report text for an exception raised on thread `tid`.
 std::string build_report(const EXCEPTION_RECORD* rec, const CONTEXT* cx, DWORD tid) {
     g_reports.fetch_add(1, std::memory_order_relaxed);
@@ -182,8 +196,9 @@ std::string build_report(const EXCEPTION_RECORD* rec, const CONTEXT* cx, DWORD t
                 static_cast<unsigned long>(tid));
     }
     appendf(out, "  in %s\n", symbols_describe(rip).c_str());
-    appendf(out, "  pc 0x%llx, sp 0x%llx, fp 0x%llx, lr 0x%llx\n", static_cast<unsigned long long>(cx->pc),
-            static_cast<unsigned long long>(cx->sp), static_cast<unsigned long long>(cx->fp), static_cast<unsigned long long>(cx->lr));
+    appendf(out, "  pc 0x%llx, sp 0x%llx, fp 0x%llx, lr 0x%llx\n", static_cast<unsigned long long>(ctx_pc(cx)),
+            static_cast<unsigned long long>(ctx_sp(cx)), static_cast<unsigned long long>(ctx_fp(cx)),
+            static_cast<unsigned long long>(ctx_lr(cx)));
     // The page the fault address lives on. On macOS a write to a read-only or PROT_NONE page is SIGBUS (0xC0000006), not an
     // access violation, so the protection is the thing to look at first.
     {
@@ -197,7 +212,7 @@ std::string build_report(const EXCEPTION_RECORD* rec, const CONTEXT* cx, DWORD t
     // so this shows which region sp is really in (a stack, the guard, or nothing mapped).
     {
         MEMORY_BASIC_INFORMATION mbi{};
-        if (VirtualQuery(reinterpret_cast<LPCVOID>(static_cast<uintptr_t>(cx->sp)), &mbi, sizeof mbi) != 0)
+        if (VirtualQuery(reinterpret_cast<LPCVOID>(ctx_sp(cx)), &mbi, sizeof mbi) != 0)
             appendf(out, "  sp page: state 0x%lx, protect 0x%lx, region 0x%llx (+0x%llx)\n", static_cast<unsigned long>(mbi.State),
                     static_cast<unsigned long>(mbi.Protect), static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(mbi.BaseAddress)),
                     static_cast<unsigned long long>(mbi.RegionSize));
@@ -220,8 +235,8 @@ std::string build_report(const EXCEPTION_RECORD* rec, const CONTEXT* cx, DWORD t
         const uint64_t base = symbols_main_base();
         if (base) {
             appendf(out, "  image base 0x%llx", static_cast<unsigned long long>(base));
-            if (cx->pc >= base) appendf(out, " (pc RVA 0x%llx)", static_cast<unsigned long long>(cx->pc - base));
-            if (cx->lr >= base) appendf(out, ", lr RVA 0x%llx", static_cast<unsigned long long>(cx->lr - base));
+            if (ctx_pc(cx) >= base) appendf(out, " (pc RVA 0x%llx)", static_cast<unsigned long long>(ctx_pc(cx) - base));
+            if (ctx_lr(cx) >= base) appendf(out, ", lr RVA 0x%llx", static_cast<unsigned long long>(ctx_lr(cx) - base));
             out += "\n";
         }
     }
@@ -302,7 +317,7 @@ std::string build_report(const EXCEPTION_RECORD* rec, const CONTEXT* cx, DWORD t
     // thread's stack for words that land inside a loaded image: the return addresses of the frames the chain lost.
     if (nframes < 4) {
         MEMORY_BASIC_INFORMATION mbi{};
-        const uintptr_t sp = static_cast<uintptr_t>(cx->sp);
+        const uintptr_t sp = ctx_sp(cx);
         if (VirtualQuery(reinterpret_cast<LPCVOID>(sp), &mbi, sizeof mbi) != 0 && (mbi.Protect & 0x4)) {
             const uintptr_t base = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
             const uintptr_t end = base + mbi.RegionSize;

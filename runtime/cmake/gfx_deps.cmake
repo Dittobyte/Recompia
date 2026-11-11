@@ -5,6 +5,13 @@
 include(FetchContent)
 if(APPLE)
     set(_nxrt_default_deps "$ENV{HOME}/Library/Caches/nxrt/deps")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # XDG: ~/.cache/nxrt/deps unless XDG_CACHE_HOME says otherwise.
+    if(DEFINED ENV{XDG_CACHE_HOME} AND NOT "$ENV{XDG_CACHE_HOME}" STREQUAL "")
+        set(_nxrt_default_deps "$ENV{XDG_CACHE_HOME}/nxrt/deps")
+    else()
+        set(_nxrt_default_deps "$ENV{HOME}/.cache/nxrt/deps")
+    endif()
 else()
     set(_nxrt_default_deps "$ENV{LOCALAPPDATA}/nxrt/deps")
 endif()
@@ -73,6 +80,15 @@ target_include_directories(nxrt_volk SYSTEM PUBLIC "${volk_SOURCE_DIR}" "${vulka
 if(APPLE)
     # MoltenVK: no VK_USE_PLATFORM_WIN32_KHR, and the surface comes from VK_EXT_metal_surface through SDL.
     target_compile_definitions(nxrt_volk PUBLIC VK_NO_PROTOTYPES VK_USE_PLATFORM_METAL_EXT)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # The surface comes from SDL, but the extensions it reports have to be types volk knows. X11 is always there (Xwayland
+    # counts); Wayland only when its headers are installed, which keeps the build free of a libwayland-dev requirement.
+    set(_nxrt_vk_platforms VK_USE_PLATFORM_XLIB_KHR VK_USE_PLATFORM_XCB_KHR)
+    find_path(NXRT_WAYLAND_CLIENT_INCLUDE wayland-client.h)
+    if(NXRT_WAYLAND_CLIENT_INCLUDE)
+        list(APPEND _nxrt_vk_platforms VK_USE_PLATFORM_WAYLAND_KHR)
+    endif()
+    target_compile_definitions(nxrt_volk PUBLIC VK_NO_PROTOTYPES ${_nxrt_vk_platforms})
 else()
     target_compile_definitions(nxrt_volk PUBLIC VK_NO_PROTOTYPES VK_USE_PLATFORM_WIN32_KHR)
 endif()

@@ -45,7 +45,6 @@ const UPDATE_DIR: &str = ".update";
 const SUMS_ASSET: &str = "SHA256SUMS.txt";
 const MARKER: &str = "applying";
 const LOCK: &str = "lock";
-const RUNTIME_DLL: &str = "pkp_rt.dll";
 /// install_update's Err when the player cancelled, for the page to tell it from a failure.
 pub const CANCELLED: &str = "Update cancelled.";
 
@@ -733,7 +732,7 @@ fn swap(job: &Job, undo: &mut Vec<Undo>, files: &[PathBuf], report: &mut dyn FnM
         step(&job.package.join(rel), &dst, undo, mover)?;
     }
     if let Some(dst) = &job.game_dll {
-        let src = job.root.join(RUNTIME_DLL);
+        let src = crate::host::runtime_lib(job.root);
         if src.is_file() {
             // possibly another drive, and the install keeps its own: a copy, with the old file set aside beside it
             let old = with_old(dst);
@@ -832,7 +831,7 @@ pub fn clean_start(root: &Path, old: &[PathBuf]) {
 
 /// The `.old` files of `launcher` and of a custom game folder.
 pub fn old_files(launcher: &Path, game_dir: &Path) -> Vec<PathBuf> {
-    vec![with_old(launcher), with_old(&game_dir.join(RUNTIME_DLL))]
+    vec![with_old(launcher), with_old(&crate::host::runtime_lib(game_dir))]
 }
 
 /// The update's flags. `busy` also keeps Play and Set up from starting under it.
@@ -889,7 +888,7 @@ pub struct Paths {
 /// The game's pkp_rt.dll when the game folder is not the install.
 fn game_dll(p: &Paths) -> Option<PathBuf> {
     let canon = |d: &Path| fs::canonicalize(d).unwrap_or_else(|_| d.to_path_buf());
-    let dll = p.game_dir.join(RUNTIME_DLL);
+    let dll = crate::host::runtime_lib(&p.game_dir);
     (canon(&p.game_dir) != canon(&p.install) && dll.is_file()).then_some(dll)
 }
 

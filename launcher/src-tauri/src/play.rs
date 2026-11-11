@@ -139,7 +139,7 @@ pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config) -> Result<(), Strin
         // shaders the game built while it ran: translated now, so the next run has them (the state stays "running" meanwhile)
         set_status(&app2, Status { state: GameState::Running, message: "Translating the shaders the game built while it ran...".into(), ..Default::default() });
         let shaders = if crate::host::native_game() {
-            match crate::host::macos_translate_shaders(&dir) {
+            match crate::host::native_translate_shaders(&dir) {
                 Ok(Some(line)) => format!(" {}.", line),
                 Ok(None) => String::new(),
                 Err(e) => format!(" New shaders were not translated: {}.", e),
@@ -246,7 +246,7 @@ pub fn run_cli(game_dir: &Path, tools: &Path) -> i32 {
         Err(e) => return fail(e),
     };
     if crate::host::native_game() {
-        match crate::host::macos_translate_shaders(game_dir) {
+        match crate::host::native_translate_shaders(game_dir) {
             Ok(Some(line)) => println!("shaders: {}", line),
             Ok(None) => {}
             Err(e) => eprintln!("shaders were not translated: {}", e),

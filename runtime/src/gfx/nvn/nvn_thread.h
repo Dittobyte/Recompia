@@ -69,7 +69,11 @@ public:
             Start* start = static_cast<Start*>(p);
             nxos_install_altstack();   // a fault on this thread stays reportable when its stack is exhausted
             if (start->name) {
+#if defined(__linux__)
+                pthread_setname_np(pthread_self(), start->name);   // glibc names the calling thread only (15 characters)
+#else
                 pthread_setname_np(start->name);
+#endif
                 nxos_set_thread_name(start->name);   // the fault note reads this one, without a libc call
             }
             start->fn();

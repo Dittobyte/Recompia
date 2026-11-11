@@ -17,9 +17,18 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_C_STANDARD 11)
 
-# Two native targets: Windows x64 (the shipped build) and Apple Silicon macOS (docs/macos-port.md). Everything else is unsupported.
+# Native targets: Windows x64 (the shipped build), Apple Silicon macOS (docs/macos-port.md) and Linux x86-64
+# (docs/linux-port.md). Everything else is unsupported.
 if(WIN32)
     set(NXRT_WINDOWS TRUE)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # x86-64 only, for the same reason the Windows build is: the guest is AArch64 and the recompiler emits the host's
+    # x86 translation path, where a 128-bit atomic is cmpxchg16b (-mcx16). An arm64 Linux build would need the arm64
+    # host path macOS has and is not a target.
+    if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
+        message(FATAL_ERROR "nxrt builds for Linux x86-64 only (CMAKE_SYSTEM_PROCESSOR is '${CMAKE_SYSTEM_PROCESSOR}')")
+    endif()
+    set(NXRT_LINUX TRUE)
 elseif(APPLE)
     if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)$")
         message(FATAL_ERROR "nxrt builds for Apple Silicon (arm64) only: the guest is AArch64 and the recompiler emits AArch64-derived C++ "
@@ -31,7 +40,7 @@ elseif(APPLE)
                                                            "backend are comfortable at 13")
     endif()
 else()
-    message(FATAL_ERROR "nxrt targets native Windows x64 and Apple Silicon macOS only")
+    message(FATAL_ERROR "nxrt targets native Windows x64, Apple Silicon macOS and Linux x86-64 only")
 endif()
 
 # The generated-code ABI header (Ctx, call_indirect, ...) lives in the recompiler (recomp/include/nxrecomp/).
@@ -52,7 +61,10 @@ else()
     # The POSIX shim (src/os/nx_os.h) stands in for the Win32 API. -Wno-deprecated-declarations covers the shim's deliberate use of
     # pthread_* primitives; everything else stays at the compiler's default warnings.
     add_compile_options(-Wno-unused-parameter -Wno-missing-field-initializers -Wno-deprecated-declarations)
-    add_compile_definitions(NXRT_POSIX=1)
+    # glibc hides POSIX and BSD declarations behind feature-test macros (clock_gettime, CLOCK_MONOTONIC, IFF_UP, strdup, ...), and
+    # -std=c11 / -std=c++20 with extensions off define __STRICT_ANSI__, which turns all of them off. _GNU_SOURCE turns them on for
+    # the whole tree, C and C++ alike (third_party/pokopia-coop is strict C11 and needs it most); macOS ignores the macro.
+    add_compile_definitions(NXRT_POSIX=1 _GNU_SOURCE=1)
 endif()
 
 option(NXRT_BUILD_GFX "Build the graphics shell (SDL3 + Vulkan + NVN front end, src/gfx, cmake/gfx.cmake)" ON)
@@ -73,6 +85,10 @@ else()
 endif()
 if(NXRT_WINDOWS)
     list(FILTER NXRT_SOURCES EXCLUDE REGEX "/src/os/os_posix.*\\.cpp$")   # the shim itself: POSIX targets only
+    # Apple-only and Linux-only platform services: Windows plays through XAudio2 and lists devices through WASAPI (below).
+    list(FILTER NXRT_SOURCES EXCLUDE REGEX "/src/services/audio_coreaudio\\.cpp$")
+    list(FILTER NXRT_SOURCES EXCLUDE REGEX "/src/services/audio_devices_posix\\.cpp$")
+    list(FILTER NXRT_SOURCES EXCLUDE REGEX "/src/services/audio_sdl3\\.cpp$")
 else()
     list(FILTER NXRT_SOURCES EXCLUDE REGEX "/src/os/os_win32\\.cpp$")
     # Subsystems built on a Windows-only SDK. Each has a POSIX counterpart on the milestone list in
@@ -81,19 +97,29 @@ else()
     list(FILTER NXRT_SOURCES EXCLUDE REGEX "/src/services/audio_xaudio2\\.cpp$")
     list(FILTER NXRT_SOURCES EXCLUDE REGEX "/src/services/audio_devices\\.cpp$")   # WASAPI device enumeration
     if(NOT APPLE)
-        list(FILTER NXRT_SOURCES EXCLUDE REGEX "/src/services/audio_coreaudio\\.cpp$")   # the CoreAudio sink is macOS only
+        list(FILTER NXRT_SOURCES EXCLUDE REGEX "/src/services/audio_coreaudio\\.cpp$")    # the CoreAudio sink is macOS only
+        list(FILTER NXRT_SOURCES EXCLUDE REGEX "/src/services/audio_devices_posix\\.cpp$")   # CoreAudio device list
     endif()
-    # album.cpp (caps:su) stays: its PNG writer has an ImageIO branch on macOS.
+    if(NOT NXRT_LINUX)
+        list(FILTER NXRT_SOURCES EXCLUDE REGEX "/src/services/audio_sdl3\\.cpp$")   # the SDL3 sink (Linux: ALSA/PipeWire/PulseAudio)
+    endif()
+    # album.cpp (caps:su) stays: its PNG writer has an ImageIO branch on macOS and a zlib one (third_party/miniz) on Linux.
 endif()
 add_library(nxrt STATIC ${NXRT_SOURCES})
 target_include_directories(nxrt PUBLIC include)
-if(APPLE)
+if(NOT NXRT_WINDOWS)
     # The signal handler's thread-locals (t_guard, t_thread_name) must be a plain thread-pointer access: with the default
     # global-dynamic model the handler calls __tls_get_addr, which is not async-signal-safe, and the guarded-call machinery
     # then reads a null guard and lets a caught fault become fatal (M3, 2026-11-10). Static TLS: the variable is in the
-    # executable's own block.
+    # executable's own block. macOS: local-exec (the runtime is linked into the executable or into libpkp_rt.dylib, whose
+    # TLS block is fixed at load). Linux: initial-exec, which a shared object may use and which resolves before main.
+    if(APPLE)
+        set(_nxrt_tls_model "-ftls-model=local-exec")
+    else()
+        set(_nxrt_tls_model "-ftls-model=initial-exec")
+    endif()
     set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/src/os/os_posix.cpp"
-                                PROPERTIES COMPILE_OPTIONS "-ftls-model=local-exec")
+                                PROPERTIES COMPILE_OPTIONS "${_nxrt_tls_model}")
 endif()
 
 if(NOT NXRT_WINDOWS)
@@ -105,10 +131,15 @@ if(NOT NXRT_WINDOWS)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../tools/textures/include/astc2bc7.h")
         target_include_directories(nxrt PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../tools/textures/include")
     endif()
-    target_link_libraries(nxrt PUBLIC "-framework CoreFoundation" "-framework IOKit" "-framework Security" "-framework ImageIO" "-framework CoreGraphics")
     if(APPLE)
-        # the CoreAudio sink (services/audio_coreaudio.cpp)
-        target_link_libraries(nxrt PUBLIC "-framework AudioToolbox" "-framework AudioUnit" "-framework CoreAudio")
+        target_link_libraries(nxrt PUBLIC "-framework CoreFoundation" "-framework IOKit" "-framework Security" "-framework ImageIO"
+                                          "-framework CoreGraphics"
+                                          # the CoreAudio sink (services/audio_coreaudio.cpp) and its device list
+                                          "-framework AudioToolbox" "-framework AudioUnit" "-framework CoreAudio")
+    else()
+        # Linux: dlopen/dlsym (plugins, the Vulkan loader) and pthreads. Both live in libc on a current glibc; naming them
+        # keeps older glibc and other libc implementations working.
+        target_link_libraries(nxrt PUBLIC ${CMAKE_DL_LIBS} pthread)
     endif()
     # The BC7 encoder the texture patch needs (src/gfx/nvn/nvn_tex_patch.cpp) on the platforms without astc2bc7's ISPC kernels:
     # third_party/bc7enc (MIT), driven by os_posix_a2b.cpp.
@@ -116,6 +147,25 @@ if(NOT NXRT_WINDOWS)
     target_include_directories(nxrt_bc7enc PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/third_party/bc7enc")
     set_target_properties(nxrt_bc7enc PROPERTIES C_STANDARD 11)
     target_link_libraries(nxrt PRIVATE nxrt_bc7enc)
+    # ASTC decoding. Metal samples ASTC natively, so macOS never needs a decoder; Vulkan on Linux does (no desktop GPU exposes
+    # ASTC), and the game's textures are ASTC. ARM astcenc (Apache-2.0, vendored for tools/textures) decompresses to RGBA8, which
+    # a2b_encode_bc7 then compresses with bc7enc above. Decompressor-only build: a transcode never re-encodes ASTC.
+    set(NXRT_ASTCENC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../tools/textures/third_party/astc-encoder")
+    if(NXRT_LINUX AND EXISTS "${NXRT_ASTCENC_DIR}/CMakeLists.txt")
+        set(ASTCENC_CLI OFF CACHE BOOL "" FORCE)
+        set(ASTCENC_DECOMPRESSOR ON CACHE BOOL "" FORCE)
+        set(ASTCENC_ISA_SSE41 ON CACHE BOOL "" FORCE)
+        set(ASTCENC_ISA_SSE2 OFF CACHE BOOL "" FORCE)
+        set(ASTCENC_ISA_AVX2 OFF CACHE BOOL "" FORCE)
+        set(ASTCENC_ISA_NONE OFF CACHE BOOL "" FORCE)
+        set(ASTCENC_ISA_NATIVE OFF CACHE BOOL "" FORCE)
+        set(ASTCENC_SHAREDLIB OFF CACHE BOOL "" FORCE)
+        set(ASTCENC_UNITTEST OFF CACHE BOOL "" FORCE)
+        set(ASTCENC_WERROR OFF CACHE BOOL "" FORCE)
+        add_subdirectory("${NXRT_ASTCENC_DIR}" "${CMAKE_BINARY_DIR}/astcenc" EXCLUDE_FROM_ALL)
+        target_link_libraries(nxrt PRIVATE astcdec-sse4.1-static)
+        target_compile_definitions(nxrt PRIVATE NXRT_HAVE_ASTCENC=1)
+    endif()
 endif()
 if(EXISTS "${NXRT_RECOMP_INCLUDE}")
     target_include_directories(nxrt PUBLIC "${NXRT_RECOMP_INCLUDE}")
@@ -127,10 +177,20 @@ add_subdirectory(third_party/pokopia-coop)   # [net] protocol = native: pokopia-
 target_link_libraries(nxrt PRIVATE pokopia_coop)
 include(cmake/guest_segment.cmake)   # macOS: reserve the guest address space in the executable's Mach-O header
 add_subdirectory(third_party/miniz)   # zlib streams (MIT): the Pokopia save repair, games/pkp/core/pkp_save_uuid.cpp
+if(NXRT_LINUX)
+    target_link_libraries(nxrt PRIVATE nxrt_miniz)   # album.cpp's PNG writer (services/album.cpp)
+endif()
 include(cmake/media_deps.cmake)   # libvpx for the Switch 2 video decoders (optional)
 
 if(NXRT_BUILD_GFX)
     include(cmake/gfx.cmake)
+endif()
+if(NXRT_LINUX AND TARGET SDL3::SDL3-static)
+    # The Linux audio sink and output-device list (src/services/audio_sdl3.cpp) go through SDL3, which dlopen()s ALSA,
+    # PulseAudio or PipeWire at run time: no audio headers to install, no extra package at run time, and the same library
+    # the graphics shell already links. Without the graphics shell there is no SDL3, and Linux falls back to the null sink.
+    target_link_libraries(nxrt PRIVATE SDL3::SDL3-static)
+    target_compile_definitions(nxrt PRIVATE NXRT_HAVE_SDL3_AUDIO=1)
 endif()
 
 if(NXRT_BUILD_GAMES)

@@ -27,7 +27,7 @@ pub fn overview_of(cfg: &Config) -> Overview {
     Overview {
         game_dir: dump::fwd(&dir),
         default_game_dir: dump::fwd(&exe_dir()),
-        exe_exists: dir.join("pkp.exe").is_file(),
+        exe_exists: crate::host::game_exe(&dir).is_file(),
         builds_exe: gamebuild::is_package_b(&exe_dir().join("tools")),
     }
 }
@@ -71,10 +71,10 @@ pub struct ReadyFacts {
 
 pub fn readiness_of(f: &ReadyFacts) -> Readiness {
     if !f.builds_exe && !f.exe_exists {
-        return Readiness::of("no_exe", format!("pkp.exe was not found in {}. Put the launcher next to pkp.exe.", f.game_dir));
+        return Readiness::of("no_exe", format!("{} was not found in {}. Put the launcher next to {}.", crate::host::game_exe_name(), f.game_dir, crate::host::game_exe_name()));
     }
     if f.exe_exists && f.runtime_missing {
-        return Readiness::of("no_runtime", format!("pkp_rt.dll was not found next to pkp.exe in {} nor next to the launcher. Extract the release again so the launcher's folder has it, or set the game folder in Settings.", f.game_dir));
+        return Readiness::of("no_runtime", format!("{} was not found next to {} in {} nor next to the launcher. Extract the release again so the launcher's folder has it, or set the game folder in Settings.", crate::host::runtime_lib_name(), crate::host::game_exe_name(), f.game_dir));
     }
     let unfinished = || {
         if f.started {
@@ -187,8 +187,8 @@ pub fn readiness(cfg: &Config) -> Probe {
     };
     let readiness = readiness_of(&ReadyFacts {
         game_dir: dump::fwd(&dir),
-        exe_exists: dir.join("pkp.exe").is_file(),
-        runtime_missing: !dir.join("pkp_rt.dll").is_file() && !exe_dir().join("pkp_rt.dll").is_file(),
+        exe_exists: crate::host::game_exe(&dir).is_file(),
+        runtime_missing: !crate::host::runtime_lib(&dir).is_file() && !crate::host::runtime_lib(&exe_dir()).is_file(),
         builds_exe,
         built: if builds_exe { gamebuild::built_state(&dir, &tools_dir) } else { gamebuild::Built::Current },
         needs_retranslation: shaders::needs_retranslation(&dir),

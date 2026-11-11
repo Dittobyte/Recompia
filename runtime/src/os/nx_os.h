@@ -1131,6 +1131,7 @@ HRESULT CoCreateInstance(REFCLSID clsid, void* outer, DWORD clsctx, REFIID iid, 
 #if defined(__cplusplus)
 
 // ---- C++ overloads: the path/name parameters ----------------------------------------------------------------
+#include <cstring>   // std::strchr: libstdc++'s <string.h> leaves the C functions in the global namespace only
 #include <string>
 
 std::string nxos_utf8(const char* s);

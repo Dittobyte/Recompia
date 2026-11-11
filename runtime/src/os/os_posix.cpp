@@ -1725,6 +1725,21 @@ BOOL IsDebuggerPresent(void) {
     size_t size = sizeof info;
     if (sysctl(mib, 4, &info, &size, nullptr, 0) != 0) return FALSE;
     return (info.kp_proc.p_flag & P_TRACED) ? TRUE : FALSE;
+#elif defined(__linux__)
+    // /proc/self/status "TracerPid": non-zero while a debugger is attached.
+    std::FILE* f = std::fopen("/proc/self/status", "r");
+    if (!f) return FALSE;
+    char line[256];
+    BOOL traced = FALSE;
+    while (std::fgets(line, sizeof line, f)) {
+        long pid = 0;
+        if (std::sscanf(line, "TracerPid: %ld", &pid) == 1) {
+            traced = pid != 0 ? TRUE : FALSE;
+            break;
+        }
+    }
+    std::fclose(f);
+    return traced;
 #else
     return FALSE;
 #endif
@@ -1798,6 +1813,29 @@ BOOL GetProcessMemoryInfo(HANDLE, PROCESS_MEMORY_COUNTERS* pmc, DWORD) {
         if (pmc->cb >= sizeof(PROCESS_MEMORY_COUNTERS_EX))
             static_cast<PROCESS_MEMORY_COUNTERS_EX*>(static_cast<void*>(pmc))->PrivateUsage = fp;
         return TRUE;
+    }
+#elif defined(__linux__)
+    // /proc/self/status has both numbers the guard needs: VmRSS (now) and VmHWM (the peak). getrusage's ru_maxrss is the
+    // peak only, so a guard built on it would report a high-water mark that never comes back down.
+    if (std::FILE* f = std::fopen("/proc/self/status", "r")) {
+        SIZE_T rss = 0, peak = 0;
+        char line[256];
+        while (std::fgets(line, sizeof line, f)) {
+            unsigned long long kb = 0;
+            if (std::sscanf(line, "VmRSS: %llu kB", &kb) == 1) rss = static_cast<SIZE_T>(kb) * 1024;
+            else if (std::sscanf(line, "VmHWM: %llu kB", &kb) == 1) peak = static_cast<SIZE_T>(kb) * 1024;
+        }
+        std::fclose(f);
+        if (rss || peak) {
+            if (!peak) peak = rss;
+            pmc->WorkingSetSize = rss;
+            pmc->PeakWorkingSetSize = peak;
+            pmc->PagefileUsage = rss;
+            pmc->PeakPagefileUsage = peak;
+            if (pmc->cb >= sizeof(PROCESS_MEMORY_COUNTERS_EX))
+                static_cast<PROCESS_MEMORY_COUNTERS_EX*>(static_cast<void*>(pmc))->PrivateUsage = rss;
+            return TRUE;
+        }
     }
 #endif
     struct rusage ru{};
@@ -2178,8 +2216,15 @@ std::atomic<uint32_t> g_fault_seq{0};
 void record_fault(int sig, uint64_t pc, uint64_t sp, bool guard) {
     const uint32_t i = g_fault_seq.fetch_add(1, std::memory_order_relaxed);
     uint64_t tp_ro = 0, tp = 0;
+#if defined(__aarch64__)
     __asm__ volatile("mrs %0, tpidrro_el0" : "=r"(tp_ro));
     __asm__ volatile("mrs %0, tpidr_el0" : "=r"(tp));
+#elif defined(__x86_64__)
+    // x86-64 has a single thread pointer: %fs:0 is the TCB's own address, which is what a TLS access adds to. Both fields carry
+    // it so the record keeps its shape (the Apple report reads them side by side).
+    __asm__ volatile("movq %%fs:0, %0" : "=r"(tp));
+    tp_ro = tp;
+#endif
     g_fault_ring[i % 8] = FaultRec{pc, sp, reinterpret_cast<uint64_t>(t_guard), reinterpret_cast<uint64_t>(&t_guard),
                                    t_thread_name, tp_ro, tp, static_cast<uint32_t>(sig), guard ? 1u : 0u};
 }
@@ -2321,7 +2366,8 @@ void install_signals() {
     {
         // Volatile sinks: the compiler drops calls whose result is unused (it did), and the stubs stayed unbound.
         static volatile intptr_t bind_sink = 0;
-        bind_sink = reinterpret_cast<intptr_t>(::pthread_self());
+        // pthread_t is a pointer on Darwin and an integer on glibc: through uintptr_t both are one cast away.
+        bind_sink = static_cast<intptr_t>(reinterpret_cast<uintptr_t>(::pthread_self()));
         bind_sink = static_cast<intptr_t>(::write(-1, "x", 1));   // fd -1: fails with EBADF, binds the stub
         sigjmp_buf jb;
         const int jumped = sigsetjmp(jb, 1);
@@ -2442,12 +2488,12 @@ void RaiseException(DWORD code, DWORD flags, DWORD nargs, const ULONG_PTR* args)
 }
 
 void nxos_install_altstack(void) {
-#if defined(__APPLE__)
     stack_t cur{};
     if (sigaltstack(nullptr, &cur) == 0 && (cur.ss_flags & SS_DISABLE) == 0) return;   // already installed
     // A separate mapping, NOT a thread_local buffer: macOS puts the TLS block at the bottom of the thread's stack, so a static
     // altstack sat exactly where a stack overflow lands and the handler then overwrote the thread's deepest live frames (the
     // land thread's overflow turned into handler->note_fault recursion on 2026-11-10). 64 KiB of stack over a 64 KiB guard.
+    // Linux has the same requirement for the same reason: a guest thread that overflows must be reported, not lost.
     static thread_local char* alt = nullptr;
     if (!alt) {
         void* p = ::mmap(nullptr, 2 * 64 * 1024, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
@@ -2461,7 +2507,6 @@ void nxos_install_altstack(void) {
     ss.ss_flags = 0;
     if (sigaltstack(&ss, nullptr) != 0)
         std::fprintf(stderr, "nxrt: sigaltstack failed: %s\n", std::strerror(errno));
-#endif
 }
 
 void nxos_set_thread_name(const char* name) { t_thread_name = name; }

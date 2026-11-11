@@ -16,21 +16,63 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::atomic::AtomicBool;
 
-/// macOS runs the game as the native binary built from this tree: there is no pkp.exe, no Proton and none of the release's
-/// Windows tools (Python, Zig, the shader translator), so every host decision below has this one branch.
+/// macOS and Linux run the game as the native binary built from this tree: there is no pkp.exe, no Proton and none of the
+/// release's Windows tools (Python, Zig, the shader translator), so every host decision below has this one branch.
 pub fn native_game() -> bool {
-    cfg!(target_os = "macos")
+    cfg!(any(target_os = "macos", target_os = "linux"))
 }
 
-/// The game executable in `dir`: `pkp` on macOS, `pkp.exe` everywhere else.
+/// The game executable in `dir`: `pkp` on macOS and Linux, `pkp.exe` everywhere else.
 pub fn game_exe(dir: &Path) -> PathBuf {
     dir.join(if native_game() { "pkp" } else { "pkp.exe" })
+}
+
+/// The runtime library the game loads from its own folder (release model (b)): pkp_rt.dll, libpkp_rt.dylib, libpkp_rt.so.
+pub fn runtime_lib_name() -> &'static str {
+    if cfg!(windows) {
+        "pkp_rt.dll"
+    } else if cfg!(target_os = "macos") {
+        "libpkp_rt.dylib"
+    } else {
+        "libpkp_rt.so"
+    }
+}
+
+pub fn runtime_lib(dir: &Path) -> PathBuf {
+    dir.join(runtime_lib_name())
+}
+
+/// The GPU model the shader translator is asked for: MoltenVK on macOS (its limits and precision), the desktop Vulkan driver
+/// everywhere else. Same values the release's Windows setup passes.
+pub fn harness_host() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "moltenvk"
+    } else {
+        "desktop"
+    }
+}
+
+/// The file the game build's link step takes the runtime from, relative to the package's tools folder.
+pub fn runtime_lib_rel() -> &'static str {
+    if cfg!(windows) {
+        "build/sdk/pkp_rt.lib"
+    } else if cfg!(target_os = "macos") {
+        "build/sdk/libpkp_rt.dylib"
+    } else {
+        "build/sdk/libpkp_rt.so"
+    }
+}
+
+/// The decoder libraries pkp_rt.dll loads at run time next to the game (astcdec-*-shared.dll). macOS samples ASTC in Metal and
+/// Linux decodes with the astcenc that is linked into the runtime, so only Windows has them.
+pub fn has_decoder_dlls() -> bool {
+    cfg!(windows)
 }
 
 /// macOS: the hidden run Windows does at Set up (shaders::warm_up). The romfs corpus cannot hold the blocks the game builds
 /// while it runs, so one headless run collects them and the translator merges them: without it the first real start draws
 /// with unlinked programs (models that never appear). A scratch save folder, so the player's own save is never touched.
-pub fn macos_warm_up(game_dir: &Path, cancel: &std::sync::atomic::AtomicBool) -> Result<Option<String>, String> {
+pub fn native_warm_up(game_dir: &Path, cancel: &std::sync::atomic::AtomicBool) -> Result<Option<String>, String> {
     use std::sync::atomic::Ordering;
     let exe = game_exe(game_dir);
     if !exe.is_file() {
@@ -74,13 +116,13 @@ pub fn macos_warm_up(game_dir: &Path, cancel: &std::sync::atomic::AtomicBool) ->
         std::thread::sleep(std::time::Duration::from_millis(500));
     }
     let _ = std::fs::remove_dir_all(&scratch);
-    macos_translate_shaders(game_dir)
+    native_translate_shaders(game_dir)
 }
 
 /// macOS: the shader cache is built by the C# harness in `tools/shaders`, not by the release's Windows tools. Runs it over
 /// the corpus the game dumped (`[nvn] dump_missing`, shaders::MISSING_REL), writing `<game>/shader_cache/spirv`.
 /// Returns the harness's last line, or None when there is nothing to translate or no harness to run.
-pub fn macos_translate_shaders(game_dir: &Path) -> Result<Option<String>, String> {
+pub fn native_translate_shaders(game_dir: &Path) -> Result<Option<String>, String> {
     // The game writes the blocks it has no translation for to [nvn] dump_missing, which Set up sets to shader_cache/missing
     // (shaders::MISSING_REL). This used to read shader_corpus, a folder only the development ini ever used, so the blocks the
     // game dumped were never translated and every one of them stayed an unlinked program (black geometry, missing prompts).
@@ -134,7 +176,7 @@ pub fn macos_translate_shaders(game_dir: &Path) -> Result<Option<String>, String
         .arg(&corpus)
         .arg("--out")
         .arg(&scratch)
-        .args(["--jobs", "2", "--host", "moltenvk", "--no-val"])
+        .args(["--jobs", "2", "--host", harness_host(), "--no-val"])
         .env("DOTNET_gcServer", "0")
         .env("DOTNET_GCHeapHardLimit", "0x60000000")   // 1.5 GiB ceiling for the translation
         .output()
@@ -222,7 +264,7 @@ fn find_up(rel: &str) -> Option<PathBuf> {
     None
 }
 
-pub fn macos_setup_tools(game_dir: &Path) -> Result<SetupTools, String> {
+pub fn native_setup_tools(game_dir: &Path) -> Result<SetupTools, String> {
     // The game folder's tools/ first (a tree that keeps them there), then the launcher's own (the package ships them in
     // Contents/MacOS/tools), then upward from the exe (a development checkout).
     let local = |rel: &str| {
@@ -261,7 +303,7 @@ pub fn macos_setup_tools(game_dir: &Path) -> Result<SetupTools, String> {
 /// Everything Set up does on macOS, for the window and for `--setup`: write pkp.ini from the chosen dump, fetch the build
 /// tools, build pkp from the dump (release model b), then extract and translate the shader corpus. Progress is
 /// (phase, done, total, message), as the shader job's own.
-pub fn macos_set_up_install(
+pub fn native_set_up_install(
     cfg: &crate::config::Config,
     cancel: &std::sync::atomic::AtomicBool,
     progress: &mut dyn FnMut(&str, u64, u64, &str),
@@ -295,10 +337,10 @@ pub fn macos_set_up_install(
             }
         }
     }
-    macos_set_up(&dir, cancel, progress)
+    native_set_up(&dir, cancel, progress)
 }
 
-pub fn macos_set_up(
+pub fn native_set_up(
     game_dir: &Path,
     cancel: &std::sync::atomic::AtomicBool,
     progress: &mut dyn FnMut(&str, u64, u64, &str),
@@ -318,7 +360,7 @@ pub fn macos_set_up(
     };
     let romfs = resolve(get("fs.romfs").ok_or("pkp.ini has no [fs] romfs")?);
     let exefs = resolve(get("fs.exefs").ok_or("pkp.ini has no [fs] exefs")?);
-    let t = macos_setup_tools(game_dir)?;
+    let t = native_setup_tools(game_dir)?;
     let cache = crate::shaders::cache_dir(game_dir);
     let corpus = cache.join("corpus");
     let spirv = cache.join("spirv");
@@ -372,7 +414,7 @@ pub fn macos_set_up(
         .arg(&corpus)
         .arg("--out")
         .arg(&spirv)
-        .args(["--jobs", "6", "--host", "moltenvk", "--no-val"])   // as the Windows setup
+        .args(["--jobs", "6", "--host", harness_host(), "--no-val"])   // as the Windows setup
         .env("DOTNET_gcServer", "0")
         .env("DOTNET_GCHeapHardLimit", "0x60000000")
         .stdout(std::process::Stdio::piped())
@@ -430,7 +472,7 @@ pub fn macos_set_up(
 /// blocks and the launcher translates them when it exits, as it always did).
 fn warm_up_run(game_dir: &Path, cancel: &std::sync::atomic::AtomicBool, progress: &mut dyn FnMut(&str, u64, u64, &str)) {
     progress("warmup", 0, 0, "Playing the opening once, to collect the shaders it builds...");
-    match macos_warm_up(game_dir, cancel) {
+    match native_warm_up(game_dir, cancel) {
         Ok(Some(line)) => progress("warmup", 1, 1, &line),
         Ok(None) => progress("warmup", 1, 1, "No shader was missing."),
         Err(e) if e == "cancelled" => {}
@@ -1026,7 +1068,9 @@ pub fn sync_runtime_files(src: &Path, game_dir: &Path) -> Result<(), String> {
     if canon(src) == canon(game_dir) {
         return Ok(());
     }
-    let wanted = |n: &str| n == "pkp_rt.dll" || (n.starts_with("astcdec-") && n.ends_with(".dll"));
+    let lib = runtime_lib_name();
+    let decoders = has_decoder_dlls();
+    let wanted = |n: &str| n == lib || (decoders && n.starts_with("astcdec-") && n.ends_with(".dll"));
     let Ok(rd) = std::fs::read_dir(src) else { return Ok(()) };
     for e in rd.flatten() {
         let name = e.file_name().to_string_lossy().to_string();
@@ -1051,9 +1095,9 @@ mod tests {
 
     #[test]
     #[ignore = "needs PKP_GAME_DIR; plays the opening headless for a minute and translates what it built"]
-    fn macos_warm_up_collects_the_opening() {
+    fn native_warm_up_collects_the_opening() {
         let dir = std::path::PathBuf::from(std::env::var("PKP_GAME_DIR").expect("PKP_GAME_DIR"));
-        let line = macos_warm_up(&dir, &std::sync::atomic::AtomicBool::new(false)).expect("the warm-up run ends");
+        let line = native_warm_up(&dir, &std::sync::atomic::AtomicBool::new(false)).expect("the warm-up run ends");
         println!("{:?}", line);
     }
 
@@ -1061,7 +1105,7 @@ mod tests {
     #[ignore = "needs PKP_GAME_DIR and PKP_SPIRV_HARNESS; translates the game folder's dumped blocks into its cache"]
     fn macos_translation_merges_the_dumped_blocks() {
         let dir = std::path::PathBuf::from(std::env::var("PKP_GAME_DIR").expect("PKP_GAME_DIR"));
-        let line = macos_translate_shaders(&dir).expect("the dumped blocks translate");
+        let line = native_translate_shaders(&dir).expect("the dumped blocks translate");
         println!("{:?}", line);
         assert!(!dir.join("shader_cache").join("missing").join("manifest.tsv").exists(), "the dumped corpus is cleared once translated");
     }

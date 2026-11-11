@@ -2,9 +2,17 @@
 
 ## Unreleased
 
+## 0.11.0
+
 - New **Show on Discord while playing** in the launcher's Settings: shows "Playing Recompia" and how long you have played on your Discord profile while the game runs. Off by default; Discord must be open. Update only: no shader rebuild, no Set up again
 - Fixed the Pokédex tabs showing "Time" as their title after the Settings screen had been opened (#494)
 - The Discord links in the launcher, the READMEs and the website now use the new invite, discord.recompia.com. Update only: no shader rebuild, no Set up again
+
+### Linux
+- The game runs natively on x86-64 Linux. The runtime, the lifted game, the shader translator and the launcher are Linux programs, so there is no Proton, no Wine and no `pkp_rt.dll`
+  - Before: the launcher was native but Set up built a Windows `pkp.exe` with Zig and Play started it through Steam's Proton
+  - Now: `libpkp_rt.so` and `pkp` are built for `x86_64-linux-gnu`, the launcher spawns the game directly, ASTC textures are decoded by the ARM decoder linked into the runtime (no per-CPU `astcdec-*.dll`), audio plays through SDL3, and `docs/linux-port.md` has the build and the run
+  - The release ships `libpkp_rt.so` and a `linux-x64` shader translator instead of the Windows ones; the FSR 3 and DLSS upscalers stay Windows-only
 
 ### macOS
 - The game runs on Apple Silicon Macs. This is the first release with a macOS build: the runtime, the lifted game and the launcher are native arm64 programs, so there is no Proton, no Vulkan driver to install and no `pkp_rt.dll`

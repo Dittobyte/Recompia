@@ -247,6 +247,11 @@ int sched_host_priority(int hos_prio) {
 // fail or do nothing; the result is ignored apart from one log line. Off with [sched] power_throttling = false.
 static void sched_disable_power_throttling() {
     if (!config_get_bool("sched", "power_throttling", true)) { NXLOG_I("sched", "power throttling opt-out disabled by [sched] power_throttling"); return; }
+#if !defined(_WIN32)
+    // Windows-only: EcoQoS and the timer-resolution policy have no POSIX equivalent (a hidden window is not deprioritised on
+    // macOS or Linux), so there is nothing to opt out of and nothing to report.
+    return;
+#else
 #ifndef PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION
     constexpr ULONG kIgnoreTimerResolution = 0x4;   // older SDKs lack the constant
 #else
@@ -260,6 +265,7 @@ static void sched_disable_power_throttling() {
         NXLOG_I("sched", "process power throttling opted out (execution speed + timer resolution)");
     else
         NXLOG_I("sched", "process power throttling opt-out not applied (error %lu; expected under Wine/Proton or before Windows 11)", static_cast<unsigned long>(GetLastError()));
+#endif  // _WIN32
 }
 
 void sched_set_process_priority(bool interactive) {

@@ -640,6 +640,10 @@ HANDLE CreateFileMappingW(HANDLE file, void*, DWORD protect, DWORD hi, DWORD lo,
             nxos_set_error_from_errno(e);
             return nullptr;
         }
+        // Unlinked at once: the fd keeps the object alive, and a crash (which never runs a destructor) leaves nothing
+        // behind. A named object leaked its whole 12 GB per crashed run, tmpfs then filled, and every later mapping
+        // faulted with SIGBUS (0xC0000006) on first touch.
+        ::shm_unlink(name);
         auto* s = new SectionObj();
         s->fd = fd;
         s->size = size;
@@ -670,14 +674,32 @@ LPVOID MapViewOfFileEx(HANDLE section, DWORD access, DWORD hi, DWORD lo, SIZE_T 
     const int prot = (access & FILE_MAP_ALL_ACCESS & (FILE_MAP_READ | FILE_MAP_WRITE)) ? (PROT_READ | PROT_WRITE)
                                                                                       : PROT_READ;
     const uintptr_t want = reinterpret_cast<uintptr_t>(at);
-    const int flags = MAP_SHARED | (want ? MAP_FIXED : 0);
+    // Windows fails a fixed view when the range is occupied (ERROR_INVALID_ADDRESS); MAP_FIXED silently unmaps whatever
+    // is there, so a candidate that overlaps a driver heap or a thread stack would destroy it and the process would jump
+    // to garbage much later (a function pointer read back as 1.0f, pc = 0x3f800000). MAP_FIXED_NOREPLACE gives the
+    // Windows answer, and callers (mem/memory.cpp heap_alias) then try their next candidate. macOS has no such flag and
+    // keeps the old behaviour.
+#if defined(MAP_FIXED_NOREPLACE)
+    const int fixed_flag = MAP_FIXED_NOREPLACE;
+#else
+    const int fixed_flag = MAP_FIXED;
+#endif
+    const int flags = MAP_SHARED | (want ? fixed_flag : 0);
 
     // The requested protection is applied per view: the pages are already backed by the section, and a view of pages
     // the owner has not committed yet reads as zeros, which is what MapViewOfFile guarantees on Windows too.
     void* p = ::mmap(want ? reinterpret_cast<void*>(want) : nullptr, bytes, prot, flags, s->fd,
                      static_cast<off_t>(off));
+#if defined(MAP_FIXED_NOREPLACE)
+    if (p == MAP_FAILED && want && errno == EINVAL) {
+        // A kernel before 4.17 answers MAP_FIXED_NOREPLACE with EINVAL instead of EEXIST; that is the only case where the
+        // range is worth taking unconditionally (nothing else asked for it).
+        p = ::mmap(reinterpret_cast<void*>(want), bytes, prot, MAP_SHARED | MAP_FIXED, s->fd, static_cast<off_t>(off));
+    }
+#endif
     if (p == MAP_FAILED) {
-        nxos_set_error_from_errno(errno);
+        if (errno == EEXIST) SetLastError(ERROR_INVALID_ADDRESS);
+        else nxos_set_error_from_errno(errno);
         return nullptr;
     }
     if (want && reinterpret_cast<uintptr_t>(p) != want) {

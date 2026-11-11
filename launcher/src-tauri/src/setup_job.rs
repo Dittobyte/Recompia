@@ -65,7 +65,7 @@ pub fn start_setup(app: AppHandle, state: SetupArg, gentle: Option<bool>) -> Res
     ensure_idle(&app, &[Need::Update, Need::Storage])?;
     let cfg = load_config(&app);
     // macOS: the player's dump is the source of everything. The same flow as the other platforms' Set up, from
-    // host.rs macos_set_up_install: pkp.ini from the chosen dump, the tools, the game build, then the shader corpus.
+    // host.rs native_set_up_install: pkp.ini from the chosen dump, the tools, the game build, then the shader corpus.
     if host::native_game() {
         let dir = game_dir_of(&cfg);
         fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {}", dir.display(), e))?;
@@ -94,7 +94,7 @@ pub fn start_setup(app: AppHandle, state: SetupArg, gentle: Option<bool>) -> Res
                 *st.progress.lock().unwrap() = p.clone();
                 let _ = app.emit("setup-status", p);
             };
-            let result = host::macos_set_up_install(&cfg, &st.cancel, &mut |phase, done, total, message| {
+            let result = host::native_set_up_install(&cfg, &st.cancel, &mut |phase, done, total, message| {
                 emit(shaders::Progress { state: RunState::Running, phase: phase.to_string(), done, total, message: message.to_string() })
             });
             let end = match result {
@@ -112,8 +112,8 @@ pub fn start_setup(app: AppHandle, state: SetupArg, gentle: Option<bool>) -> Res
     let dir = game_dir_of(&cfg);
     let tools_dir = exe_dir().join("tools");
     let package_b = gamebuild::is_package_b(&tools_dir);
-    if !package_b && !dir.join("pkp.exe").is_file() {
-        return Err(format!("pkp.exe was not found in {}. Put the launcher next to pkp.exe or set the game folder in Settings.", dump::fwd(&dir)));
+    if !package_b && !host::game_exe(&dir).is_file() {
+        return Err(format!("{} was not found in {}. Put the launcher next to {} or set the game folder in Settings.", host::game_exe_name(), dump::fwd(&dir), host::game_exe_name()));
     }
     // a pkp_rt.dll from another release than the tools: the build would finish and the game still refuse to start
     if package_b {

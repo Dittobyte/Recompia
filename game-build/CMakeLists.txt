@@ -53,6 +53,13 @@ if(PKP_RELEASE)
     set(NXRT_TESTTOOLS OFF)                             # release packages carry no test tooling (runtime option, default on)
     set(PKP_GAMEPLAY_DEFAULTS_CHECK ON)                 # and every gameplay mod on by default unless opt_in (runtime/games/pkp/core/pkp_settings_table.h)
 endif()
+# Release model (b) (PKP_RT_DLL=ON, docs/RELEASE.md): the runtime becomes a shared library (pkp_rt.dll, libpkp_rt.dylib,
+# libpkp_rt.so) that a game executable links against. Declared before the runtime below, because the static libraries it links have to
+# be compiled position independent. The block after the module list says what each platform builds from it.
+option(PKP_RT_DLL "build the runtime as a shared library for release model (b): pkp_rt.dll / libpkp_rt.dylib / libpkp_rt.so" OFF)
+if(PKP_RT_DLL AND NOT WIN32)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
 add_subdirectory("${PKP_RUNTIME_DIR}" runtime)
 
 # The module list (names, bases, load order) is recomp/games/pkp/config.py: the imported libraries below and the header
@@ -73,24 +80,43 @@ foreach(m ${PKP_MOD_MODULES})
 endforeach()
 
 # Release model (b) (PKP_RT_DLL=ON, docs/RELEASE.md): no game code in anything built here. The runtime and the boot code become
-# Release model (b): the runtime as a shared library (pkp_rt.dll, libpkp_rt.dylib) that a game executable built separately links
-# against. On Windows pkp.exe is linked on the player's PC from the libraries lifted out of their own dump and src/pkp_stub.cpp
-# (tools/build/pkp_build.py in the package, with the bundled Zig); on macOS the same pair is built here, because the exe needs the
-# Mach-O __GUEST segment and the lift already ran. Nothing lifted is imported into the runtime library itself.
-option(PKP_RT_DLL "build the runtime as a shared library for release model (b): pkp_rt.dll / libpkp_rt.dylib" OFF)
-if(PKP_RT_DLL AND NOT WIN32 AND NOT APPLE)
-    message(FATAL_ERROR "PKP_RT_DLL is the Windows and macOS release model (b)")
+# Release model (b): the runtime as a shared library (pkp_rt.dll, libpkp_rt.dylib, libpkp_rt.so) that a game executable built
+# separately links against. On Windows pkp.exe is linked on the player's PC from the libraries lifted out of their own dump and
+# src/pkp_stub.cpp (tools/build/pkp_build.py in the package, with the bundled Zig); on macOS and Linux the same pair is built here,
+# because the exe needs the Mach-O __GUEST segment / the lift already ran. Nothing lifted is imported into the runtime library itself.
+if(PKP_RT_DLL AND NOT WIN32 AND NOT APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(FATAL_ERROR "PKP_RT_DLL is the Windows, macOS and Linux release model (b)")
 endif()
 if(PKP_RT_DLL)
     if(WIN32)
         add_library(pkp_rt SHARED src/pkp_main.cpp src/pkp_rt.def)
     else()
-        # A Mach-O dylib exports its global symbols by default, so pkp_rt.def has no counterpart here.
+        # A Mach-O dylib exports its global symbols by default, so pkp_rt.def has no counterpart here; ELF exports nothing it is
+        # not told to, so Linux gets a version script made from the same list (below).
         add_library(pkp_rt SHARED src/pkp_main.cpp)
-        set_target_properties(pkp_rt PROPERTIES OUTPUT_NAME pkp_rt INSTALL_NAME_DIR "@rpath")
-        # The dylib counterpart of pkp_rt.def: exporting a symbol also makes the linker include the static object that defines
-        # it, which is how the lifted code's imports (call_indirect, host_import, stx_diag, ...) reach the dylib.
-        target_link_options(pkp_rt PRIVATE "-Wl,-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/src/pkp_rt.exports")
+        if(APPLE)
+            set_target_properties(pkp_rt PROPERTIES OUTPUT_NAME pkp_rt INSTALL_NAME_DIR "@rpath")
+            # The dylib counterpart of pkp_rt.def: exporting a symbol also makes the linker include the static object that defines
+            # it, which is how the lifted code's imports (call_indirect, host_import, stx_diag, ...) reach the dylib.
+            target_link_options(pkp_rt PRIVATE "-Wl,-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/src/pkp_rt.exports")
+        else()
+            set_target_properties(pkp_rt PROPERTIES OUTPUT_NAME pkp_rt)
+            # The same list as an ELF version script: `global:` is pkp_rt.def's EXPORTS, `local: *` hides the rest (the C++ runtime
+            # symbols a shared object would otherwise publish). --no-undefined would be wrong here: the lifted code's imports are
+            # resolved from the executable, exactly as on Windows.
+            file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/src/pkp_rt.exports" _pkp_rt_exports REGEX "^_[A-Za-z]")
+            set(_pkp_rt_global "")
+            set(_pkp_rt_keep "")
+            foreach(_sym ${_pkp_rt_exports})
+                string(REGEX REPLACE "^_" "" _sym "${_sym}")
+                string(APPEND _pkp_rt_global "    ${_sym};\n")
+                # An ELF version script only filters what is exported; unlike a Mach-O export list it does not pull the defining
+                # archive member in. Nothing inside the runtime calls these (the lifted code does), so ask for them explicitly.
+                list(APPEND _pkp_rt_keep "-Wl,--undefined=${_sym}")
+            endforeach()
+            file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/pkp_rt.map" "PKP_RT_1 {\n  global:\n${_pkp_rt_global}  local: *;\n};\n")
+            target_link_options(pkp_rt PRIVATE "-Wl,--version-script=${CMAKE_CURRENT_BINARY_DIR}/pkp_rt.map" ${_pkp_rt_keep})
+        endif()
     endif()
     set_source_files_properties(src/pkp_main.cpp PROPERTIES COMPILE_DEFINITIONS "PKP_VERSION=\"${PKP_VERSION}\"")
     target_compile_definitions(pkp_rt PRIVATE PKP_RT_DLL=1 PKP_GUI_SUBSYSTEM=1 PKP_EXEFS_DEFAULT="exefs")
@@ -103,10 +129,12 @@ if(PKP_RT_DLL)
     target_compile_options(pkp_rt PRIVATE "-ffile-prefix-map=${PKP_ROOT}=.")
     add_custom_command(TARGET pkp_rt POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${PKP_RUNTIME_DIR}/assets/fonts/DejaVuSans.ttf" "$<TARGET_FILE_DIR:pkp_rt>/fonts/DejaVuSans.ttf")
-    file(GLOB PKP_A2B_DLLS "${NXRT_A2B_DIR}/astcdec-*-shared.dll")
-    foreach(dll ${PKP_A2B_DLLS})
-        add_custom_command(TARGET pkp_rt POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different "${dll}" "$<TARGET_FILE_DIR:pkp_rt>")
-    endforeach()
+    if(WIN32)   # astcdec-*-shared.dll is the Windows decoder; macOS samples ASTC in Metal, Linux decodes with the static astcenc
+        file(GLOB PKP_A2B_DLLS "${NXRT_A2B_DIR}/astcdec-*-shared.dll")
+        foreach(dll ${PKP_A2B_DLLS})
+            add_custom_command(TARGET pkp_rt POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different "${dll}" "$<TARGET_FILE_DIR:pkp_rt>")
+        endforeach()
+    endif()
     if(APPLE)
         # The game executable of model (b): src/pkp_stub.cpp and the lifted modules, linked against the dylib. It carries the
         # __GUEST segment (the main executable's header is what reserves the range before libmalloc runs), and finds the dylib
@@ -124,6 +152,22 @@ if(PKP_RT_DLL)
             "${PKP_RUNTIME_DIR}/assets/prompts/prompt_icons.pak" "$<TARGET_FILE_DIR:pkp>/prompts/prompt_icons.pak")
         add_custom_command(TARGET pkp POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${NXRT_MOLTENVK_LIBRARY}" "$<TARGET_FILE_DIR:pkp>/libvulkan.1.dylib")
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        # The same pair on Linux: src/pkp_stub.cpp and the lifted modules, linked against libpkp_rt.so, which the executable finds
+        # next to itself ($ORIGIN). No __GUEST segment: the guest ranges are reserved by the runtime (mmap MAP_FIXED_NOREPLACE), and
+        # no Vulkan runtime is copied in (the system loader and ICDs are used).
+        add_executable(pkp src/pkp_stub.cpp)
+        set_source_files_properties(src/pkp_stub.cpp PROPERTIES COMPILE_DEFINITIONS "PKP_VERSION=\"${PKP_VERSION}\"")
+        target_include_directories(pkp PRIVATE "${PKP_GEN_INCLUDE}")
+        target_link_libraries(pkp PRIVATE ${PKP_MODULE_LIBS} pkp_rt)
+        set_target_properties(pkp PROPERTIES BUILD_RPATH "$ORIGIN" INSTALL_RPATH "$ORIGIN")
+        # The main thread's stack: lifted code nests deeply (the Windows /STACK:134217728 equivalent).
+        target_link_options(pkp PRIVATE "-Wl,-z,stack-size=134217728")
+        add_custom_command(TARGET pkp POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${PKP_RUNTIME_DIR}/assets/fonts/DejaVuSans.ttf" "$<TARGET_FILE_DIR:pkp>/fonts/DejaVuSans.ttf")
+        add_custom_command(TARGET pkp POST_BUILD COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:pkp>/prompts"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${PKP_RUNTIME_DIR}/assets/prompts/prompt_icons.pak" "$<TARGET_FILE_DIR:pkp>/prompts/prompt_icons.pak")
     endif()
     return()
 endif()
@@ -159,10 +203,13 @@ if(WIN32)
         target_link_options(pkp PRIVATE /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup /PDBALTPATH:pkp.pdb)
     endif()
     target_link_options(pkp PRIVATE /MAP /STACK:134217728 /HIGHENTROPYVA:NO /DEBUG /MANIFEST:NO)   # res/pkp.rc carries the manifest
-else()
+elseif(APPLE)
     # The main thread's stack: lifted code nests deeply. /STACK has no direct equivalent; -stack_size writes the size into the
     # Mach-O LC_MAIN header, which is what the kernel gives the main thread (128 MiB, the same number as the Windows flag).
     target_link_options(pkp PRIVATE "-Wl,-stack_size,0x8000000")
+else()
+    # Linux: the size goes into the PT_GNU_STACK header, which is what the kernel gives the main thread (128 MiB).
+    target_link_options(pkp PRIVATE "-Wl,-z,stack-size=134217728")
 endif()
 
 # The ASTC decoder DLLs astc2bc7 loads at run time (NVN textures in ASTC are transcoded to BC7 on first use): next to pkp.exe.

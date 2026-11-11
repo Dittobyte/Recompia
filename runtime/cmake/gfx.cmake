@@ -26,6 +26,11 @@ if(APPLE)
     # ASTC -> BC7 transcoder does not exist for macOS yet. Until it does the runtime hands the guest's ASTC blocks to
     # Metal as they are (docs/macos-port.md, M2), which needs no transcoder; nothing links the library.
     message(STATUS "nxrt: ASTC -> BC7 transcoder is Windows-only; macOS uses ASTC passthrough (src/os/os_posix_a2b.cpp, docs/macos-port.md D4)")
+elseif(NXRT_LINUX)
+    # tools/textures is an MSVC + ISPC build too, and Vulkan has no ASTC sampling to fall back on: Linux decodes the blocks with
+    # astcenc and encodes BC7 with bc7enc, both compiled from source into the runtime (src/os/os_posix_a2b.cpp). Nothing links
+    # the tools library here either.
+    message(STATUS "nxrt: ASTC -> BC7 transcoder: Linux uses astcenc + bc7enc (src/os/os_posix_a2b.cpp)")
 else()
     if(NOT EXISTS "${NXRT_A2B_DIR}/astc2bc7.lib" OR NOT EXISTS "${NXRT_A2B_DIR}/bc7e_ispc.lib")
         message(FATAL_ERROR "astc2bc7.lib not found in ${NXRT_A2B_DIR}: build tools/textures first (pwsh tools/textures/scripts/build.ps1) or set NXRT_A2B_DIR")
@@ -83,14 +88,9 @@ if(NXRT_WINDOWS)
     foreach(dll ${NXRT_A2B_DLLS})
         add_custom_command(TARGET nxrt_gfx_demo POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different "${dll}" "$<TARGET_FILE_DIR:nxrt_gfx_demo>")
     endforeach()
-else()
+elseif(APPLE)
     # volk dlopen()s "libvulkan.1.dylib"; shipping MoltenVK under that name next to the executable makes the port
     # self-contained (no Vulkan SDK needed on a player's Mac). @executable_path is the search path.
     add_custom_command(TARGET nxrt_gfx_demo POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${NXRT_MOLTENVK_LIBRARY}" "$<TARGET_FILE_DIR:nxrt_gfx_demo>/libvulkan.1.dylib")
-endif()
-
-# The launcher (apps/launcher): plain Win32, no macOS equivalent.
-if(NXRT_WINDOWS)
-    include(${CMAKE_CURRENT_LIST_DIR}/launcher.cmake)
 endif()
