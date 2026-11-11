@@ -1,0 +1,8 @@
+/* The mod review dialog (mod-review.js) and its notice on the home page (home.js). */
+dialog.mod-review { width: min(520px, calc(100vw - var(--space-8))); }
+.mod-review .mr-sets { display: flex; align-items: center; gap: var(--space-2); }
+.mod-review .mr-sets > span { flex: 1; color: var(--color-text-2); font-size: var(--text-sm); }
+.mod-review .mr-hint { font-size: var(--text-sm); }
+.mod-review .row-control { display: flex; align-items: center; gap: var(--space-2); }
+.mod-review .chip { font-size: var(--text-xs, 0.75rem); }
+.home-card.info .home-card-head > .icon { color: var(--color-accent); }

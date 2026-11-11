@@ -313,6 +313,10 @@ const gameplaySchema = () => SCHEMAS.pkp.sections.find((s) => s.name === 'pkp').
 export const gameplayKeys = () => gameplaySchema().map((k) => k.key);
 /** A mod's switch (not the setting of another switch). */
 export const isGameplaySwitch = (k) => k.group === 'gameplay' && !k.parent;
+/** The switches as the mod review lists them (pages/mod-review.js): { key, label, def (on by default), optIn, hidden }. */
+export const gameplaySwitches = () => gameplaySchema().filter(isGameplaySwitch).map((k) => ({
+  key: k.key, label: GAMEPLAY[k.key]?.label ?? k.key, def: k.default === '1', optIn: !!k.opt_in, hidden: !!k.hidden,
+}));
 
 function gameplayRow(k) {
   const g = GAMEPLAY[k.key];

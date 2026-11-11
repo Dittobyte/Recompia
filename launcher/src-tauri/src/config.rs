@@ -28,6 +28,9 @@ pub struct Config {
     pub window: Option<WindowPlace>,
     /// Which releases the launcher offers: "stable" (the default) or "testing" (prereleases built from the testing branch). update.rs Channel.
     pub channel: String,
+    /// The gameplay mod switches ([pkp] keys) the player has looked at in the mod review (pages/mod-review.js). The home page asks about a
+    /// mod that is on and not listed here; saving the review lists every switch the runtime has. Empty: nothing reviewed yet.
+    pub mods_reviewed: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]

@@ -1,5 +1,6 @@
 // Home: one button that does the next right thing, what went wrong if anything did, and the newest releases.
 import './home.css';
+import './mod-review.css';
 import logoUrl from '../art/logo.png';
 import { api } from '../api.js';
 import { num, t } from '../i18n.js';
@@ -9,6 +10,8 @@ import { store } from '../store.js';
 import { canCancelUpdate, canUpdate, gamePhase, primaryAction } from '../action.js';
 import { readIni, viewOf } from '../linkplay-model.js';
 import { formatDate, highlights, parseReleaseName } from '../markdown.js';
+import { modsNow, unreviewed } from '../mod-review-model.js';
+import { reviewMods } from './mod-review.js';
 
 const REPORT_LABEL = {
   'pkp_crash.txt': t('Crash report'),
@@ -54,6 +57,13 @@ const updateErrorCard = (s) => `<div class="home-card glass strong" role="alert"
     <div class="home-card-head">${icon('circle-alert')}<h2>${esc(t('The update did not finish'))}</h2></div>
     <p class="selectable">${esc(s.updateError)}</p>
     <div class="cluster"><button class="btn sm" data-act="update" ${canUpdate(s) ? '' : 'disabled'}>${icon('refresh-cw')}${esc(t('Try again'))}</button></div>
+  </div>`;
+
+// Gameplay mods are on by default; the player is asked once to look at them (mod-review.js) and the card goes when they have saved the review
+const modsCard = () => `<div class="home-card glass strong info" role="status">
+    <div class="home-card-head">${icon('gamepad-2')}<h2>${esc(t('Check your gameplay mods'))}</h2></div>
+    <p>${esc(t('Some gameplay mods are switched on for you. Look at what is on and choose what you want. You can still press Play.'))}</p>
+    <div class="cluster"><button class="btn sm" data-act="review-mods">${icon('check')}${esc(t('Review'))}</button></div>
   </div>`;
 
 const repackMessage = (r) => {
@@ -137,8 +147,9 @@ export function render(el, ctx) {
     drawTask(s);
 
     const crashed = s.game?.state === 'exited' && s.game.crashed && !crashDismissed;
-    patch(part('notices'), (s.updateError ? updateErrorCard(s) : '') + (crashed ? crashCard(s.game) : ''));
-    el.firstElementChild.classList.toggle('noticed', !!(crashed || s.updateError));
+    const modsDueNow = modsDue && s.app?.readiness?.kind === 'ready';
+    patch(part('notices'), (s.updateError ? updateErrorCard(s) : '') + (crashed ? crashCard(s.game) : '') + (modsDueNow ? modsCard() : ''));
+    el.firstElementChild.classList.toggle('noticed', !!(crashed || s.updateError || modsDueNow));
 
     patch(part('news'), s.news.releases.slice(0, CARDS).map(releaseCard).join(''));
   }
@@ -156,12 +167,20 @@ export function render(el, ctx) {
       case 'cancel': return store.cancelUpdate();
       case 'pause': return store.pauseSetup();
       case 'stop-repack': return store.cancelRepack();
+      case 'review-mods': return reviewMods().then(loadMods);
       case 'dismiss':
         crashDismissed = true;
         return draw(store.state);
     }
   });
 
+  // a mod that is on and was never looked at asks for the review; a file that cannot be read asks for nothing
+  let modsDue = false;
+  const loadMods = () => Promise.all([api.readSettings(), api.getConfig()]).then(([data, cfg]) => {
+    modsDue = unreviewed(modsNow(data.pkp), cfg.mods_reviewed ?? []).length > 0;
+    draw(store.state);
+  }).catch((e) => console.warn('mod review', e));
+  loadMods();
   // a settings file that cannot be read just leaves the chip out
   let linkChip = '';
   let profileChip = '';
