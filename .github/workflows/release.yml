@@ -356,3 +356,121 @@ jobs:
           sed -E 's/^([0-9a-f]+) \*?(.*)$/\1 *\2/' build/rel/linux.sha256 >> build/sums/SHA256SUMS.txt
           cat build/sums/SHA256SUMS.txt
           gh release upload "$REL_TAG" -R "$GITHUB_REPOSITORY" build/rel/PokopiaRecomp-$VERSION-linux-x64.tar.gz build/sums/SHA256SUMS.txt --clobber
+
+  # The macOS package: a DMG that installs the launcher into /Applications (docs/macos-port.md M6). It carries the launcher, the
+  # runtime dylib and the build kit (lifter, SDK sources, builder) with the shader harness; pkp is built by Set up from the
+  # player's own dump. No needs: the DMG does not use the Windows zip and is ready long before it, so its publish step waits for
+  # the release the Windows job creates.
+  macos:
+    runs-on: macos-latest          # arm64, the port's target (macos-14 was x64 and its image was retired on 2 November 2026)
+    timeout-minutes: 90
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        run: |
+          if [ -n "$REL_TAG" ]; then v=${REL_TAG#v}; else v=0.0.0; fi
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+
+      - name: Packages
+        run: |
+          brew install molten-vk          # cmake and ninja come with the image
+          echo "NXRT_MOLTENVK_DIR=$(brew --prefix molten-vk)/lib" >> "$GITHUB_ENV"
+          python3 -m pip install --user pillow     # tools/kbm_icons.py draws the prompt icons
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: launcher/package-lock.json
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Runtime dylib (libpkp_rt.dylib)
+        run: |
+          cmake -S game-build -B work/build/rtb -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 \
+                -DPKP_RT_DLL=ON -DNXRT_BUILD_GFX=ON -DNXRT_GAMES=pkp
+          cmake --build work/build/rtb --target pkp_rt -j 4
+
+      - name: Shader harness (self-contained osx-arm64)
+        run: |
+          git clone --filter=blob:none https://git.ryujinx.app/ryubing/ryujinx.git refs/ryubing
+          git -C refs/ryubing checkout "$RYUBING_COMMIT"
+          # setup_ryujinx.ps1 stages these with robocopy, which macOS does not have
+          dst=tools/shaders/third_party/ryubing
+          mkdir -p "$dst/src"
+          for p in Ryujinx.Common Spv.Generator Ryujinx.Graphics.Shader; do
+            rsync -a --exclude obj --exclude bin "refs/ryubing/src/$p" "$dst/src/"
+          done
+          cp refs/ryubing/Directory.Build.props refs/ryubing/Directory.Packages.props refs/ryubing/global.json \
+             refs/ryubing/nuget.config refs/ryubing/LICENSE.txt "$dst/"
+          dotnet publish tools/shaders/harness -c Release -r osx-arm64 --self-contained -o work/harness
+
+      - name: Launcher
+        working-directory: launcher
+        run: |
+          npm ci --no-audit --no-fund
+          npm run tauri build
+          mkdir -p ../work/play
+          cp src-tauri/target/release/pokopia-launcher ../work/play/PokopiaLauncher
+
+      - name: Package (DMG)
+        run: launcher/scripts/make-dmg.sh work/play "$VERSION"
+
+      - name: Check the package
+        run: |
+          dmg="work/play/Recompia-$VERSION-macos-arm64.dmg"
+          test -s "$dmg"
+          mount=$(mktemp -d)
+          hdiutil attach -quiet -nobrowse -mountpoint "$mount" "$dmg"
+          app="$mount/PokopiaLauncher.app"
+          test -x "$app/Contents/MacOS/PokopiaLauncher"
+          file "$app/Contents/MacOS/PokopiaLauncher" | grep -q arm64
+          for f in tools/build/sdk/libpkp_rt.dylib tools/build/sdk/libvulkan.1.dylib tools/build/sdk/kbm_icons \
+                   tools/build/sdk/fonts tools/harness/spirv_harness tools/build/pkp_build.py; do
+            test -e "$app/Contents/MacOS/$f" || { echo "missing $f in the bundle"; ls -R "$app/Contents/MacOS" | head -60; exit 1; }
+          done
+          codesign --verify --deep --strict "$app"
+          hdiutil detach -quiet "$mount"
+          du -h "$dmg"
+
+      - name: Checksums
+        run: |
+          cd work/play
+          shasum -a 256 "Recompia-$VERSION-macos-arm64.dmg" | sed -E 's/  / */' > macos.sha256
+          cat macos.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PokopiaRecomp-${{ env.VERSION }}-macos-arm64
+          path: |
+            work/play/Recompia-${{ env.VERSION }}-macos-arm64.dmg
+            work/play/macos.sha256
+          compression-level: 0
+
+      - name: Publish
+        if: env.REL_TAG != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # the Windows job creates the release and runs for up to two hours: wait for it rather than creating a second one
+          for _ in $(seq 1 90); do
+            gh release view "$REL_TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 && break
+            sleep 20
+          done
+          if ! gh release view "$REL_TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::warning::release $REL_TAG was not created within 30 minutes; the DMG is in the artifact"
+            exit 0
+          fi
+          mkdir -p build/sums
+          # the Windows job writes SHA256SUMS.txt with its zip; this job may reach the release first
+          gh release download "$REL_TAG" -R "$GITHUB_REPOSITORY" -p SHA256SUMS.txt -D build/sums || true
+          { cat build/sums/SHA256SUMS.txt 2>/dev/null || true; cat work/play/macos.sha256; } > build/sums/SHA256SUMS.new
+          mv build/sums/SHA256SUMS.new build/sums/SHA256SUMS.txt
+          cat build/sums/SHA256SUMS.txt
+          gh release upload "$REL_TAG" -R "$GITHUB_REPOSITORY" \
+            "work/play/Recompia-$VERSION-macos-arm64.dmg" build/sums/SHA256SUMS.txt --clobber

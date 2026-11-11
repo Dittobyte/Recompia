@@ -14,7 +14,7 @@ dmg="$here/Recompia-$version-macos-arm64.dmg"
 
 [ -x "$here/PokopiaLauncher" ] || { echo "no launcher binary at $here/PokopiaLauncher (npm run tauri build)" >&2; exit 1; }
 
-"$repo/launcher/scripts/make-app.sh" "$here"
+"$repo/launcher/scripts/make-app.sh" "$here" "$version"
 
 # The bundle carries everything the player needs: the runtime dylib, the lifter, the SDK sources and the builder. The game
 # folder (pkp, pkp.ini, shader_cache, saves) is created by Set up in Application Support, never inside the bundle.
