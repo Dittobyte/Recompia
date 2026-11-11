@@ -10,6 +10,13 @@
 // Both sides export this number as the data symbol pkp_rt_api (pkp_stub.cpp; pkp_main.cpp through pkp_rt.def), so the launcher
 // reads from each file's export table which API it was built for, before the game starts (launcher/src-tauri/src/runtime_api.rs,
 // which also reads the define above as text from the shipped copy of this header).
+// PKP_RT_EXPORT puts a symbol in the file's export table: the PE exports of pkp.exe, the dynamic symbols of the Linux pkp (whose
+// link adds --export-dynamic-symbol for it, release_b/pkp_build.py).
+#ifdef _WIN32
+#define PKP_RT_EXPORT __declspec(dllexport)
+#else
+#define PKP_RT_EXPORT __attribute__((visibility("default"), used))
+#endif
 
 #ifdef __cplusplus
 extern "C" {

@@ -327,14 +327,14 @@ mod tests {
         fs::write(sdk.join("pkp_rt_api.h"), "#define PKP_RT_API 2u\n").unwrap();
         fs::write(root.join("pkp_rt.dll"), image(SYMBOL, 2)).unwrap();
         fs::write(game.join("pkp.exe"), image(b"other_data\0", 0)).unwrap();
-        assert_eq!(check(&game, &tools), Agreement::ExeStale, "an exe from before the export");
+        assert_eq!(check(&game, &tools, "pkp.exe", "pkp_rt.dll"), Agreement::ExeStale, "an exe from before the export");
         fs::write(game.join("pkp.exe"), image(SYMBOL, 2)).unwrap();
-        assert_eq!(check(&game, &tools), Agreement::Agree);
+        assert_eq!(check(&game, &tools, "pkp.exe", "pkp_rt.dll"), Agreement::Agree);
         fs::write(sdk.join("pkp_rt_api.h"), "#define PKP_RT_API 3u\n").unwrap();
-        assert_eq!(check(&game, &tools), Agreement::Mixed { dll: Some(2), sdk: Some(3) });
+        assert_eq!(check(&game, &tools, "pkp.exe", "pkp_rt.dll"), Agreement::Mixed { dll: Some(2), sdk: Some(3) });
         fs::remove_file(root.join("pkp_rt.dll")).unwrap();
         fs::write(game.join("pkp_rt.dll"), image(SYMBOL, 3)).unwrap();
-        assert_eq!(check(&game, &tools), Agreement::ExeStale, "without a launcher copy the game folder's dll counts");
+        assert_eq!(check(&game, &tools, "pkp.exe", "pkp_rt.dll"), Agreement::ExeStale, "without a launcher copy the game folder's dll counts");
         fs::remove_dir_all(root).unwrap();
     }
 }

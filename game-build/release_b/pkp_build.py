@@ -588,7 +588,9 @@ def link(runner, lib, game, env):
     else:
         # the runtime is found next to pkp at run time ($ORIGIN); the 128 MiB main stack is the runtime's (pkp_host_stack_linux.cpp).
         # What libpkp_rt.so needs from the system is checked by the system's loader when pkp starts, not against zig's glibc here.
-        cmd = common + libs + [T.runtime, '-Wl,-rpath,$ORIGIN', '-Wl,--allow-shlib-undefined', '-o', tmp]
+        # pkp_rt_api goes into the dynamic symbols for the launcher's check (pkp_rt_api.h).
+        cmd = common + libs + [T.runtime, '-Wl,-rpath,$ORIGIN', '-Wl,--allow-shlib-undefined',
+                               '-Wl,--export-dynamic-symbol=pkp_rt_api', '-o', tmp]
     rc, tail = runner.run(cmd, env=env, cwd=SDK)
     if rc != 0:
         raise Fail('Linking %s failed (exit %d):\n%s' % (T.exe, rc, tail))

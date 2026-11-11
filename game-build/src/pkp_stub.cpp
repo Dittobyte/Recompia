@@ -12,7 +12,7 @@ NX_MODULES(NX_MODULE_DECL)
 }
 
 // The API this exe was linked for, exported so the launcher can read it from the file (pkp_rt_api.h).
-extern "C" __declspec(dllexport) const uint32_t pkp_rt_api = PKP_RT_API;
+extern "C" PKP_RT_EXPORT const uint32_t pkp_rt_api = PKP_RT_API;
 
 // The manifest (res/pkp.manifest) sets the UTF-8 code page, so argv is UTF-8 like the runtime expects.
 int main(int argc, char** argv) {
