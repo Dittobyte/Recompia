@@ -49,6 +49,28 @@ pub fn game_dir(app: &AppHandle) -> PathBuf {
     crate::paths::game_dir_of(&load_config(app))
 }
 
+/// The folder Tauri's app_config_dir uses for `identifier`, without a window: the command line modes (`--readiness`) read
+/// the settings the window saved. macOS `~/Library/Application Support`, Windows `%APPDATA%`, Linux `$XDG_CONFIG_HOME` or
+/// `~/.config`.
+pub fn config_dir_for(identifier: &str) -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    let base = std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library").join("Application Support"));
+    #[cfg(windows)]
+    let base = std::env::var_os("APPDATA").map(PathBuf::from);
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let base = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")));
+    base.map(|b| b.join(identifier))
+}
+
+/// The saved config, read without a window (see config_dir_for).
+pub fn load_config_for(identifier: &str) -> Config {
+    config_dir_for(identifier)
+        .map(|d| d.join("launcher.json"))
+        .and_then(|p| fs::read_to_string(p).ok())
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
 pub fn load_config(app: &AppHandle) -> Config {
     config_path(app)
         .ok()

@@ -131,12 +131,22 @@ pub fn setup_started(dir: &Path) -> bool {
 
 /// The one answer to "can Play run": the Play command and the page's main button both come here, so they cannot disagree.
 pub fn readiness(cfg: &Config) -> Probe {
-    // macOS: the game is the native build from this tree and reads its own pkp.ini (exefs, romfs) -- there is no package to
-    // choose, no pkp_rt.dll and nothing to build, so the launcher only checks the binary, the ini and the shader cache.
+    // macOS: the game is a native build and reads its own pkp.ini. When the package carries the builder, pkp does not exist
+    // until Set up has built it from the player's dump, so a missing pkp is "press Set up", not "no executable".
     if crate::host::native_game() {
         let dir = game_dir_of(cfg);
         let refuse = |r: Readiness| Probe { readiness: r, paths: None, dump: None };
-        if !crate::host::game_exe(&dir).is_file() {
+        let tools = crate::paths::exe_dir().join("tools");
+        let package_b = crate::gamebuild::is_package_b(&tools);
+        let exe = crate::host::game_exe(&dir);
+        if package_b {
+            if cfg.dump_dir.trim().is_empty() {
+                return refuse(Readiness::of("no_files", "Choose your game files first."));
+            }
+            if !exe.is_file() || !crate::gamebuild::is_built(&dir, &tools) {
+                return refuse(Readiness::of("setup", "Press Set up to build the game from your files and prepare its shaders."));
+            }
+        } else if !exe.is_file() {
             return refuse(Readiness::of(
                 "no_exe",
                 format!("{} was not found in {}. Put it there or set the game folder in Settings.", crate::host::game_exe_name(), dump::fwd(&dir)),

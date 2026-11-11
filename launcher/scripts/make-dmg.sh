@@ -24,6 +24,10 @@ cp "$repo/work/build/rtb/libpkp_rt.dylib" "$app/Contents/Frameworks/libpkp_rt.dy
 cp "$repo/game-build/release_b/pkp_build.py" "$repo/game-build/release_b/dump_hashes.json" "$res/tools/build/"
 cp -R "$repo/recomp" "$res/tools/build/recomp"
 find "$res/tools/build/recomp" -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
+# The shader pipeline: the corpus extractor and a self-contained publish of the harness (its own .NET runtime), so a
+# player needs neither .NET nor a checkout.
+cp "$repo/tools/shaders/ampere/extract_corpus.py" "$res/tools/"
+cp -R "$repo/work/harness" "$res/tools/harness"
 cp "$repo/game-build/src/pkp_stub.cpp" "$repo/game-build/src/pkp_rt_api.h" "$res/tools/build/sdk/"
 cp "$repo/runtime/cmake/guest_segment.py" "$res/tools/build/sdk/"
 cp "$repo/work/build/rtb/libpkp_rt.dylib" "$res/tools/build/sdk/"

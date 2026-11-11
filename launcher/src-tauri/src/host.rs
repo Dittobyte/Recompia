@@ -67,8 +67,13 @@ pub fn macos_translate_shaders(game_dir: &Path) -> Result<Option<String>, String
     let scratch = game_dir.join("shader_cache").join(".translate");
     let _ = std::fs::remove_dir_all(&scratch);
     std::fs::create_dir_all(&scratch).map_err(|e| format!("cannot create {}: {}", scratch.display(), e))?;
-    let out = command("dotnet")
-        .arg(&dll)
+    // A self-contained publish ships its own runtime: run its apphost next to the dll instead of the system's dotnet.
+    let apphost = dll.with_file_name("spirv_harness");
+    let mut runner = if apphost.is_file() { command(&apphost) } else { command("dotnet") };
+    if !apphost.is_file() {
+        runner.arg(&dll);
+    }
+    let out = runner
         .arg("--batch")
         .arg(&corpus)
         .arg("--out")
@@ -155,12 +160,18 @@ fn find_up(rel: &str) -> Option<PathBuf> {
 }
 
 pub fn macos_setup_tools(game_dir: &Path) -> Result<SetupTools, String> {
+    // The game folder's tools/ first (a tree that keeps them there), then the launcher's own (the package ships them in
+    // Contents/MacOS/tools), then upward from the exe (a development checkout).
     let local = |rel: &str| {
-        let p = game_dir.join("tools").join(rel);
-        p.exists().then_some(p)
+        [game_dir.join("tools").join(rel), crate::paths::exe_dir().join("tools").join(rel)].into_iter().find(|p| p.exists())
     };
     let python = std::env::var_os("PKP_SETUP_PYTHON")
         .map(PathBuf::from)
+        .or_else(|| {
+            // the tools prepare_tools fetched into tools/macos (or tools/linux)
+            let fetched = python(&crate::paths::exe_dir().join("tools"));
+            fetched.is_file().then_some(fetched)
+        })
         .or_else(|| local("python3"))
         .or_else(|| find_up("tools/.venv/bin/python3"))
         .unwrap_or_else(|| PathBuf::from("python3"));
@@ -171,6 +182,7 @@ pub fn macos_setup_tools(game_dir: &Path) -> Result<SetupTools, String> {
         .ok_or("extract_corpus.py was not found (set PKP_EXTRACT_CORPUS, or put it in <game>/tools)")?;
     let harness = std::env::var_os("PKP_SPIRV_HARNESS")
         .map(PathBuf::from)
+        .or_else(|| local("harness/spirv_harness.dll"))
         .or_else(|| local("spirv_harness.dll"))
         .or_else(|| find_up("tools/shaders/build/bin/Release/net10.0/spirv_harness.dll"))
         .ok_or("spirv_harness.dll was not found (set PKP_SPIRV_HARNESS, or put it in <game>/tools)")?;
@@ -180,6 +192,45 @@ pub fn macos_setup_tools(game_dir: &Path) -> Result<SetupTools, String> {
 /// The whole macOS setup, what Set up does on Windows and Linux with their own tools: extract the game's shader corpus
 /// from its RomFS (extract_corpus.py) and translate every block (spirv_harness), then mark the cache complete. The game
 /// itself is the CMake build next to the launcher, so there is no build step.
+/// Everything Set up does on macOS, for the window and for `--setup`: write pkp.ini from the chosen dump, fetch the build
+/// tools, build pkp from the dump (release model b), then extract and translate the shader corpus. Progress is
+/// (phase, done, total, message), as the shader job's own.
+pub fn macos_set_up_install(
+    cfg: &crate::config::Config,
+    cancel: &std::sync::atomic::AtomicBool,
+    progress: &mut dyn FnMut(&str, u64, u64, &str),
+) -> Result<usize, String> {
+    let report = crate::dump::scan(&cfg.dump_dir);
+    let chosen = report.chosen.ok_or_else(|| "Choose usable game files first.".to_string())?;
+    let dir = crate::paths::game_dir_of(cfg);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {}", dir.display(), e))?;
+    crate::settings::ensure_play_paths(&dir, &chosen.exefs, &chosen.romfs, &chosen.romfs_base, &report.aoc_dir)?;
+    let tools_dir = crate::paths::exe_dir().join("tools");
+    if crate::gamebuild::is_package_b(&tools_dir) {
+        // Linux and macOS fetch their native tools once (Python with lz4 and capstone; macOS compiles with Apple clang)
+        let ready = prepare_tools(&tools_dir, cancel, &mut |done, total, message| progress("tools", done, total, &message))?;
+        if !ready {
+            return Err("Setup paused.".into());
+        }
+        if !crate::gamebuild::is_built(&dir, &tools_dir) {
+            let tools = crate::gamebuild::find_tools(&tools_dir)?;
+            let exefs = {
+                let ini = crate::settings::read(&dir);
+                let p = ini.pkp.get("fs.exefs").cloned().unwrap_or_default();
+                let pb = std::path::PathBuf::from(&p);
+                if pb.is_absolute() { pb } else { dir.join(pb) }
+            };
+            let jobs = std::thread::available_parallelism().map(|n| n.get().saturating_sub(1).max(1)).unwrap_or(2);
+            let job = crate::gamebuild::Job { game_dir: dir.clone(), exefs, jobs, idle: false, log: None };
+            let built = crate::gamebuild::run(&job, &tools, cancel, |t| progress(&t.phase, t.done, t.total, &t.message))?;
+            if !built {
+                return Err("Setup paused.".into());
+            }
+        }
+    }
+    macos_set_up(&dir, cancel, progress)
+}
+
 pub fn macos_set_up(
     game_dir: &Path,
     cancel: &std::sync::atomic::AtomicBool,
@@ -188,8 +239,18 @@ pub fn macos_set_up(
     use std::sync::atomic::Ordering;
     let cfg = crate::settings::read(game_dir);
     let get = |k: &str| cfg.pkp.get(k).map(String::as_str).filter(|v| !v.is_empty()).map(str::to_string);
-    let romfs = get("fs.romfs").ok_or("pkp.ini has no [fs] romfs")?;
-    let exefs = get("fs.exefs").ok_or("pkp.ini has no [fs] exefs")?;
+    // The ini's paths may be relative to the game folder (the runtime resolves them itself); the extractor and the harness
+    // are separate processes started from the launcher's own folder, so they need absolute ones.
+    let resolve = |p: String| {
+        let pb = std::path::PathBuf::from(&p);
+        if pb.is_absolute() {
+            pb
+        } else {
+            game_dir.join(pb)
+        }
+    };
+    let romfs = resolve(get("fs.romfs").ok_or("pkp.ini has no [fs] romfs")?);
+    let exefs = resolve(get("fs.exefs").ok_or("pkp.ini has no [fs] exefs")?);
     let t = macos_setup_tools(game_dir)?;
     let cache = crate::shaders::cache_dir(game_dir);
     let corpus = cache.join("corpus");
@@ -226,7 +287,7 @@ pub fn macos_set_up(
     let have = std::fs::read_to_string(spirv.join("results.tsv")).map(|t| t.lines().count().saturating_sub(1)).unwrap_or(0);
     if have >= blocks {
         progress("translate", blocks as u64, blocks as u64, "Every shader is translated already.");
-        crate::shaders::mark_complete(game_dir, &romfs, blocks)?;
+        crate::shaders::mark_complete(game_dir, &romfs.to_string_lossy(), blocks)?;
         return Ok(blocks);
     }
 
@@ -283,7 +344,7 @@ pub fn macos_set_up(
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
     let _ = reader.join();
-    crate::shaders::mark_complete(game_dir, &romfs, blocks)?;
+    crate::shaders::mark_complete(game_dir, &romfs.to_string_lossy(), blocks)?;
     Ok(blocks)
 }
 

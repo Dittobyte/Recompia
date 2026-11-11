@@ -74,13 +74,16 @@ fn main() {
         std::process::exit(cli::run_play(&args));
     }
     if args.iter().any(|a| a == "--setup") {
-        std::process::exit(cli::run_setup(&args));
+        let ctx: tauri::Context<tauri::Wry> = tauri::generate_context!();
+        std::process::exit(cli::run_setup(&args, &ctx.config().identifier));
     }
     if args.iter().any(|a| a == "--preflight") {
         std::process::exit(cli::run_preflight(&args));
     }
     if args.iter().any(|a| a == "--readiness") {
-        std::process::exit(cli::run_readiness(&args));
+        // The identifier names the config folder Tauri uses, so this reads the settings the window saved.
+        let ctx: tauri::Context<tauri::Wry> = tauri::generate_context!();
+        std::process::exit(cli::run_readiness(&args, &ctx.config().identifier));
     }
     readiness::UPDATED.store(args.iter().any(|a| a == "--updated"), Ordering::SeqCst);
     // WebKitGTK's DMA-BUF renderer leaves the window blank or kills it ("Error 71 (Protocol error)") on NVIDIA's driver

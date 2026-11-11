@@ -138,19 +138,23 @@ fn game_arg(args: &[String]) -> PathBuf {
 
 /// `--setup [--game <folder>]`: Set up without the window. macOS: extract the shader corpus from the RomFS and translate it
 /// (host.rs macos_set_up); the Windows and Linux setup needs the window's dump choice and the build, so this refuses there.
-pub fn run_setup(args: &[String]) -> i32 {
+pub fn run_setup(args: &[String], identifier: &str) -> i32 {
     if !crate::host::native_game() {
         eprintln!("--setup runs the native (macOS) setup only; use the window on Windows and Linux");
         return 2;
     }
-    let game = game_arg(args);
+    // the settings the window saved (the dump to build from), unless --game names the folder
+    let cfg = match args.iter().position(|a| a == "--game") {
+        Some(i) => crate::config::Config { game_dir: args.get(i + 1).cloned().unwrap_or_default(), ..crate::config::load_config_for(identifier) },
+        None => crate::config::load_config_for(identifier),
+    };
     let cancel = std::sync::atomic::AtomicBool::new(false);
     let mut emit = |phase: &str, done: u64, total: u64, message: &str| {
         println!("[{}] {} ({}/{})", phase, message, done, total);
         use std::io::Write;
         let _ = std::io::stdout().flush();
     };
-    match crate::host::macos_set_up(&game, &cancel, &mut emit) {
+    match crate::host::macos_set_up_install(&cfg, &cancel, &mut emit) {
         Ok(n) => {
             println!("setup done: {} shaders translated", n);
             0
@@ -178,10 +182,12 @@ pub fn run_preflight(args: &[String]) -> i32 {
 }
 
 /// `--readiness [--game <folder>]`: what the Play button would see, without the window (a diagnostic for a machine where the
-/// launcher itself cannot be watched).
-pub fn run_readiness(args: &[String]) -> i32 {
-    let game = game_arg(args);
-    let cfg = crate::config::Config { game_dir: crate::dump::fwd(&game), ..Default::default() };
+/// launcher itself cannot be watched). Without --game it reads the settings the window saved.
+pub fn run_readiness(args: &[String], identifier: &str) -> i32 {
+    let cfg = match args.iter().position(|a| a == "--game") {
+        Some(i) => crate::config::Config { game_dir: args.get(i + 1).cloned().unwrap_or_default(), ..Default::default() },
+        None => crate::config::load_config_for(identifier),
+    };
     let probe = crate::readiness::readiness(&cfg);
     println!("{}: {}", probe.readiness.kind, probe.readiness.detail);
     if probe.readiness.kind == "ready" {
