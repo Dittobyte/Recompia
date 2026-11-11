@@ -39,8 +39,11 @@ pub fn macos_translate_shaders(game_dir: &Path) -> Result<Option<String>, String
     let dll = std::env::var_os("PKP_SPIRV_HARNESS")
         .map(PathBuf::from)
         .or_else(|| {
-            let local = game_dir.join("tools").join("spirv_harness.dll");
-            local.is_file().then_some(local)
+            // the game folder's tools/, then the launcher's own (the package ships tools/harness)
+            [game_dir.join("tools"), crate::paths::exe_dir().join("tools")]
+                .into_iter()
+                .flat_map(|t| [t.join("harness").join("spirv_harness.dll"), t.join("spirv_harness.dll")])
+                .find(|p| p.is_file())
         })
         .or_else(|| {
             // a development tree: the launcher sits in work/play, the harness in tools/shaders/build
@@ -293,8 +296,14 @@ pub fn macos_set_up(
     }
 
     progress("translate", 0, blocks as u64, &format!("Translating {} shaders...", blocks));
-    let mut child = command("dotnet")
-        .arg(&t.harness)
+    // The package ships a self-contained harness: run its apphost, not the system's dotnet, which a launcher started from
+    // Finder does not have on its PATH (that was "could not run the shader translator: No such file or directory").
+    let apphost = t.harness.with_file_name("spirv_harness");
+    let mut runner = if apphost.is_file() { command(&apphost) } else { command("dotnet") };
+    if !apphost.is_file() {
+        runner.arg(&t.harness);
+    }
+    let mut child = runner
         .arg("--batch")
         .arg(&corpus)
         .arg("--out")
