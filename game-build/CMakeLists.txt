@@ -73,27 +73,58 @@ foreach(m ${PKP_MOD_MODULES})
 endforeach()
 
 # Release model (b) (PKP_RT_DLL=ON, docs/RELEASE.md): no game code in anything built here. The runtime and the boot code become
-# pkp_rt.dll (+ the import library pkp_rt.lib); pkp.exe is linked on the player's PC from the libraries lifted out of their own dump
-# and src/pkp_stub.cpp (tools/build/pkp_build.py in the package, with the bundled Zig). Nothing lifted is imported here.
-option(PKP_RT_DLL "build the runtime as pkp_rt.dll for release model (b)" OFF)
-if(PKP_RT_DLL AND NOT WIN32)
-    message(FATAL_ERROR "PKP_RT_DLL is the Windows release model (b): pkp_rt.dll and its .def import library do not exist on macOS")
+# Release model (b): the runtime as a shared library (pkp_rt.dll, libpkp_rt.dylib) that a game executable built separately links
+# against. On Windows pkp.exe is linked on the player's PC from the libraries lifted out of their own dump and src/pkp_stub.cpp
+# (tools/build/pkp_build.py in the package, with the bundled Zig); on macOS the same pair is built here, because the exe needs the
+# Mach-O __GUEST segment and the lift already ran. Nothing lifted is imported into the runtime library itself.
+option(PKP_RT_DLL "build the runtime as a shared library for release model (b): pkp_rt.dll / libpkp_rt.dylib" OFF)
+if(PKP_RT_DLL AND NOT WIN32 AND NOT APPLE)
+    message(FATAL_ERROR "PKP_RT_DLL is the Windows and macOS release model (b)")
 endif()
 if(PKP_RT_DLL)
-    add_library(pkp_rt SHARED src/pkp_main.cpp src/pkp_rt.def)
+    if(WIN32)
+        add_library(pkp_rt SHARED src/pkp_main.cpp src/pkp_rt.def)
+    else()
+        # A Mach-O dylib exports its global symbols by default, so pkp_rt.def has no counterpart here.
+        add_library(pkp_rt SHARED src/pkp_main.cpp)
+        set_target_properties(pkp_rt PROPERTIES OUTPUT_NAME pkp_rt INSTALL_NAME_DIR "@rpath")
+        # The dylib counterpart of pkp_rt.def: exporting a symbol also makes the linker include the static object that defines
+        # it, which is how the lifted code's imports (call_indirect, host_import, stx_diag, ...) reach the dylib.
+        target_link_options(pkp_rt PRIVATE "-Wl,-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/src/pkp_rt.exports")
+    endif()
     set_source_files_properties(src/pkp_main.cpp PROPERTIES COMPILE_DEFINITIONS "PKP_VERSION=\"${PKP_VERSION}\"")
     target_compile_definitions(pkp_rt PRIVATE PKP_RT_DLL=1 PKP_GUI_SUBSYSTEM=1 PKP_EXEFS_DEFAULT="exefs")
     target_include_directories(pkp_rt PRIVATE "${PKP_GEN_INCLUDE}")
     target_link_libraries(pkp_rt PRIVATE nxrt_game_pkp nxrt_gfx nxrt)
-    # /DEBUG off: no .pdb path in the DLL. Low host allocations as for pkp.exe (guest ranges at 0x71_0000_0000 stay free).
-    target_link_options(pkp_rt PRIVATE /HIGHENTROPYVA:NO /DEBUG:NONE /Brepro)
-    target_compile_options(pkp_rt PRIVATE "-clang:-ffile-prefix-map=${PKP_ROOT}=.")
+    if(WIN32)
+        # /DEBUG off: no .pdb path in the DLL. Low host allocations as for pkp.exe (guest ranges at 0x71_0000_0000 stay free).
+        target_link_options(pkp_rt PRIVATE /HIGHENTROPYVA:NO /DEBUG:NONE /Brepro)
+    endif()
+    target_compile_options(pkp_rt PRIVATE "-ffile-prefix-map=${PKP_ROOT}=.")
     add_custom_command(TARGET pkp_rt POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${PKP_RUNTIME_DIR}/assets/fonts/DejaVuSans.ttf" "$<TARGET_FILE_DIR:pkp_rt>/fonts/DejaVuSans.ttf")
     file(GLOB PKP_A2B_DLLS "${NXRT_A2B_DIR}/astcdec-*-shared.dll")
     foreach(dll ${PKP_A2B_DLLS})
         add_custom_command(TARGET pkp_rt POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different "${dll}" "$<TARGET_FILE_DIR:pkp_rt>")
     endforeach()
+    if(APPLE)
+        # The game executable of model (b): src/pkp_stub.cpp and the lifted modules, linked against the dylib. It carries the
+        # __GUEST segment (the main executable's header is what reserves the range before libmalloc runs), and finds the dylib
+        # next to itself.
+        add_executable(pkp src/pkp_stub.cpp)
+        set_source_files_properties(src/pkp_stub.cpp PROPERTIES COMPILE_DEFINITIONS "PKP_VERSION=\"${PKP_VERSION}\"")
+        target_include_directories(pkp PRIVATE "${PKP_GEN_INCLUDE}")
+        target_link_libraries(pkp PRIVATE ${PKP_MODULE_LIBS} pkp_rt)
+        nxrt_add_guest_segment(pkp)
+        set_target_properties(pkp PROPERTIES BUILD_RPATH "@executable_path" INSTALL_RPATH "@executable_path")
+        add_custom_command(TARGET pkp POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${PKP_RUNTIME_DIR}/assets/fonts/DejaVuSans.ttf" "$<TARGET_FILE_DIR:pkp>/fonts/DejaVuSans.ttf")
+        add_custom_command(TARGET pkp POST_BUILD COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:pkp>/prompts"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${PKP_RUNTIME_DIR}/assets/prompts/prompt_icons.pak" "$<TARGET_FILE_DIR:pkp>/prompts/prompt_icons.pak")
+        add_custom_command(TARGET pkp POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${NXRT_MOLTENVK_LIBRARY}" "$<TARGET_FILE_DIR:pkp>/libvulkan.1.dylib")
+    endif()
     return()
 endif()
 

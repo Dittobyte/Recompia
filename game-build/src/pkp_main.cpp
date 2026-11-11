@@ -347,8 +347,9 @@ extern "C" int pkp_rt_main(int argc, char** argv, const PkpRtModules* mods) {
 int main(int argc, char** argv) {
 #endif
     nxrt_register_game_pkp();      // before anything reads it (nxrt::init, play mode, the services, the test tooling): docs/GAME_BOUNDARY.md
-#ifdef PKP_GUI_SUBSYSTEM
+#if defined(PKP_GUI_SUBSYSTEM) && defined(_WIN32)
     // Started from a terminal: show the output there. When the output is redirected to a file or a pipe (pkp --version > v.txt), leave it alone.
+    // Windows only: a macOS build has no GUI subsystem to reattach a console to.
     const HANDLE out_handle = GetStdHandle(STD_OUTPUT_HANDLE);
     if ((!out_handle || out_handle == INVALID_HANDLE_VALUE) && AttachConsole(ATTACH_PARENT_PROCESS)) {
         std::freopen("CONOUT$", "w", stdout);
