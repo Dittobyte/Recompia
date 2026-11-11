@@ -171,9 +171,12 @@ pub fn macos_setup_tools(game_dir: &Path) -> Result<SetupTools, String> {
     let python = std::env::var_os("PKP_SETUP_PYTHON")
         .map(PathBuf::from)
         .or_else(|| {
-            // the tools prepare_tools fetched into tools/macos (or tools/linux)
-            let fetched = python(&crate::paths::exe_dir().join("tools"));
-            fetched.is_file().then_some(fetched)
+            // the Python prepare_tools fetched: into the game folder on macOS (the bundle is read only), next to the
+            // AppImage on Linux. The bundle's copy is checked second, for a package that still carries one.
+            [crate::host::tools_dir_for(game_dir), crate::paths::exe_dir().join("tools")]
+                .into_iter()
+                .map(|t| python(&t))
+                .find(|p| p.is_file())
         })
         .or_else(|| local("python3"))
         .or_else(|| find_up("tools/.venv/bin/python3"))
@@ -277,7 +280,7 @@ pub fn macos_set_up(
         .map_err(|e| format!("could not run the corpus extractor: {}", e))?;
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
-        return Err(format!("the corpus extractor failed: {}", err.lines().last().unwrap_or("")));
+        return Err(format!("the corpus extractor failed ({}): {}", t.python.display(), err.lines().last().unwrap_or("")));
     }
     let blocks = std::fs::read_to_string(corpus.join("unique.tsv"))
         .map(|t| t.lines().count().saturating_sub(1))
