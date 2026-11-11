@@ -100,9 +100,9 @@ This Testing build adds logging and a few device checks, and changes no frame-ra
 - Fixed the Pokédex tabs showing "Time" as their title after the Settings screen had been opened (#494)
 
 ### Online presence (opt-in)
-- New **Share that I am online** in Settings > Game: while the game runs, the launcher tells the Recompia online server that you are playing
-  - Sent: an optional online name (empty: anonymous), your version, Windows or Linux, and how many Pokémon have a home in your save. Never your save, your profile nickname or your user ID
-  - Off by default. **Reset my online ID** starts a new ID. Update only: no shader rebuild, no Set up again
+- New **Share that I am online** in Settings > Game (off by default)
+  - Before: the launcher sent nothing about you to any Recompia server
+  - Now: once you switch it on, the launcher tells the Recompia online server you are playing while the game runs: an optional online name (empty: anonymous), your version, Windows or Linux, and how many Pokémon have a home in your save. Your save, profile nickname and user ID are never sent. **Reset my online ID** starts a new ID. Update only: no shader rebuild, no Set up again
   - Still not: recompia.com has no page that shows who is online yet
 
 ### The Testing tab
