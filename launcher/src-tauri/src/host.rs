@@ -369,6 +369,9 @@ pub fn game_exe_name() -> &'static str {
 pub fn python(tools_dir: &Path) -> PathBuf {
     if cfg!(windows) {
         tools_dir.join("python").join("python.exe")
+    } else if cfg!(target_os = "macos") {
+        // The macOS package carries its own Python and the lifter's wheels next to the launcher, as the Windows one does.
+        tools_dir.join("python").join("bin").join("python3")
     } else {
         tools_dir.join("linux").join("python").join("bin").join("python3")
     }

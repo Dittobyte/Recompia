@@ -19,7 +19,19 @@ pub fn exe_dir() -> PathBuf {
 pub fn default_game_dir() -> PathBuf {
     let exe = exe_dir();
     if exe.file_name().is_some_and(|n| n == "MacOS") && exe.parent().is_some_and(|p| p.file_name().is_some_and(|n| n == "Contents")) {
-        if let Some(dir) = exe.parent().and_then(std::path::Path::parent).and_then(std::path::Path::parent) {
+        let beside = exe.parent().and_then(std::path::Path::parent).and_then(std::path::Path::parent);
+        // a game folder kept beside the bundle (development) wins over the installed one
+        if let Some(dir) = &beside {
+            if dir.join(crate::settings::PKP_INI).is_file() {
+                return dir.to_path_buf();
+            }
+        }
+        // Installed into /Applications: the bundle is read only, so the game folder (pkp, pkp.ini, shader_cache, saves)
+        // lives in Application Support, which Set up creates.
+        if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+            return home.join("Library").join("Application Support").join("Recompia").join("game");
+        }
+        if let Some(dir) = beside {
             return dir.to_path_buf();
         }
     }

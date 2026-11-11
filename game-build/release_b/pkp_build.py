@@ -36,6 +36,7 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 import shutil
 import struct
 import subprocess
@@ -47,6 +48,7 @@ from concurrent.futures import ThreadPoolExecutor, FIRST_COMPLETED, wait
 HERE = os.path.dirname(os.path.abspath(__file__))
 RECOMP = os.path.join(HERE, 'recomp')
 SDK = os.path.join(HERE, 'sdk')
+DARWIN = sys.platform == 'darwin'
 # Windows: the bundled Zig. Linux (the native launcher): a Linux build of the same Zig version, which it fetches into
 # tools/linux/zig (PKP_ZIG overrides it); it cross-compiles the same x86_64-windows-gnu objects
 ZIG = (os.path.join(HERE, 'zig', 'zig.exe') if os.name == 'nt'
@@ -55,8 +57,11 @@ FORMAT = 3          # bump when the build layout or the stamp changes: older bui
 # the lifter as game-build/scripts/make-release.ps1 ships it: paths under RECOMP, the same in the zip (tools/build/recomp/...)
 # and in the repo (recomp/...)
 LIFTER = ['nxrecomp', 'include/nxrecomp', 'games/pkp/CMakeLists.txt', 'games/pkp/config.py']
-# what the link takes from sdk/ besides the lifted objects and pkp_rt.lib (stamped on its own, as 'runtime')
-SDK_FILES = ['pkp_stub.cpp', 'pkp_rt_api.h', 'pkp.rc', 'pkp.manifest']
+# what the link takes from sdk/ besides the lifted objects and the runtime library (stamped on its own, as 'runtime')
+if DARWIN:
+    SDK_FILES = ['pkp_stub.cpp', 'pkp_rt_api.h', 'guest_segment.py']
+else:
+    SDK_FILES = ['pkp_stub.cpp', 'pkp_rt_api.h', 'pkp.rc', 'pkp.manifest']
 
 # the module table and the compile flags come from the bundled lifter, the same tables the developer build (CMake) reads:
 # recomp/games/pkp/config.py (modules) and recomp/nxrecomp/compile_flags.py (ZIG_MINGW)
@@ -68,8 +73,21 @@ GAME = load_game('pkp')
 MODULES = [(m.name, m.source, m.base, i, m.shards) for i, m in enumerate(GAME.modules)]
 # site lists per module, as paths under RECOMP (main's main.sites)
 SITES = {m.name: 'games/pkp/' + m.sites for m in GAME.modules if m.sites}
-CXXFLAGS = compile_flags.ZIG_MINGW
-COMPILER = [ZIG, 'c++']                 # the compile command before the flags (tests put a fake one here)
+if DARWIN:
+    # macOS: Apple clang from the Command Line Tools (the package needs them, and the launcher says so when they are missing),
+    # and the runtime as a dylib. The exe is Mach-O, so the guest segment is injected after the link.
+    # Through xcrun: the Command Line Tools' clang++ invoked by its own path has no SDK sysroot, so the C++20 headers
+    # (<bit>, <span>) are not found. xcrun supplies -isysroot.
+    CLANGXX = ['xcrun', 'clang++']
+    AR = shutil.which('ar') or 'ar'
+    RUNTIME_LIB = 'libpkp_rt.dylib'
+    TARGET_ARCH = 'arm64' if platform.machine() in ('arm64', 'aarch64') else platform.machine()
+    CXXFLAGS = compile_flags.for_arch(TARGET_ARCH, 'clang') + ['-std=c++20']
+    COMPILER = CLANGXX
+else:
+    RUNTIME_LIB = 'pkp_rt.lib'
+    CXXFLAGS = compile_flags.ZIG_MINGW
+    COMPILER = [ZIG, 'c++']             # the compile command before the flags (tests put a fake one here)
 CACHE_MB = 3072                         # default size cap of <game>/build/objcache
 CREATE_NO_WINDOW = 0x08000000
 BELOW_NORMAL = 0x00004000
@@ -124,7 +142,7 @@ def tree_hash(root, rels):
 def tool_stamp():
     """The part of the build stamp this package decides: a release that changes any of it rebuilds pkp.exe."""
     return {'lifter': tree_hash(RECOMP, LIFTER), 'sites': tree_hash(RECOMP, sorted(SITES.values())), 'sdk': tree_hash(SDK, SDK_FILES),
-            'runtime': sha256(os.path.join(SDK, 'pkp_rt.lib')), 'cxxflags': CXXFLAGS, 'modules': [list(m) for m in MODULES],
+            'runtime': sha256(os.path.join(SDK, RUNTIME_LIB)), 'cxxflags': CXXFLAGS, 'modules': [list(m) for m in MODULES],
             'modheader': hashlib.sha256(modheader.render(GAME.modules).encode()).hexdigest()}
 
 
@@ -543,12 +561,16 @@ def archive(runner, obj, lib, stamp, env):
         if os.path.isfile(a):
             os.remove(a)
         objs = sorted(os.path.join(obj, name, f) for f in os.listdir(os.path.join(obj, name)) if f.endswith('.o'))
-        rsp = os.path.join(obj, '%s.rsp' % name)
-        # UTF-8, not the ANSI code page: zig ar reads the response file as UTF-8, so a game folder path with non-ASCII
-        # characters (an accented user name) failed the archive step.
-        with open(rsp, 'w', encoding='utf-8') as f:
-            f.write('\n'.join('"%s"' % p.replace('\\', '/') for p in objs))
-        rc, tail = runner.run([ZIG, 'ar', 'rcs', a, '@' + rsp], env=env)
+        if DARWIN:
+            # Apple's ar has no response files; a module's object list stays well inside ARG_MAX.
+            rc, tail = runner.run([AR, 'rcs', a] + objs, env=env)
+        else:
+            rsp = os.path.join(obj, '%s.rsp' % name)
+            # UTF-8, not the ANSI code page: zig ar reads the response file as UTF-8, so a game folder path with non-ASCII
+            # characters (an accented user name) failed the archive step.
+            with open(rsp, 'w', encoding='utf-8') as f:
+                f.write('\n'.join('"%s"' % p.replace('\\', '/') for p in objs))
+            rc, tail = runner.run([ZIG, 'ar', 'rcs', a, '@' + rsp], env=env)
         if rc != 0:
             raise Fail('Archiving %s failed (exit %d):\n%s' % (name, rc, tail))
     write_json(stamp_p, stamp)
@@ -556,18 +578,30 @@ def archive(runner, obj, lib, stamp, env):
 
 def link(runner, lib, game, env):
     libs = [os.path.join(lib, 'pkp_%s.a' % m[0]) for m in MODULES]
-    tmp = os.path.join(lib, 'pkp.exe')
+    exe = 'pkp' if DARWIN else 'pkp.exe'
+    tmp = os.path.join(lib, exe)
     modheader.write(GAME.modules, os.path.join(lib, 'gen', 'nx_modules.gen.h'))     # the module list pkp_stub.cpp includes
-    cmd = [ZIG, 'c++', '-target', 'x86_64-windows-gnu', '-mcpu=x86_64+cx16', '-O1', '-fno-exceptions', '-fno-rtti', '-I', SDK, '-I', os.path.join(lib, 'gen'),
-           os.path.join(SDK, 'pkp_stub.cpp'), os.path.join(SDK, 'pkp.rc')] + libs + [os.path.join(SDK, 'pkp_rt.lib'),
-           '-o', tmp, '-Wl,--stack,134217728', '-Wl,--subsystem,windows']
-    rc, tail = runner.run(cmd, env=env, cwd=SDK)
-    if rc != 0:
-        raise Fail('Linking pkp.exe failed (exit %d):\n%s' % (rc, tail))
-    clear_high_entropy_va(tmp)
-    dst = os.path.join(game, 'pkp.exe')
+    if DARWIN:
+        # Apple clang, the runtime dylib next to the exe (@rpath), and the guest segment in the Mach-O header afterwards.
+        cmd = list(CLANGXX) + CXXFLAGS + ['-I', SDK, '-I', os.path.join(lib, 'gen'), os.path.join(SDK, 'pkp_stub.cpp')] + libs + [
+            os.path.join(SDK, RUNTIME_LIB), '-o', tmp, '-Wl,-stack_size,0x8000000', '-Wl,-rpath,@executable_path']
+        rc, tail = runner.run(cmd, env=env, cwd=SDK)
+        if rc != 0:
+            raise Fail('Linking %s failed (exit %d):\n%s' % (exe, rc, tail))
+        rc, tail = runner.run([sys.executable, os.path.join(SDK, 'guest_segment.py'), tmp], env=env)
+        if rc != 0:
+            raise Fail('Reserving the guest address space failed (exit %d):\n%s' % (rc, tail))
+    else:
+        cmd = [ZIG, 'c++', '-target', 'x86_64-windows-gnu', '-mcpu=x86_64+cx16', '-O1', '-fno-exceptions', '-fno-rtti', '-I', SDK, '-I', os.path.join(lib, 'gen'),
+               os.path.join(SDK, 'pkp_stub.cpp'), os.path.join(SDK, 'pkp.rc')] + libs + [os.path.join(SDK, 'pkp_rt.lib'),
+               '-o', tmp, '-Wl,--stack,134217728', '-Wl,--subsystem,windows']
+        rc, tail = runner.run(cmd, env=env, cwd=SDK)
+        if rc != 0:
+            raise Fail('Linking pkp.exe failed (exit %d):\n%s' % (rc, tail))
+        clear_high_entropy_va(tmp)
+    dst = os.path.join(game, exe)
     os.replace(tmp, dst)
-    progress('link', 1, 1, 'pkp.exe built')
+    progress('link', 1, 1, '%s built' % exe)
     return dst
 
 
@@ -604,7 +638,10 @@ def main():
     t0 = time.time()
     times = {}
     try:
-        if not os.path.isfile(ZIG):
+        if DARWIN:
+            if subprocess.run(['xcrun', '--find', 'clang++'], capture_output=True).returncode != 0:
+                raise Fail('Apple clang was not found: run "xcode-select --install" and press Set up again.')
+        elif not os.path.isfile(ZIG):
             raise Fail('The bundled compiler is missing (%s). Extract the release zip again.' % ZIG)
         want = verify(a.exefs)
         tools = tool_stamp()
@@ -622,8 +659,9 @@ def main():
         times['verify'] = round(time.time() - t0, 1)
         runner = Runner(cancel_file)
         env = dict(os.environ)
-        env['ZIG_GLOBAL_CACHE_DIR'] = os.path.join(build, 'zig-cache')
-        env['ZIG_LOCAL_CACHE_DIR'] = os.path.join(build, 'zig-cache')
+        if not DARWIN:
+            env['ZIG_GLOBAL_CACHE_DIR'] = os.path.join(build, 'zig-cache')
+            env['ZIG_LOCAL_CACHE_DIR'] = os.path.join(build, 'zig-cache')
         gen, obj, lib = os.path.join(build, 'lift'), os.path.join(build, 'obj'), os.path.join(build, 'lib')
         reuse = libs_current(lib, libstamp)
         if reuse:                        # only the runtime or the SDK files changed: link the kept libraries again
@@ -637,7 +675,7 @@ def main():
             compile_all(runner, gen, obj, a.jobs, env, make_cache(os.path.join(build, 'objcache'), a.cache_mb, compiler))
             times['compile'] = round(time.time() - t, 1)
         t = time.time()
-        progress('link', 0, 1, 'Linking pkp.exe')
+        progress('link', 0, 1, 'Linking %s' % ('pkp' if DARWIN else 'pkp.exe'))
         if not reuse:
             archive(runner, obj, lib, libstamp, env)
         try:
