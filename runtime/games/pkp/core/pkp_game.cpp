@@ -21,6 +21,7 @@
 #include "input/pkp_play.h"
 #include "render/pkp_quality.h"
 #include "core/pkp_save_uuid.h"
+#include "core/pkp_pokemon_cap.h"
 #include "render/pkp_shoulder_camera.h"
 #include "ui/pkp_sort.h"
 #include "render/pkp_taa.h"
@@ -76,7 +77,7 @@ constexpr Entry port(const Feature* f) { return {f, {settings::Key::Count, setti
 
 using enum settings::Key;
 constexpr Entry kEntries[] = {
-    port(&kSaveUuidFeature), port(&kLinkplayFeature), port(&kPlayFeature), port(&kKbmFeature), port(&kModsNoticeFeature),
+    port(&kSaveUuidFeature), port(&kLinkplayFeature), port(&kPlayFeature), port(&kPokemonCapFeature),  port(&kKbmFeature), port(&kModsNoticeFeature),
 #if NXRT_TESTTOOLS
     port(&kMovieTestFeature),
 #endif

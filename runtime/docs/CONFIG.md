@@ -391,6 +391,8 @@ Pokopia's own keys, in the `[pkp]` section of the game ini (`pkp.ini`; `nxrt.ini
 | `pkp` | `craft_search` | `0` | `1` `0` | `NXRT_PKP_CRAFT_SEARCH` | A Search button in the crafting screen's key guide. Next start. |
 | `pkp` | `title_quit` | `1` | `1` `0` | `NXRT_PKP_TITLE_QUIT` | A Quit Game key guide on the title screen. Next start. |
 | `pkp` | `options_menu` | `1` | `1` `0` | `NXRT_PKP_OPTIONS_MENU` | The PC settings as tabs and rows of the game's own Settings screen. Next start. |
+| `pkp` | `pokemon_cap_50` | `1` | `1` `0` | `NXRT_PKP_POKEMON_CAP_50` | Enable the experimental resident Pokemon limit (default 31). Next start. |
+| `pkp` | `pokemon_cap_limit` | `31` | `25` to `64` (clamped into it) | `NXRT_PKP_POKEMON_CAP_LIMIT` | Requested living Pokemon limit; object and active-actor budgets are bounded by the game's 64-slot pool. Next start. |
 | `pkp` | `events_file` | `pokopia_events.tsv` | text | `NXRT_PKP_EVENTS_FILE` | The Events tab's list: one event per line, start date, end date and name, separated by tabs. Next start. |
 | `pkp` | `online_presence` | `0` | `1` `0` | `NXRT_PKP_ONLINE_PRESENCE` | Launcher only (online.rs): while the game runs, tell the Recompia online server that this player is online, with the launcher's online name, version, Windows or Linux and the Pokemon-at-home count. Sends data off the PC, so off by default. |
 
