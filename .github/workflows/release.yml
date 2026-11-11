@@ -378,7 +378,7 @@ jobs:
         run: |
           brew install molten-vk          # cmake and ninja come with the image
           echo "NXRT_MOLTENVK_DIR=$(brew --prefix molten-vk)/lib" >> "$GITHUB_ENV"
-          python3 -m pip install --user pillow     # tools/kbm_icons.py draws the prompt icons
+          python3 -m pip install --user --break-system-packages pillow   # tools/kbm_icons.py draws the prompt icons (Homebrew's python is externally managed)
 
       - uses: actions/setup-node@v4
         with:
