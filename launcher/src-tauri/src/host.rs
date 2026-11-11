@@ -1089,6 +1089,33 @@ pub fn sync_runtime_files(src: &Path, game_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// macOS: the files the game loads from its own folder that the package carries: the runtime library and MoltenVK. A launcher
+/// update ships newer ones (a runtime fix, the pipeline cache) and they must reach the game without a Set up; the same rule as
+/// pkp_rt.dll on Windows. Copies when the size or the content differs.
+#[cfg(target_os = "macos")]
+pub fn sync_macos_runtime(game_dir: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    let sdk = crate::paths::exe_dir().join("tools").join("build").join("sdk");
+    for name in ["libpkp_rt.dylib", "libvulkan.1.dylib"] {
+        let src = sdk.join(name);
+        let dst = game_dir.join(name);
+        if !src.is_file() {
+            continue;
+        }
+        let same = match (std::fs::read(&src), std::fs::read(&dst)) {
+            (Ok(a), Ok(b)) => a == b,
+            _ => false,
+        };
+        if same {
+            continue;
+        }
+        let _ = std::fs::remove_file(&dst);   // the package's copy can be read only
+        std::fs::copy(&src, &dst).map_err(|e| format!("cannot copy {} into {}: {}", name, game_dir.display(), e))?;
+        let _ = std::fs::set_permissions(&dst, std::fs::Permissions::from_mode(0o755));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -225,17 +225,13 @@ std::atomic<bool> g_cache_ready{false};
 void ensure_cache() {
     if (g_cache_ready.load(std::memory_order_acquire)) return;
     std::lock_guard<std::mutex> lk(g_cache_mu);       // the prewarm workers and the render thread may get here together
-#if defined(__APPLE__)
-    static constexpr const char* kDefaultPipelineCache = "";
-#else
     static constexpr const char* kDefaultPipelineCache = "pipeline_cache.bin";
-#endif
     if (g_cache_tried) return;
     g_cache_tried = true;
-    // macOS: off by default. MoltenVK's serialized pipeline cache is what a boot hang correlates with on this host: with
-    // pipeline_cache.bin present the game stops after NVN init before its first frame (A/B, several runs each way); without
-    // it, it runs. The cost of leaving it off is the pipeline build at start (about 2 s, the same as a cold cache).
-    // [nvn] pipeline_cache = pipeline_cache.bin turns it back on.
+    // On by default on every host, macOS included. It was off on macOS for a while: with pipeline_cache.bin present the game
+    // stopped after NVN init, before its first frame. That A/B ran while the pool shadow copy wrote past its buffer and
+    // corrupted the driver's heap (nvn_pool_copy.cpp), and with that fixed the cache loads and the game runs; leaving it off
+    // costs a Metal compile of every pipeline at start (tens of seconds on a cold cache, seen as a black window).
     g_cache_path = config_get_str("nvn", "pipeline_cache", kDefaultPipelineCache);
     std::vector<char> data;
     if (!g_cache_path.empty()) {

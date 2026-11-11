@@ -7,14 +7,15 @@
 # Needs a production launcher build (npm run tauri build) and the runtime dylib (PKP_RT_DLL=ON, see docs/macos-port.md).
 set -eu
 here=$(cd "${1:?usage: make-dmg.sh <play folder> [version]}" && pwd)
-version=${2:-0.1.1}
 repo=$(cd "$(dirname "$0")/../.." && pwd)
+# the release version: the launcher's manifest, unless the caller names one (the release workflow passes the tag's)
+version=${2:-$(sed -nE 's/^[[:space:]]*"version": "([^"]+)".*/\1/p' "$repo/launcher/src-tauri/tauri.conf.json" | head -1)}
 app="$here/PokopiaLauncher.app"
 dmg="$here/Recompia-$version-macos-arm64.dmg"
 
 [ -x "$here/PokopiaLauncher" ] || { echo "no launcher binary at $here/PokopiaLauncher (npm run tauri build)" >&2; exit 1; }
 
-"$repo/launcher/scripts/make-app.sh" "$here"
+"$repo/launcher/scripts/make-app.sh" "$here" "$version"
 
 # The bundle carries everything the player needs: the runtime dylib, the lifter, the SDK sources and the builder. The game
 # folder (pkp, pkp.ini, shader_cache, saves) is created by Set up in Application Support, never inside the bundle.

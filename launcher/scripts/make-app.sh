@@ -4,7 +4,9 @@
 # controls.ini and shader_cache stay beside it (a 26 GB cache does not belong inside a bundle), and the launcher looks
 # for the game in the folder the .app sits in.
 set -eu
-here=$(cd "${1:?usage: make-app.sh <play folder with PokopiaLauncher, pkp and pkp.ini>}" && pwd)
+here=$(cd "${1:?usage: make-app.sh <play folder with PokopiaLauncher, pkp and pkp.ini> [version]}" && pwd)
+# the release version: the launcher's manifest, unless make-dmg.sh names one
+version=${2:-$(sed -nE 's/^[[:space:]]*"version": "([^"]+)".*/\1/p' "$(dirname "$0")/../src-tauri/tauri.conf.json" | head -1)}
 app="$here/PokopiaLauncher.app"
 bin="$here/PokopiaLauncher"
 
@@ -24,8 +26,8 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
     <key>CFBundleName</key><string>Pokopia Launcher</string>
     <key>CFBundleDisplayName</key><string>Pokopia Launcher</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.1.1</string>
-    <key>CFBundleVersion</key><string>0.1.1</string>
+    <key>CFBundleShortVersionString</key><string>@VERSION@</string>
+    <key>CFBundleVersion</key><string>@VERSION@</string>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
@@ -33,6 +35,9 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 </dict>
 </plist>
 PLIST
+
+# the release version, from make-dmg.sh (the tag) or the default
+sed -i '' -e "s/@VERSION@/$version/g" "$app/Contents/Info.plist"
 
 # Ad-hoc signature: enough for a local double-click. A distribution build signs with a Developer ID and notarizes
 # (docs/macos-port.md M6).

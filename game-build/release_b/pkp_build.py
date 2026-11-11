@@ -37,6 +37,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import struct
 import subprocess
@@ -171,10 +172,23 @@ def tree_hash(root, rels):
     return h.hexdigest()
 
 
+def runtime_abi():
+    """The ABI the executable links the runtime by, from sdk/pkp_rt_api.h. The library itself is not stamped: pkp loads it
+    from its own folder (pkp_rt.dll, libpkp_rt.dylib), so a release that only fixes the runtime replaces that file and links
+    nothing (the launcher copies it into the game folder before Play). Stamping the file made every such release ask for a
+    full Set up."""
+    try:
+        with open(os.path.join(SDK, 'pkp_rt_api.h'), encoding='utf-8') as f:
+            m = re.search(r'#define\s+PKP_RT_API\s+(\d+)', f.read())
+        return 'api %s' % (m.group(1) if m else '?')
+    except OSError:
+        return 'api ?'
+
+
 def tool_stamp():
     """The part of the build stamp this package decides: a release that changes any of it rebuilds pkp.exe."""
     return {'lifter': tree_hash(RECOMP, LIFTER), 'sites': tree_hash(RECOMP, sorted(SITES.values())), 'sdk': tree_hash(SDK, SDK_FILES),
-            'runtime': sha256(os.path.join(SDK, RUNTIME_LIB)), 'cxxflags': CXXFLAGS, 'modules': [list(m) for m in MODULES],
+            'runtime': runtime_abi(), 'cxxflags': CXXFLAGS, 'modules': [list(m) for m in MODULES],
             'modheader': hashlib.sha256(modheader.render(GAME.modules).encode()).hexdigest()}
 
 
@@ -207,7 +221,9 @@ def check(game):
     if done.get('format') != FORMAT or not isinstance(done.get('tools'), dict):
         return False, '%s was built by an older release' % EXE
     want = tool_stamp()
-    changed = [k for k in want if done['tools'].get(k) != want[k]]
+    # The runtime is a shared library the launcher copies into the game folder before Play, and its ABI is what the exe depends
+    # on (readiness compares the exe's and the library's). A release that only fixes the runtime therefore rebuilds nothing.
+    changed = [k for k in want if k != 'runtime' and done['tools'].get(k) != want[k]]
     if changed:
         return False, 'this release changes ' + ', '.join(changed)
     return True, '%s matches this release' % EXE
