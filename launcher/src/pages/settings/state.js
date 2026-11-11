@@ -13,11 +13,10 @@ export const rememberSection = (id) => { lastSection = id; };
 /** The channel the Settings page shows: 'testing' only when the launcher is set to it. */
 export const channelOf = (st) => (st.src.config.channel === 'testing' ? 'testing' : 'stable');
 
-export function createState({ dump, cfg, dlss, framegen, overview, promptIcons }, ctx) {
+export function createState({ dump, cfg, dlss, overview, promptIcons }, ctx) {
   return {
     src: makeSource(dump, cfg),
     dlss,
-    framegen,             // frame generation's DLL is in the game folder (framegen.rs)
     overview,
     promptIcons,          // pack entry -> image URL for the Button icons preview (prompt-icons.js), null without an icon pack
     gameDir: dump.game_dir,
@@ -67,7 +66,6 @@ export function env(st) {
     dlssCanFetch: !!st.dlss?.available,
     dlssPresent: !!st.dlss?.present,
     dlssBusy: !!s.dlss,
-    framegenDll: !!st.framegen,
     canUpdate: canUpdate(s),
     updating: !!s.update,
     checking: st.checking,
