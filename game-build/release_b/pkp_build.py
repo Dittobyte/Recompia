@@ -3,6 +3,7 @@
 
     python -I tools/build/pkp_build.py --exefs <dump>/updates/<v>/exefs --game <install folder> [--jobs N] [--keep]
     python -I tools/build/pkp_build.py --check --game <install folder>
+    python -I tools/build/pkp_build.py --plan --exefs <dump>/updates/<v>/exefs --game <install folder> [--jobs N] [--keep]
 
 The package ships no game code. This script
   1. verifies the dump's ExeFS against dump_hashes.json (the supported build: sha256 of every module + main's build ID),
@@ -12,15 +13,22 @@ The package ships no game code. This script
   5. links pkp.exe = sdk/pkp_stub.cpp + the module libraries + sdk/pkp_rt.lib (the runtime, pkp_rt.dll in the package),
   6. deletes the generated sources and objects (unless --keep) and records the result in <game>/build/done.json.
 
-Stamps, one per stage. The library stamp (lib_stamp(): the dump's main build ID and module hashes, the lifter sources,
-the site lists, the module table, the compile flags and the compiler) is everything the module libraries are made from.
-state.json holds it for the lift and obj folders of a build in progress, lib/stamp.json for the finished libraries.
-A release that changes none of it (only the runtime or the SDK files) links again from the kept libraries: steps 2-4 are
-skipped. Any other change, a missing or unreadable stamp, or a stamp from an older release (another FORMAT or shape)
-lifts, compiles and links again from scratch (the old pkp.exe stays until the new one is linked over it).
+Stamps, one per stage and module. A module's library stamp (lib_stamps(): the dump's main build ID and module hashes, the
+lifter sources, the module table, the compile flags, the compiler, and the module's own site list) is everything its
+library is made from. state.json holds the stamps for the lift and obj folders of a build in progress, lib/stamp.json for
+the finished libraries, both as {module: stamp}. Steps 2-4 run only for the modules whose stamp changed: a release that
+changes none (only the runtime or the SDK files) links again from the kept libraries, one that changes only the sites of
+main.sites builds main again and keeps the other three. The site list is stamped as the lifter reads it (sites_stamp()),
+so a comment or the order of its lines changes nothing. Any other change, a missing or unreadable stamp, or a stamp from
+an older release (another FORMAT or shape) lifts, compiles and links every module again from scratch (the old pkp.exe
+stays until the new one is linked over it).
 done.json is the full stamp (the dump plus tool_stamp(): everything in this package that goes into pkp.exe). --check
 compares it with this package's tools only (no dump check, well under a second) and prints one JSON line
 {"current": bool, "reason": text}; exit 0 current, 3 not.
+
+--plan says what Set up would cost in <game> without building: it lifts every module into <game>/build/plan (removed
+afterwards unless --keep; nothing else under <game> is written), looks every translation unit up in the object cache and
+prints, per module,  @plan <module> units <n> hits <n> misses <n> library kept|rebuilt  and one  @plan total  line.
 
 Object cache: every compiled object is also kept in <game>/build/objcache under a key of its source text, the generated headers,
 the lifter's include/ tree, the compiler and the flags (class ObjCache), so Set up again after a release that changes only some
@@ -51,7 +59,7 @@ SDK = os.path.join(HERE, 'sdk')
 # tools/linux/zig (PKP_ZIG overrides it); it cross-compiles the same x86_64-windows-gnu objects
 ZIG = (os.path.join(HERE, 'zig', 'zig.exe') if os.name == 'nt'
        else os.environ.get('PKP_ZIG') or os.path.join(os.path.dirname(HERE), 'linux', 'zig', 'zig'))
-FORMAT = 3          # bump when the build layout or the stamp changes: older builds (partial or done) are then started over
+FORMAT = 4          # bump when the build layout or the stamp changes: older builds (partial or done) are then started over
 # the lifter as game-build/scripts/make-release.ps1 ships it: paths under RECOMP, the same in the zip (tools/build/recomp/...)
 # and in the repo (recomp/...)
 LIFTER = ['nxrecomp', 'include/nxrecomp', 'games/pkp/CMakeLists.txt', 'games/pkp/config.py']
@@ -63,6 +71,7 @@ SDK_FILES = ['pkp_stub.cpp', 'pkp_rt_api.h', 'pkp.rc', 'pkp.manifest']
 sys.path.insert(0, RECOMP)
 from nxrecomp import compile_flags, modheader   # noqa: E402
 from nxrecomp.config import load_game           # noqa: E402
+from nxrecomp.sites import SITE_KINDS           # noqa: E402
 GAME = load_game('pkp')
 # name, NSO file, guest base, NxModule.index, translation units
 MODULES = [(m.name, m.source, m.base, i, m.shards) for i, m in enumerate(GAME.modules)]
@@ -121,9 +130,30 @@ def tree_hash(root, rels):
     return h.hexdigest()
 
 
+def sites_stamp(rel):
+    """The stamp of the site list RECOMP/rel: a sha256 over its sites as nxrecomp.sites.load_sites reads them (kind, address,
+    a patch's two words), sorted, so comments, blank lines and line order are not in it. Sorting loses nothing: the lifter
+    keeps sites as sets per kind, and the patches to one address chain through their original words, so which ones there
+    are decides the word that is left.
+    A list this cannot read to the last token (unknown kind, wrong field count, not hex, missing file) gets the hash of the
+    file as it is, so it still compares and any edit to it counts."""
+    try:
+        with open(os.path.join(RECOMP, *rel.split('/')), encoding='utf-8') as f:
+            lines = [line.split('#', 1)[0].split() for line in f]
+        sites = []
+        for t in filter(None, lines):
+            if t[0] not in SITE_KINDS or len(t) != (4 if t[0] == 'patch' else 2):
+                raise ValueError(t)
+            sites.append('%s %s' % (t[0], ' '.join('%x' % int(x, 16) for x in t[1:])))
+    except (OSError, ValueError):
+        return tree_hash(RECOMP, [rel])
+    return hashlib.sha256('\n'.join(sorted(sites)).encode()).hexdigest()
+
+
 def tool_stamp():
-    """The part of the build stamp this package decides: a release that changes any of it rebuilds pkp.exe."""
-    return {'lifter': tree_hash(RECOMP, LIFTER), 'sites': tree_hash(RECOMP, sorted(SITES.values())), 'sdk': tree_hash(SDK, SDK_FILES),
+    """The part of the build stamp this package decides: a release that changes any of it rebuilds pkp.exe. 'sites' is
+    {module: sites_stamp()} for the modules that have a site list."""
+    return {'lifter': tree_hash(RECOMP, LIFTER), 'sites': {n: sites_stamp(SITES[n]) for n in sorted(SITES)}, 'sdk': tree_hash(SDK, SDK_FILES),
             'runtime': sha256(os.path.join(SDK, 'pkp_rt.lib')), 'cxxflags': CXXFLAGS, 'modules': [list(m) for m in MODULES],
             'modheader': hashlib.sha256(modheader.render(GAME.modules).encode()).hexdigest()}
 
@@ -133,18 +163,25 @@ def compiler_id():
     return ','.join(sha256(c) if os.path.isfile(c) else c for c in COMPILER)
 
 
-def lib_stamp(want, tools, compiler):
-    """Everything the module libraries are made from: the stamp of the lift, compile and archive stages. The runtime and
-    the SDK files are not in it (they only go into the link)."""
-    stamp = {'format': FORMAT, 'main_build_id': want['main_build_id'], 'sha256': want['sha256'], 'compiler': compiler}
-    stamp.update((k, tools[k]) for k in ('lifter', 'sites', 'cxxflags', 'modules'))
-    return stamp
+def lib_stamps(want, tools, compiler):
+    """{module: everything its library is made from}: the stamps of the lift, compile and archive stages. All of it is
+    shared by every module except 'sites', which is the module's own site list (None without one): only that module's
+    lifter run is given the list. The runtime and the SDK files are not in it (they only go into the link)."""
+    shared = {'format': FORMAT, 'main_build_id': want['main_build_id'], 'sha256': want['sha256'], 'compiler': compiler}
+    shared.update((k, tools[k]) for k in ('lifter', 'cxxflags', 'modules'))
+    return {m[0]: dict(shared, sites=tools['sites'].get(m[0])) for m in MODULES}
 
 
-def libs_current(lib, stamp):
-    """Whether lib/ holds every module library, archived under exactly this stamp."""
-    return read_json(os.path.join(lib, 'stamp.json')) == stamp and all(
-        os.path.isfile(os.path.join(lib, 'pkp_%s.a' % m[0])) for m in MODULES)
+def unchanged(saved, stamps):
+    """The modules whose stamp in saved (state.json or lib/stamp.json as read) is exactly the wanted one. Anything that is
+    not {module: stamp}, such as the single stamp of FORMAT 3 or an unreadable file, matches no module."""
+    return {n for n in stamps if isinstance(saved, dict) and saved.get(n) == stamps[n]}
+
+
+def libs_current(lib, stamps):
+    """The modules whose library is in lib/, archived under exactly the module's stamp."""
+    return {n for n in unchanged(read_json(os.path.join(lib, 'stamp.json')), stamps)
+            if os.path.isfile(os.path.join(lib, 'pkp_%s.a' % n))}
 
 
 def check(game):
@@ -281,14 +318,15 @@ class Runner:
         return rc, '\n'.join(tail)
 
 
-def lift(runner, exefs, gen, jobs):
-    """One lifter process per module (the lifter itself runs `jobs` worker processes)."""
-    for k, (name, nso, base, index, shards) in enumerate(MODULES):
+def lift(runner, exefs, gen, jobs, names):
+    """One lifter process per module in names (the lifter itself runs `jobs` worker processes)."""
+    todo = [m for m in MODULES if m[0] in names]
+    for k, (name, nso, base, index, shards) in enumerate(todo):
         out = os.path.join(gen, name)
         marker = os.path.join(out, '.lifted')
         if os.path.isfile(marker):
             continue
-        progress('lift', k, len(MODULES), 'Translating the game code: %s (%d of %d)' % (name, k + 1, len(MODULES)))
+        progress('lift', k, len(todo), 'Translating the game code: %s (%d of %d)' % (name, k + 1, len(todo)))
         if os.path.isdir(out):
             shutil.rmtree(out)
         os.makedirs(out)
@@ -301,7 +339,7 @@ def lift(runner, exefs, gen, jobs):
         if rc != 0:
             raise Fail('Translating %s failed (exit %d):\n%s' % (name, rc, tail))
         open(marker, 'w').write('ok\n')
-    progress('lift', len(MODULES), len(MODULES), 'Game code translated')
+    progress('lift', len(todo), len(todo), 'Game code translated')
 
 
 def free_memory():
@@ -361,6 +399,14 @@ class ObjCache:
         h.update(b'\0' + self._headers(os.path.dirname(src)).encode() + b'\0')
         h.update(sha256(src).encode())
         return h.hexdigest()
+
+    def has(self, key):
+        """Whether fetch(key) would hit, without touching the cache (--plan)."""
+        n = self._find(key)
+        try:
+            return bool(n) and 0 < int(n[len(key) + 1:-2]) == os.path.getsize(os.path.join(self.folder, n))
+        except (OSError, ValueError):
+            return False
 
     def _find(self, key):
         try:
@@ -440,13 +486,15 @@ def make_cache(folder, cap_mb, compiler):
         return None
 
 
-def compile_all(runner, gen, obj, jobs, env, cache=None):
-    units = []
-    for name, _, _, _, shards in MODULES:
-        d = os.path.join(gen, name)
-        for f in sorted(os.listdir(d)):
-            if f.endswith('.cpp'):
-                units.append((name, os.path.join(d, f)))
+def sources(gen, name):
+    """The translation units the lifter wrote for a module."""
+    d = os.path.join(gen, name)
+    return [os.path.join(d, f) for f in sorted(os.listdir(d)) if f.endswith('.cpp')]
+
+
+def compile_all(runner, gen, obj, jobs, env, names, cache=None):
+    """Compile the units of the modules in names (the other modules' libraries are kept)."""
+    units = [(name, src) for name in names for src in sources(gen, name)]
     total = len(units)
     todo = []
     for name, src in units:
@@ -454,7 +502,7 @@ def compile_all(runner, gen, obj, jobs, env, cache=None):
         if not os.path.isfile(o):
             todo.append((name, src, o))
     done = total - len(todo)
-    for name, _, _, _, _ in MODULES:
+    for name in names:
         os.makedirs(os.path.join(obj, name), exist_ok=True)
     keys = {}
     if cache:
@@ -531,14 +579,14 @@ def clear_high_entropy_va(exe):
         f.write(dc.to_bytes(2, 'little'))
 
 
-def archive(runner, obj, lib, stamp, env):
-    """One library per module (lib/pkp_<name>.a) from the objects, then lib/stamp.json. The old stamp goes first and the
-    new one is written last, so a stop or failure in between leaves libraries that are never taken as current."""
+def archive(runner, obj, lib, stamps, names, env):
+    """One library (lib/pkp_<name>.a) from the objects of each module in names, then lib/stamp.json. The stamps of these
+    modules go first (the kept libraries, which are current, stay in it) and the full set is written last, so a stop or
+    failure in between leaves libraries that are never taken as current."""
     os.makedirs(lib, exist_ok=True)
     stamp_p = os.path.join(lib, 'stamp.json')
-    if os.path.isfile(stamp_p):
-        os.remove(stamp_p)
-    for name, _, _, _, _ in MODULES:
+    write_json(stamp_p, {n: s for n, s in stamps.items() if n not in names})
+    for name in names:
         a = os.path.join(lib, 'pkp_%s.a' % name)
         if os.path.isfile(a):
             os.remove(a)
@@ -551,7 +599,25 @@ def archive(runner, obj, lib, stamp, env):
         rc, tail = runner.run([ZIG, 'ar', 'rcs', a, '@' + rsp], env=env)
         if rc != 0:
             raise Fail('Archiving %s failed (exit %d):\n%s' % (name, rc, tail))
-    write_json(stamp_p, stamp)
+    write_json(stamp_p, stamps)
+
+
+def plan(runner, exefs, work, jobs, cache, kept):
+    """--plan: lift every module into work/lift and count, per module, its units and how many the object cache holds
+    (ObjCache.key, the key a build looks up; no cache = every unit a miss). kept = the modules whose library Set up would
+    keep, which cost it nothing whatever the cache says: the total is over the others."""
+    gen = os.path.join(work, 'lift')
+    lift(runner, exefs, gen, jobs, [m[0] for m in MODULES])
+    units = misses = 0
+    for name in (m[0] for m in MODULES):
+        srcs = sources(gen, name)
+        hits = sum(1 for s in srcs if cache and cache.has(cache.key(s)))
+        say('plan', name, 'units', len(srcs), 'hits', hits, 'misses', len(srcs) - hits, 'library', 'kept' if name in kept else 'rebuilt')
+        if name not in kept:
+            units += len(srcs)
+            misses += len(srcs) - hits
+    say('plan', 'total', 'Set up lifts %d of %d modules and compiles %d of their %d units (%d from the object cache)'
+        % (len(MODULES) - len(kept), len(MODULES), misses, units, units - misses))
 
 
 def link(runner, lib, game, env):
@@ -578,6 +644,7 @@ def main():
     ap.add_argument('--jobs', type=int, default=max(1, (os.cpu_count() or 2) - 1))
     ap.add_argument('--cache-mb', type=int, default=CACHE_MB, help='size cap of the compiled-object cache in MiB (0 = off)')
     ap.add_argument('--keep', action='store_true', help='keep the generated sources and objects')
+    ap.add_argument('--plan', action='store_true', help='only say what Set up would lift and compile (lifts into <game>/build/plan)')
     ap.add_argument('--check', action='store_true', help='only say whether <game>/build/done.json matches these tools')
     ap.add_argument('--lift-one', help=argparse.SUPPRESS)
     a = ap.parse_args()
@@ -597,8 +664,12 @@ def main():
         ap.error('--exefs and --game are required')
     game = os.path.abspath(a.game)
     build = os.path.join(game, 'build')
-    os.makedirs(build, exist_ok=True)
-    cancel_file = os.path.join(build, 'cancel')
+    # --plan works in its own folder, started empty: a lift kept from another package would be counted as this one's
+    work = os.path.join(build, 'plan') if a.plan else build
+    if a.plan:
+        shutil.rmtree(work, ignore_errors=True)
+    os.makedirs(work, exist_ok=True)
+    cancel_file = os.path.join(work, 'cancel')
     if os.path.exists(cancel_file):
         os.remove(cancel_file)
     t0 = time.time()
@@ -610,40 +681,48 @@ def main():
         tools = tool_stamp()
         stamp = {'format': FORMAT, 'main_build_id': want['main_build_id'], 'sha256': want['sha256'], 'tools': tools}
         compiler = compiler_id()
-        libstamp = lib_stamp(want, tools, compiler)
-        state_p = os.path.join(build, 'state.json')
-        # the lift and obj folders belong to the library stamp in state.json: another dump, lifter, flags or compiler (or no
-        # readable state, or one from an older release) starts them over. Removing lift/ drops the modules' .lifted markers
-        # too, so a changed lifter or main.sites lifts everything again, not only recompiles
-        if read_json(state_p) != libstamp:
-            for d in ('lift', 'obj'):
-                shutil.rmtree(os.path.join(build, d), ignore_errors=True)
-            write_json(state_p, libstamp)
-        times['verify'] = round(time.time() - t0, 1)
+        stamps = lib_stamps(want, tools, compiler)
+        gen, obj, lib = os.path.join(build, 'lift'), os.path.join(build, 'obj'), os.path.join(build, 'lib')
+        kept = libs_current(lib, stamps)
+        todo = [m[0] for m in MODULES if m[0] not in kept]
         runner = Runner(cancel_file)
+        if a.plan:
+            # make_cache creates its folder: without one there is nothing to hit, and --plan writes only under plan/
+            cache_dir = os.path.join(build, 'objcache')
+            plan(runner, a.exefs, work, a.jobs, make_cache(cache_dir, a.cache_mb, compiler) if os.path.isdir(cache_dir) else None, kept)
+            return 0
+        state_p = os.path.join(build, 'state.json')
+        # a module's lift and obj folders belong to its library stamp in state.json: another dump, lifter, flags or compiler
+        # (or no readable state, or one from an older release) starts every module over, another site list only its module.
+        # Removing lift/<module> drops its .lifted marker too, so the module is lifted again, not only recompiled
+        state = read_json(state_p)
+        if state != stamps:
+            for name in set(stamps) - unchanged(state, stamps):
+                for d in (gen, obj):
+                    shutil.rmtree(os.path.join(d, name), ignore_errors=True)
+            write_json(state_p, stamps)
+        times['verify'] = round(time.time() - t0, 1)
         env = dict(os.environ)
         env['ZIG_GLOBAL_CACHE_DIR'] = os.path.join(build, 'zig-cache')
         env['ZIG_LOCAL_CACHE_DIR'] = os.path.join(build, 'zig-cache')
-        gen, obj, lib = os.path.join(build, 'lift'), os.path.join(build, 'obj'), os.path.join(build, 'lib')
-        reuse = libs_current(lib, libstamp)
-        if reuse:                        # only the runtime or the SDK files changed: link the kept libraries again
+        if not todo:                     # only the runtime or the SDK files changed: link the kept libraries again
             progress('lift', len(MODULES), len(MODULES), 'Game code unchanged')
             progress('compile', 1, 1, 'Game code unchanged')
         else:
             t = time.time()
-            lift(runner, a.exefs, gen, a.jobs)
+            lift(runner, a.exefs, gen, a.jobs, todo)
             times['lift'] = round(time.time() - t, 1)
             t = time.time()
-            compile_all(runner, gen, obj, a.jobs, env, make_cache(os.path.join(build, 'objcache'), a.cache_mb, compiler))
+            compile_all(runner, gen, obj, a.jobs, env, todo, make_cache(os.path.join(build, 'objcache'), a.cache_mb, compiler))
             times['compile'] = round(time.time() - t, 1)
         t = time.time()
         progress('link', 0, 1, 'Linking pkp.exe')
-        if not reuse:
-            archive(runner, obj, lib, libstamp, env)
+        if todo:
+            archive(runner, obj, lib, stamps, todo, env)
         try:
             exe = link(runner, lib, game, env)
         except Fail:
-            if reuse:                    # a kept library may be damaged: the next Set up builds them again
+            if kept:                     # a kept library may be damaged: the next Set up builds them again
                 try:
                     os.remove(os.path.join(lib, 'stamp.json'))
                 except OSError:
@@ -667,6 +746,9 @@ def main():
     except Exception as e:            # an unexpected failure: say what it was, plainly
         say('error', '%s: %s' % (type(e).__name__, str(e).replace('\n', '\\n')))
         return 1
+    finally:
+        if a.plan and not a.keep:
+            shutil.rmtree(work, ignore_errors=True)
 
 
 if __name__ == '__main__':
