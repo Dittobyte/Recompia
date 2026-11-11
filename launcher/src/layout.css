@@ -22,6 +22,17 @@ body {
 #bg { position: fixed; inset: 0; z-index: 0; overflow: hidden; }
 .art, .scrim { position: absolute; inset: 0; transition: opacity var(--dur-slow) var(--ease); }
 .art { background: var(--art-url) var(--art-position) / cover no-repeat; }
+/* Under everything: the blurred copy, which a framed Home picture fades into (only seen where a theme frames it) */
+#bg::before { content: ''; position: absolute; inset: calc(var(--art-soft-bleed) * -1); background: var(--art-soft-url) var(--art-position) / cover no-repeat; }
+/* Home's copy: a theme may frame its picture in the room Home's own blocks leave (--art-frame-size, --art-frame-position and a mask that
+   feathers its open edges, theme.css); without them it covers the window like the blurred copy */
+.art-sharp {
+  background: var(--art-url) var(--art-frame-position, var(--art-position)) / var(--art-frame-size, cover) no-repeat;
+  -webkit-mask: var(--art-frame-mask, none);
+  -webkit-mask-composite: source-in;
+  mask: var(--art-frame-mask, none);
+  mask-composite: intersect;
+}
 .art-soft { inset: calc(var(--art-soft-bleed) * -1); background-image: var(--art-soft-url); }   /* pre-blurred; bleed keeps its soft edges off screen */
 .scrim-hero { background: var(--scrim-hero); opacity: 0; }
 .scrim-soft { background: var(--scrim-soft); mix-blend-mode: multiply; }

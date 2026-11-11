@@ -99,6 +99,12 @@ This Testing build adds logging and a few device checks, and changes no frame-ra
 - Settings > Gameplay and `pkp.log` now show which gameplay mods and experimental features are on, so you can see at a glance what a start will use
 - Fixed the Pokédex tabs showing "Time" as their title after the Settings screen had been opened (#494)
 
+### Koi's Camp is the launcher's default look
+- The launcher now starts with the **Koi's Camp** colours and picture (hand drawn by Koi)
+  - Before: a new install started with Sunrise, and on Home the Koi's Camp picture was cropped to fill the window, so the sidebar, the logo and the release cards covered some of its characters
+  - Now: on Home the whole Koi's Camp picture sits in the space beside the sidebar and above the release cards, its edges fading into a blurred copy, so no character is hidden at any window size; a colour theme you already picked is kept (the **Colours** button in the sidebar changes it)
+  - Still not: your own background picture (Layout > Appearance) still fills the whole window
+
 ### Online presence (opt-in)
 - New **Share that I am online** switch, off by default, easy to find in three places: the **Online** chip on Home, the **Online** group at the top of Settings > Game, and a new **Online** tab in the game's own Settings screen (all three are the same switch, `[pkp] online_presence` in `pkp.ini`)
   - Before: the launcher sent nothing about you to any Recompia server

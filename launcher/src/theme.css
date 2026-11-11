@@ -199,6 +199,28 @@
   --shadow-text: 0 2px 40px rgba(4, 22, 20, 0.6), 0 1px 3px rgba(4, 22, 20, 0.35);
 }
 
+/* Koi's Camp on Home: the characters stand along every edge of the picture, so instead of covering the window it is framed whole in the
+   room above the release cards, beside the sidebar: its height fills that room less its top 12% (empty sky), one side on the window's
+   edge, the open left and bottom sides feathered into the blurred copy. vh, not %, so the mask's layers can match the picture's size. 1.439 is the
+   picture's width / height (koi-sharp.webp, 2360 x 1640). Not for a player's own picture (data-bg custom). */
+:root[data-theme="koi"]:not([data-bg="custom"]) {
+  /* the room below the picture: at least the release cards (128px), more when the window is short, so the characters at the picture's
+     lower left (their feet 77% of the way down the framed picture) stay above Home's logo, whose top is 360px (260px logo below 640px,
+     home.css: 275px) above the window's bottom: room >= height - logo top / 0.773 */
+  --art-frame-room: max(128px, calc(470px - 29.4vh));
+  --art-frame-h: calc((100vh - var(--art-frame-room)) / 0.88);
+  --art-frame-size: calc(var(--art-frame-h) * 1.439) var(--art-frame-h);
+  --art-frame-position: right 0 bottom var(--art-frame-room);
+  --art-frame-mask:
+    linear-gradient(to right, transparent, #000 7%) var(--art-frame-position) / var(--art-frame-size) no-repeat,
+    linear-gradient(to top, transparent, #000 5%) var(--art-frame-position) / var(--art-frame-size) no-repeat;
+}
+/* the framing follows Layout: with the sidebar on the right, the picture's right edge sits at the sidebar */
+:root[data-theme="koi"][data-nav="right"]:not([data-bg="custom"]) { --art-frame-position: right calc(var(--sidebar-w) + var(--gutter) * 2) bottom var(--art-frame-room); }
+@media (max-height: 639.98px) {
+  :root[data-theme="koi"]:not([data-bg="custom"]) { --art-frame-room: max(128px, calc(360px - 29.4vh)); }
+}
+
 /* Meadow (theme id meadow): a bright daytime picture (an original scene, art/meadow.svg) behind the same dark glass; teal-green neutrals, the default mint accent */
 :root[data-theme="meadow"] {
   --art-url: url("./art/meadow-sharp.webp");
