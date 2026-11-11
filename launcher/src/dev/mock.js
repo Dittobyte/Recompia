@@ -131,6 +131,7 @@ let dumpDir = sc.dump ? 'D:/Dumps/Pokopia' : '';
 let relay = null;
 let mockSteam = { found: true, running: false, accounts: 1, game_added: 0, launcher_added: 0 };
 let mockChannel = 'stable';
+let mockOnline = { online_presence: false, online_name: '', online_salt: 'mock-salt' };
 let mockRepair = null;
 // the builds the launcher offers, as list_builds returns them, for a launcher that is 0.8.1-beta.6
 const BACK = ['The game files may have to be built again for the older version, so Set up again can be asked (about 15 to 20 minutes).', 'Files that only the newer version has stay in the folder; they are not removed.'];
@@ -323,8 +324,11 @@ function handle(cmd, args) {
     case 'open_setup_log': case 'open_game_file': case 'open_game_dir': case 'open_save_dir': case 'open_release_url':
       console.info('[mock] open', cmd, args);
       return null;
-    case 'get_config': return { dump_dir: dumpDir, game_dir: '', minimize_on_play: false, discord_presence: false, gentle_build: false, loose_shaders: looseShaders, channel: mockChannel };
-    case 'save_config': looseShaders = !!args.config.loose_shaders; mockChannel = args.config.channel || 'stable'; return null;
+    case 'get_config': return { dump_dir: dumpDir, game_dir: '', minimize_on_play: false, discord_presence: false, gentle_build: false, loose_shaders: looseShaders, channel: mockChannel, ...mockOnline };
+    case 'save_config':
+      looseShaders = !!args.config.loose_shaders; mockChannel = args.config.channel || 'stable';
+      mockOnline = { online_presence: !!args.config.online_presence, online_name: args.config.online_name ?? '', online_salt: args.config.online_salt ?? '' };
+      return null;
     case 'get_overview': return { game_dir: GAME_DIR, default_game_dir: GAME_DIR, exe_exists: sc.exe_exists, builds_exe: true };
     case 'pick_folder': return 'D:/Dumps/Pokopia';
     case 'pick_nup': return 'D:/Downloads/pokopia-2.0.1a.nup';

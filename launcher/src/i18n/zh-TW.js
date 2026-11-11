@@ -731,4 +731,13 @@ export default {
   'Downloading frame generation': '正在下載影格生成',
   'Frame generation needs AMD\'s amd_fidelityfx_framegeneration_vk.dll, which does not come with the launcher. It comes from AMD\'s FidelityFX SDK repository on GitHub (version 2.4.0, MIT licence), its hash is checked, and it goes into the upscalers\\fsr3 folder of the game.': '影格生成需要 AMD 的 amd_fidelityfx_framegeneration_vk.dll，啟動器不附帶此檔案。它來自 AMD 在 GitHub 上的 FidelityFX SDK 儲存庫（2.4.0 版，MIT 授權），會驗證其雜湊值，並放入遊戲的 upscalers\\fsr3 資料夾。',
   'The file is not in the game folder after the download.': '下載後，遊戲資料夾中仍沒有該檔案。',
+  'Share that I am online': '公開我在線上',
+  'Online name': '線上名稱',
+  'anonymous': '匿名',
+  'While the game runs, the launcher sends your online name (empty: anonymous), the Recompia version, Windows or Linux, and how many Pokemon have a home in your save to the Recompia online server. Your save, your profile nickname and your user ID are never sent. recompia.com says how long it is kept.': '遊戲執行時，啟動器會向 Recompia 線上伺服器傳送你的線上名稱（留空則為匿名）、Recompia 版本、Windows 或 Linux，以及你存檔中有家的寶可夢數量。絕不會傳送你的存檔、個人檔案暱稱或使用者 ID。保存時間請見 recompia.com。',
+  'Online ID': '線上 ID',
+  'Reset my online ID': '重設我的線上 ID',
+  'Reset your online ID?': '要重設線上 ID 嗎？',
+  'The next time you play online, you start with a new online ID. What the old ID sent stays with the old ID and is not linked to the new one.': '下次在線上遊玩時，你會使用新的線上 ID。舊 ID 傳送的內容仍屬於舊 ID，不會與新 ID 連結。',
+  'Online ID reset': '線上 ID 已重設',
 };

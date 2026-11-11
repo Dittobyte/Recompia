@@ -731,4 +731,13 @@ export default {
   'Downloading frame generation': 'Descargando generación de fotogramas',
   'Frame generation needs AMD\'s amd_fidelityfx_framegeneration_vk.dll, which does not come with the launcher. It comes from AMD\'s FidelityFX SDK repository on GitHub (version 2.4.0, MIT licence), its hash is checked, and it goes into the upscalers\\fsr3 folder of the game.': 'La generación de fotogramas necesita el archivo amd_fidelityfx_framegeneration_vk.dll de AMD, que no viene con el launcher. Se descarga del repositorio del SDK FidelityFX de AMD en GitHub (versión 2.4.0, licencia MIT), se comprueba su hash y se guarda en la carpeta upscalers\\fsr3 del juego.',
   'The file is not in the game folder after the download.': 'El archivo no está en la carpeta del juego después de la descarga.',
+  'Share that I am online': 'Mostrar que estoy en línea',
+  'Online name': 'Nombre en línea',
+  'anonymous': 'anónimo',
+  'While the game runs, the launcher sends your online name (empty: anonymous), the Recompia version, Windows or Linux, and how many Pokemon have a home in your save to the Recompia online server. Your save, your profile nickname and your user ID are never sent. recompia.com says how long it is kept.': 'Mientras el juego está abierto, el launcher envía al servidor en línea de Recompia tu nombre en línea (vacío: anónimo), la versión de Recompia, Windows o Linux, y cuántos Pokémon tienen casa en tu partida. Nunca se envían tu partida, el apodo de tu perfil ni tu ID de usuario. En recompia.com se explica cuánto tiempo se guarda.',
+  'Online ID': 'ID en línea',
+  'Reset my online ID': 'Restablecer mi ID en línea',
+  'Reset your online ID?': '¿Restablecer tu ID en línea?',
+  'The next time you play online, you start with a new online ID. What the old ID sent stays with the old ID and is not linked to the new one.': 'La próxima vez que juegues en línea tendrás un ID en línea nuevo. Lo que envió el ID anterior se queda con ese ID y no está vinculado al nuevo.',
+  'Online ID reset': 'ID en línea restablecido',
 };

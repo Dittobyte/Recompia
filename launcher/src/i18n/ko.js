@@ -731,4 +731,13 @@ export default {
   'Downloading frame generation': '프레임 생성 내려받는 중',
   'Frame generation needs AMD\'s amd_fidelityfx_framegeneration_vk.dll, which does not come with the launcher. It comes from AMD\'s FidelityFX SDK repository on GitHub (version 2.4.0, MIT licence), its hash is checked, and it goes into the upscalers\\fsr3 folder of the game.': '프레임 생성에는 AMD의 amd_fidelityfx_framegeneration_vk.dll이 필요하지만 런처에는 들어 있지 않습니다. AMD의 FidelityFX SDK GitHub 저장소(버전 2.4.0, MIT 라이선스)에서 받아 해시를 확인한 뒤 게임의 upscalers\\fsr3 폴더에 저장합니다.',
   'The file is not in the game folder after the download.': '내려받은 뒤에도 파일이 게임 폴더에 없습니다.',
+  'Share that I am online': '온라인 상태 공유',
+  'Online name': '온라인 이름',
+  'anonymous': '익명',
+  'While the game runs, the launcher sends your online name (empty: anonymous), the Recompia version, Windows or Linux, and how many Pokemon have a home in your save to the Recompia online server. Your save, your profile nickname and your user ID are never sent. recompia.com says how long it is kept.': '게임이 실행되는 동안 런처는 온라인 이름(비어 있으면 익명), Recompia 버전, Windows 또는 Linux, 세이브에서 집이 있는 포켓몬 수를 Recompia 온라인 서버로 보냅니다. 세이브, 프로필 닉네임, 사용자 ID는 절대 보내지 않습니다. 보관 기간은 recompia.com에서 확인할 수 있습니다.',
+  'Online ID': '온라인 ID',
+  'Reset my online ID': '내 온라인 ID 초기화',
+  'Reset your online ID?': '온라인 ID를 초기화할까요?',
+  'The next time you play online, you start with a new online ID. What the old ID sent stays with the old ID and is not linked to the new one.': '다음에 온라인으로 플레이하면 새 온라인 ID로 시작합니다. 이전 ID가 보낸 정보는 이전 ID에 남고 새 ID와 연결되지 않습니다.',
+  'Online ID reset': '온라인 ID를 초기화했습니다',
 };

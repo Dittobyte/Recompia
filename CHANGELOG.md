@@ -3,6 +3,7 @@
 ## Unreleased
 
 - New **Show on Discord while playing** in the launcher's Settings: shows "Playing Recompia" and how long you have played on your Discord profile while the game runs. Off by default; Discord must be open. Update only: no shader rebuild, no Set up again
+- New **Share that I am online** in the launcher's Settings (Testing): while the game runs, tells the Recompia online server that you are playing, with an optional online name (empty: anonymous), your version, Windows or Linux and how many Pokémon have a home in your save. Off by default; your save, profile nickname and user ID are never sent. **Reset my online ID** starts a new ID. Update only: no shader rebuild, no Set up again
 - Fixed the Pokédex tabs showing "Time" as their title after the Settings screen had been opened (#494)
 
 ## 0.10.3 (build N: Newt Hotfix a3)

@@ -731,4 +731,13 @@ export default {
   'Downloading frame generation': 'Bildgenerierung wird heruntergeladen',
   'Frame generation needs AMD\'s amd_fidelityfx_framegeneration_vk.dll, which does not come with the launcher. It comes from AMD\'s FidelityFX SDK repository on GitHub (version 2.4.0, MIT licence), its hash is checked, and it goes into the upscalers\\fsr3 folder of the game.': 'Die Bildgenerierung benötigt die Datei amd_fidelityfx_framegeneration_vk.dll von AMD, die nicht im Launcher enthalten ist. Sie stammt aus dem FidelityFX-SDK-Repository von AMD auf GitHub (Version 2.4.0, MIT-Lizenz), ihr Hash wird geprüft, und sie kommt in den Ordner upscalers\\fsr3 des Spiels.',
   'The file is not in the game folder after the download.': 'Die Datei ist nach dem Download nicht im Spielordner.',
+  'Share that I am online': 'Zeigen, dass ich online bin',
+  'Online name': 'Online-Name',
+  'anonymous': 'anonym',
+  'While the game runs, the launcher sends your online name (empty: anonymous), the Recompia version, Windows or Linux, and how many Pokemon have a home in your save to the Recompia online server. Your save, your profile nickname and your user ID are never sent. recompia.com says how long it is kept.': 'Während das Spiel läuft, sendet der Launcher deinen Online-Namen (leer: anonym), die Recompia-Version, Windows oder Linux und wie viele Pokémon in deinem Spielstand ein Zuhause haben an den Recompia-Onlineserver. Dein Spielstand, dein Profil-Spitzname und deine Benutzer-ID werden nie gesendet. Auf recompia.com steht, wie lange es gespeichert wird.',
+  'Online ID': 'Online-ID',
+  'Reset my online ID': 'Meine Online-ID zurücksetzen',
+  'Reset your online ID?': 'Online-ID zurücksetzen?',
+  'The next time you play online, you start with a new online ID. What the old ID sent stays with the old ID and is not linked to the new one.': 'Wenn du das nächste Mal online spielst, bekommst du eine neue Online-ID. Was die alte ID gesendet hat, bleibt bei der alten ID und ist nicht mit der neuen verknüpft.',
+  'Online ID reset': 'Online-ID zurückgesetzt',
 };

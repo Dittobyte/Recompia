@@ -731,4 +731,13 @@ export default {
   'Downloading frame generation': 'Download della generazione di fotogrammi',
   'Frame generation needs AMD\'s amd_fidelityfx_framegeneration_vk.dll, which does not come with the launcher. It comes from AMD\'s FidelityFX SDK repository on GitHub (version 2.4.0, MIT licence), its hash is checked, and it goes into the upscalers\\fsr3 folder of the game.': 'La generazione di fotogrammi richiede il file amd_fidelityfx_framegeneration_vk.dll di AMD, che non è incluso nel launcher. Proviene dal repository GitHub dell’SDK FidelityFX di AMD (versione 2.4.0, licenza MIT), ne viene verificato l’hash e viene messo nella cartella upscalers\\fsr3 del gioco.',
   'The file is not in the game folder after the download.': 'Dopo il download il file non è nella cartella del gioco.',
+  'Share that I am online': 'Mostra che sono online',
+  'Online name': 'Nome online',
+  'anonymous': 'anonimo',
+  'While the game runs, the launcher sends your online name (empty: anonymous), the Recompia version, Windows or Linux, and how many Pokemon have a home in your save to the Recompia online server. Your save, your profile nickname and your user ID are never sent. recompia.com says how long it is kept.': 'Mentre il gioco è in esecuzione, il launcher invia al server online di Recompia il tuo nome online (vuoto: anonimo), la versione di Recompia, Windows o Linux e quanti Pokémon hanno una casa nel tuo salvataggio. Il tuo salvataggio, il soprannome del profilo e il tuo ID utente non vengono mai inviati. Su recompia.com è spiegato per quanto tempo viene conservato.',
+  'Online ID': 'ID online',
+  'Reset my online ID': 'Reimposta il mio ID online',
+  'Reset your online ID?': 'Reimpostare il tuo ID online?',
+  'The next time you play online, you start with a new online ID. What the old ID sent stays with the old ID and is not linked to the new one.': 'La prossima volta che giochi online avrai un nuovo ID online. Ciò che ha inviato il vecchio ID resta legato al vecchio ID e non è collegato a quello nuovo.',
+  'Online ID reset': 'ID online reimpostato',
 };
