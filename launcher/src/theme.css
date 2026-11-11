@@ -183,6 +183,7 @@
 :root[data-theme="koi"] {
   --art-url: url("./art/koi-sharp.webp");
   --art-soft-url: url("./art/koi-soft.webp");
+  --logo-url: url("./art/logo-koi.png");     /* the hand-drawn Recompia logo (the website's), on Home and in the sidebar */
   --art-position: 50% 56%;
   --color-bg: #08201f;
   --color-menu: #12332f;
