@@ -426,7 +426,11 @@ void pcopy_touch(PoolGpu* g, PoolChunk* c, uint64_t off, uint64_t size) {
         }
         uint64_t q = p + 1;
         while (q < p1 && need(q) == 1) ++q;
-        const uint64_t bad = guarded_copy(dst + p * kPage, src + p * kPage, (q - p) * kPage, true);
+        // A chunk's size is not always a page multiple (a span's stride, the last cell of a pool), so the last page of the range
+        // stops at the chunk: a full page there wrote up to 4095 bytes past the shadow's buffer, into the driver's heap, and the
+        // next free aborted the process (HOST EXCEPTION 0xE0000004, libsystem_malloc, from ~CmdList).
+        const uint64_t bytes_here = std::min<uint64_t>((q - p) * kPage, c->size - p * kPage);
+        const uint64_t bad = guarded_copy(dst + p * kPage, src + p * kPage, bytes_here, true);
         if (bad) g_unreadable.fetch_add(bad, std::memory_order_relaxed);
         if (rt)
             for (uint64_t i = p; i < q; ++i) c->page_copied[static_cast<size_t>(i)] = cur ? cur : kOutside;

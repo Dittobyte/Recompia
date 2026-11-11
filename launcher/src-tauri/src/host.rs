@@ -27,8 +27,58 @@ pub fn game_exe(dir: &Path) -> PathBuf {
     dir.join(if native_game() { "pkp" } else { "pkp.exe" })
 }
 
+/// macOS: the hidden run Windows does at Set up (shaders::warm_up). The romfs corpus cannot hold the blocks the game builds
+/// while it runs, so one headless run collects them and the translator merges them: without it the first real start draws
+/// with unlinked programs (models that never appear). A scratch save folder, so the player's own save is never touched.
+pub fn macos_warm_up(game_dir: &Path, cancel: &std::sync::atomic::AtomicBool) -> Result<Option<String>, String> {
+    use std::sync::atomic::Ordering;
+    let exe = game_exe(game_dir);
+    if !exe.is_file() {
+        return Ok(None);
+    }
+    let scratch = crate::shaders::cache_dir(game_dir).join("warmup");
+    let _ = std::fs::remove_dir_all(&scratch);
+    std::fs::create_dir_all(scratch.join("save")).map_err(|e| format!("cannot create {}: {}", scratch.display(), e))?;
+    let mut child = command(&exe)
+        .current_dir(game_dir)
+        .arg("--headless")
+        .args(["--max-seconds", &crate::shaders::WARMUP_SECONDS.to_string()])
+        .arg("--log")
+        .arg(scratch.join("warmup.log"))
+        // environment variables win over pkp.ini, as in the Windows warm-up
+        .env("NXRT_FS_SAVE_DIR", scratch.join("save"))
+        .env("NXRT_NVN_DUMP_MISSING", crate::shaders::MISSING_REL)
+        .env("NXRT_AUDIO_SINK", "null")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| format!("could not start the warm-up run: {}", e))?;
+    // the run ends with the exit code 124 when --max-seconds is up; a crash only means fewer blocks were collected
+    let limit = std::time::Duration::from_secs(crate::shaders::WARMUP_SECONDS as u64 + 240);
+    let start = std::time::Instant::now();
+    loop {
+        if cancel.load(Ordering::SeqCst) {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = std::fs::remove_dir_all(&scratch);
+            return Err("cancelled".into());
+        }
+        if let Ok(Some(_)) = child.try_wait() {
+            break;
+        }
+        if start.elapsed() > limit {
+            let _ = child.kill();
+            let _ = child.wait();
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+    let _ = std::fs::remove_dir_all(&scratch);
+    macos_translate_shaders(game_dir)
+}
+
 /// macOS: the shader cache is built by the C# harness in `tools/shaders`, not by the release's Windows tools. Runs it over
-/// the corpus the game dumped (`[nvn] dump_missing`) into `<game>/shader_corpus`, writing `<game>/shader_cache/spirv`.
+/// the corpus the game dumped (`[nvn] dump_missing`, shaders::MISSING_REL), writing `<game>/shader_cache/spirv`.
 /// Returns the harness's last line, or None when there is nothing to translate or no harness to run.
 pub fn macos_translate_shaders(game_dir: &Path) -> Result<Option<String>, String> {
     // The game writes the blocks it has no translation for to [nvn] dump_missing, which Set up sets to shader_cache/missing
@@ -304,6 +354,7 @@ pub fn macos_set_up(
     let have = std::fs::read_to_string(spirv.join("results.tsv")).map(|t| t.lines().count().saturating_sub(1)).unwrap_or(0);
     if have >= blocks {
         progress("translate", blocks as u64, blocks as u64, "Every shader is translated already.");
+        warm_up_run(game_dir, cancel, progress);
         crate::shaders::mark_complete(game_dir, &romfs.to_string_lossy(), blocks)?;
         return Ok(blocks);
     }
@@ -370,8 +421,21 @@ pub fn macos_set_up(
         std::thread::sleep(std::time::Duration::from_secs(2));
     }
     let _ = reader.join();
+    warm_up_run(game_dir, cancel, progress);
     crate::shaders::mark_complete(game_dir, &romfs.to_string_lossy(), blocks)?;
     Ok(blocks)
+}
+
+/// The warm-up as Set up reports it: a phase of its own, and a failure is only a message (the first Play then collects the
+/// blocks and the launcher translates them when it exits, as it always did).
+fn warm_up_run(game_dir: &Path, cancel: &std::sync::atomic::AtomicBool, progress: &mut dyn FnMut(&str, u64, u64, &str)) {
+    progress("warmup", 0, 0, "Playing the opening once, to collect the shaders it builds...");
+    match macos_warm_up(game_dir, cancel) {
+        Ok(Some(line)) => progress("warmup", 1, 1, &line),
+        Ok(None) => progress("warmup", 1, 1, "No shader was missing."),
+        Err(e) if e == "cancelled" => {}
+        Err(e) => progress("warmup", 1, 1, &format!("The warm-up run did not finish: {}", e)),
+    }
 }
 
 /// macOS: the share of physical memory that is free (free + inactive + speculative pages), 0..1. None elsewhere. The
@@ -984,6 +1048,14 @@ pub fn sync_runtime_files(src: &Path, game_dir: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "needs PKP_GAME_DIR; plays the opening headless for a minute and translates what it built"]
+    fn macos_warm_up_collects_the_opening() {
+        let dir = std::path::PathBuf::from(std::env::var("PKP_GAME_DIR").expect("PKP_GAME_DIR"));
+        let line = macos_warm_up(&dir, &std::sync::atomic::AtomicBool::new(false)).expect("the warm-up run ends");
+        println!("{:?}", line);
+    }
 
     #[test]
     #[ignore = "needs PKP_GAME_DIR and PKP_SPIRV_HARNESS; translates the game folder's dumped blocks into its cache"]
