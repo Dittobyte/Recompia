@@ -282,7 +282,7 @@ impl Relay {
             if a.ip == ip && (a.conns != 0 || a.seen != 0) {
                 return Some(i);
             }
-            if a.conns == 0 && free.map_or(true, |f| a.seen < self.ips[f].seen) {
+            if a.conns == 0 && free.is_none_or(|f| a.seen < self.ips[f].seen) {
                 free = Some(i);
             }
         }
@@ -747,7 +747,7 @@ impl Relay {
                 Err(_) => continue, // an ICMP report (Windows: WSAECONNRESET) or an over-long packet
             };
             let SocketAddr::V4(src) = src else { continue };
-            if n < XU_HDR || n > XU_MAX || get32(&b) != X_UMAGIC {
+            if !(XU_HDR..=XU_MAX).contains(&n) || get32(&b) != X_UMAGIC {
                 continue;
             }
             let tok = get64(&b[8..]);
@@ -763,7 +763,7 @@ impl Relay {
             match b[4] {
                 XU_BIND if n == XU_HDR => {
                     self.k[i].x_ep = Some(src);
-                    let other = self.k[i].pair.map_or(false, |p| self.k[p].x_ep.is_some());
+                    let other = self.k[i].pair.is_some_and(|p| self.k[p].x_ep.is_some());
                     let mut a = [0u8; XU_HDR];
                     put32(&mut a, X_UMAGIC);
                     a[4] = XU_BOUND;
@@ -863,7 +863,7 @@ impl Relay {
                 continue;
             }
             let i = i as usize;
-            let same = self.k[i].s.as_ref().map_or(false, |s| poll::raw_tcp(s) == f.s);
+            let same = self.k[i].s.as_ref().is_some_and(|s| poll::raw_tcp(s) == f.s);
             if self.k[i].st == St::Free || !same {
                 continue;
             }

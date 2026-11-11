@@ -30,6 +30,7 @@ if(TARGET nxrt_gfx)
         # core
         "${_pkp}/core/pkp_game.cpp"
         "${_pkp}/core/pkp_linkplay.cpp"
+        "${_pkp}/core/pkp_mods_notice.cpp"
         "${_pkp}/core/pkp_save_uuid.cpp"
         "${_pkp}/core/pkp_settings.cpp"
         "${_pkp}/core/pkp_view_offset.cpp"
@@ -42,6 +43,7 @@ if(TARGET nxrt_gfx)
         "${_pkp}/render/pkp_gfx_heap.cpp"
         "${_pkp}/render/pkp_quality.cpp"
         "${_pkp}/render/pkp_taa.cpp"
+        "${_pkp}/render/pkp_ui_backdrop.cpp"
         "${_pkp}/render/pkp_shoulder_camera.cpp"
         "${_pkp}/render/pkp_view_projection.cpp"
         # input

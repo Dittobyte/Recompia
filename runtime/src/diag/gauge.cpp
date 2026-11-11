@@ -206,6 +206,24 @@ void monitor_run(double summary_s) {
     auto last_line = Clock::now() - std::chrono::seconds(10);
     uint64_t last_n = g_ring_n.load(std::memory_order_acquire);
     bool seen_frames = last_n > 0;
+    // #405 / #309: the game thread spends most of every frame waiting. After a GPU reset the driver stays slow until a reboot (#405: the
+    // slow state began when the world loaded, not at the title screen, and settled at about 10 fps); on other machines a run that was fine
+    // slows down after a minute or more (#309). A summary window is slow and waiting when its mean frame rate is under kStuckFps and the
+    // game thread's waits (the presenting thread's system-call waits, or the GPU sync waits of any thread, whichever is larger: they can
+    // overlap) fill at least kStuckWaitShare of it. kStuckWindows such windows in a row, anywhere in the run, are reported once; a normal
+    // window ends the stretch, so a later one is reported again. The numbers come from the #405 and #309 logs (frames of 100 to 300 ms
+    // with 90 to 97% waits); the 10 s summary line prints the same shares so they can be tuned from more logs.
+    constexpr double kStuckFps = 20.0;
+    constexpr double kStuckWaitShare = 0.7;
+    constexpr int kStuckWindows = 3;
+    int stuck_windows = 0;
+    bool stuck_reported = false;
+    double stuck_fps_sum = 0, stuck_wait_sum = 0, stuck_sync_sum = 0, stuck_since_s = 0;
+    const auto run_start = Clock::now();
+    auto last_summary = run_start;
+    uint64_t last_game_wait = g_phase[kHpGameWait].load(std::memory_order_relaxed);
+    uint64_t last_sync_wait = g_phase[kHpGameSyncWait].load(std::memory_order_relaxed);
+    uint64_t last_render_idle = g_phase[kHpRenderIdle].load(std::memory_order_relaxed);
     for (;;) {
         {
             std::unique_lock<std::mutex> lk(s.m);
@@ -237,14 +255,46 @@ void monitor_run(double summary_s) {
                 if (prev) dt.push_back((double)(t - prev) * 1000.0 / qpc_freq());
                 prev = t;
             }
+            // the window's phase totals as shares of its real length (a phase total can pass the window when threads overlap: capped at 1)
+            const double win_s = std::chrono::duration<double>(now - last_summary).count();
+            last_summary = now;
+            auto share_of = [&](int phase, uint64_t& last) {
+                const uint64_t v = g_phase[phase].load(std::memory_order_relaxed);
+                const double ms = (double)(v - last) * 1000.0 / qpc_freq();
+                last = v;
+                return win_s > 0 ? std::min(1.0, ms / (win_s * 1000.0)) : 0.0;
+            };
+            const double game_wait_share = share_of(kHpGameWait, last_game_wait);
+            const double sync_wait_share = share_of(kHpGameSyncWait, last_sync_wait);
+            const double render_idle_share = share_of(kHpRenderIdle, last_render_idle);
+            if (n > last_n && win_s > 0) {
+                const double fps = (double)(n - last_n) / win_s;
+                const double wait_share = std::max(game_wait_share, sync_wait_share);
+                if (fps < kStuckFps && wait_share >= kStuckWaitShare) {
+                    if (stuck_windows == 0) stuck_since_s = std::chrono::duration<double>(now - run_start).count() - win_s;
+                    stuck_fps_sum += fps;
+                    stuck_wait_sum += wait_share;
+                    stuck_sync_sum += sync_wait_share;
+                    if (++stuck_windows >= kStuckWindows && !stuck_reported) {
+                        stuck_reported = true;
+                        NXLOG_W("hitch", "frames have been slow and mostly waiting for the last %d windows (since about %.0f s into the run): mean %.1f fps, the game thread waited %.0f%% of the time (GPU sync waits %.0f%%). If the system log shows a GPU reset, reboot the device: restarting the game does not clear it. Otherwise note what you were doing and any driver message in the system log (#405, #309)",
+                                stuck_windows, stuck_since_s, stuck_fps_sum / stuck_windows, 100.0 * stuck_wait_sum / stuck_windows, 100.0 * stuck_sync_sum / stuck_windows);
+                    }
+                } else {
+                    stuck_windows = 0;
+                    stuck_reported = false;
+                    stuck_fps_sum = stuck_wait_sum = stuck_sync_sum = 0;
+                }
+            }
             diag::host_probe_tick(n > 0);
             const uint64_t window_frames = n - last_n;
             last_n = n;
             if (n > 0) seen_frames = true;
             if (!dt.empty()) {
                 const FrameStats st = stats_of(dt);
-                NXLOG_I("hitch", "%llu frames in %.1f s: mean %.1f fps, 1%% low %.1f fps, worst %.1f ms, %zu over 2x the median (%.1f ms)",
-                        (unsigned long long)window_frames, st.span_s, st.mean_fps, st.low1_fps, st.worst_ms, st.over2x, st.median_ms);
+                NXLOG_I("hitch", "%llu frames in %.1f s: mean %.1f fps, 1%% low %.1f fps, worst %.1f ms, %zu over 2x the median (%.1f ms); of the window: game thread waits %.0f%%, GPU sync waits %.0f%%, render thread idle %.0f%%",
+                        (unsigned long long)window_frames, st.span_s, st.mean_fps, st.low1_fps, st.worst_ms, st.over2x, st.median_ms,
+                        100.0 * game_wait_share, 100.0 * sync_wait_share, 100.0 * render_idle_share);
             } else if (seen_frames) {
                 NXLOG_W("hitch", "no frame presented in the last %.1f s", summary_s);
             }

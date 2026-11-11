@@ -124,7 +124,8 @@ namespace {
 const char* const kPadSrcNames[kPadSrcCount] = {"south",         "east",           "west",       "north",      "left_shoulder", "right_shoulder",
                                                 "left_trigger", "right_trigger",  "start",      "back",       "left_stick",    "right_stick",
                                                 "dpad_up",      "dpad_down",      "dpad_left",  "dpad_right",
-                                                "right_paddle1", "left_paddle1",  "right_paddle2", "left_paddle2", "touchpad",   "touchpad_right"};
+                                                "right_paddle1", "left_paddle1",  "right_paddle2", "left_paddle2", "touchpad",   "touchpad_right",
+                                                "guide",         "misc1"};
 const char* const kCornerNames[] = {"top_left", "top_right", "bottom_left", "bottom_right"};
 }  // namespace
 

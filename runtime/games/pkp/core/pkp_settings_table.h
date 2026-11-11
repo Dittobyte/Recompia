@@ -58,6 +58,7 @@ constexpr Spec under(Key parent, Spec sp) {
 // In Key order (checked below). Every key is read once, when its feature installs.
 inline constexpr Spec kSpecs[] = {
     b(TallerFov, "taller_fov", true, "Screens taller than 16:9: the taller view through the camera's FOV and aspect (off: 16:9 with bars)."),
+    b(Fix4x3, "fix_4x3", false, "Experimental: on screens narrower than 16:9 (4:3, 16:10), full-screen UI backgrounds, fades and dimming fill the whole picture instead of stopping at a 16:9 strip."),
     b(RenderOverride, "render_override", true, "Render the scene at the chosen internal size instead of the game's 1920x1080 layout."),
     s(TargetFix, "target_fix", "screen", "off screen all", "Render targets made at a literal 1920x1080 follow the render size: screen-relative ones, all, or none."),
     b(SceneViewportFix, "scene_viewport_fix", true, "Keep the 3D scene's viewport whole when it renders below its targets' size."),

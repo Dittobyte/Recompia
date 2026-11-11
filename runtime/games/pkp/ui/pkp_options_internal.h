@@ -110,6 +110,15 @@ constexpr int kMmMid = 100;
 const char* mouse_mode_text(int, char* out, size_t n);
 int mouse_mode_max();
 
+// ---- pkp_options.cpp: the pad button remap rows, the last two rows of the Controller tab (two of its 13 slots) ----
+// "Controller Button" picks one of the controller's buttons and "Presses" what it presses on the Switch pad. Both are sliders in the middle
+// of a wide range whose text the rows draw themselves, like the parked Mouse Mode Key row: each left/right press or click moves the slider
+// by one and pkp_options.cpp turns the move into one step through the button list or the choice list.
+constexpr int kPadMid = 127;
+int pad_cycle_max();
+const char* pad_button_text(int, char* out, size_t n);
+const char* pad_press_text(int, char* out, size_t n);
+
 // ---- pkp_options_time.cpp ----
 extern const RowList kTimeRows;
 extern Row g_event_rows[kMaxEvents];          // the Events tab's rows, filled by load_events

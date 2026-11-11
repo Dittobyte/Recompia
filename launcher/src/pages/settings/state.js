@@ -10,6 +10,9 @@ let lastSection = 'display';   // coming back to Settings lands where the player
 
 export const rememberSection = (id) => { lastSection = id; };
 
+/** The channel the Settings page shows: 'testing' only when the launcher is set to it. */
+export const channelOf = (st) => (st.src.config.channel === 'testing' ? 'testing' : 'stable');
+
 export function createState({ dump, cfg, dlss, framegen, overview, promptIcons }, ctx) {
   return {
     src: makeSource(dump, cfg),
@@ -55,6 +58,7 @@ export function env(st) {
     backups: st.backups,
     backupLine: backupText(st.backups),
     steam: st.steam,
+    linux: /Linux/.test(globalThis.navigator?.userAgent ?? '') && !/Android/.test(globalThis.navigator?.userAgent ?? ''),
     steamBusy: st.steamBusy,
     backupDetail: backupDetail(st.backups),
     importing: st.importing,

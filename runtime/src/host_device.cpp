@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The machine the runtime runs on (include/nxrt/host_device.h). Based on the Steam Deck detection in tinfoil-chewer's Linux fork
-// (tinfoil-chewer/pokopia-recomp-linux 8b150a4), widened to the Legion Go S and to Windows handhelds.
+// (tinfoil-chewer/pokopia-recomp-linux 8b150a4), widened to the handhelds in kBoards and to Windows.
 #include "nxrt/host_device.h"
 
 #include "nxrt/config.h"
@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <condition_variable>
 #include <cstdio>
 #include <deque>
@@ -37,6 +38,35 @@ std::string smbios(const char* value, const char* dmi_file) {
     return {};
 }
 
+// The boards that are handhelds, matched on the lower-cased SMBIOS product name or family. A prefix match unless exact. A name that
+// covers both AMD and Intel models is left out; the string of each row is in the comment beside it.
+struct BoardRule {
+    bool family;        // matched against product_family, else product_name
+    bool exact;
+    const char* text;
+};
+constexpr BoardRule kBoards[] = {
+    {false, true, "jupiter"},          // Steam Deck LCD
+    {false, true, "galileo"},          // Steam Deck OLED
+    {true, false, "legion go s"},      // Legion Go S: family "Legion Go S 8APU1" (its product names are SKU codes: 83L3, 83N6, ...)
+    {false, false, "rog ally"},        // ROG Ally and Ally X: product "ROG Ally RC71L_RC71L" / "ROG Ally X RC72LA_RC72LA", family "ROG Ally"
+    {true, false, "rog ally"},
+    {false, false, "rog xbox ally"},   // ROG Xbox Ally / Ally X: product "ROG Xbox Ally RC73YA_RC73YA" (HHD; the RC74X one spells XBOX)
+    {false, true, "83e1"},             // Legion Go (first model): product "83E1", version "Legion Go 8APU1" (HHD, DRM panel-orientation patch)
+    {false, true, "83n0"},             // Legion Go 2: product "83N0" (Bazzite log, HHD)
+    {false, true, "83n1"},             // Legion Go 2, other SKU (HHD)
+    {false, false, "claw a8"},         // MSI Claw A8 (Ryzen Z2 Extreme): product "Claw A8 BZ2EM" (CachyOS report, HHD); the other Claws are Intel
+};
+
+// The first rule the board matches, or null.
+const BoardRule* match_board(const std::string& product, const std::string& family) {
+    for (const BoardRule& r : kBoards) {
+        const std::string& v = r.family ? family : product;
+        if (r.exact ? v == r.text : v.rfind(r.text, 0) == 0) return &r;
+    }
+    return nullptr;
+}
+
 bool detect(std::string* why) {
     const std::string forced = text::lower_trim(config_get_str("host", "handheld", "auto"));
     if (forced == "1" || forced == "on" || forced == "true" || forced == "yes") return *why = "[host] handheld = on", true;
@@ -45,12 +75,9 @@ bool detect(std::string* why) {
     const DWORD n = GetEnvironmentVariableA("SteamDeck", env, sizeof env);
     if (n > 0 && n < sizeof env && text::lower_trim(std::string(env, n)) == "1") return *why = "Steam's SteamDeck=1", true;
     const std::string product = smbios("SystemProductName", "product_name"), family = smbios("SystemFamily", "product_family");
-    // Steam Deck LCD / OLED. The Go S's product names are SKU codes (83N6, ...), its family names the model: "Legion Go S 8APU1".
-    // ROG Ally and Ally X: product "ROG Ally RC71L_RC71L" / "ROG Ally X RC72LA_RC72LA", family "ROG Ally" (read on an Ally under CachyOS).
-    if (product == "jupiter" || product == "galileo" || family.rfind("legion go s", 0) == 0 || product.rfind("rog ally", 0) == 0 ||
-        family.rfind("rog ally", 0) == 0)
-        return *why = "board " + product + " / " + family, true;
-    *why = "not a known handheld (board '" + product + "' / '" + family + "')";
+    if (const BoardRule* r = match_board(product, family))
+        return *why = "board " + product + " / " + family + ", matched " + (r->family ? "family " : "product ") + (r->exact ? "= '" : "prefix '") + r->text + "'", true;
+    *why = "not a known handheld (board '" + product + "' / '" + family + "'; [host] handheld = on forces it)";
     return false;
 }
 
@@ -169,6 +196,88 @@ void queue_url(std::string url) {
 }
 
 }  // namespace
+
+// ---- The facts a bug report needs -----------------------------------------------------------------------------------------------------
+
+namespace {
+
+// The first line of a unix file through Wine's Z: drive, trimmed; empty when the file is missing. Read only, one small virtual file.
+std::string first_line(const std::string& unix_path) {
+    std::string win = "Z:";
+    for (const char c : unix_path) win += c == '/' ? '\\' : c;
+    std::ifstream f(win);
+    std::string s;
+    return f && std::getline(f, s) ? text::trim(s) : std::string();
+}
+
+// " name=value" when the value is not empty, else nothing: a missing file leaves its field out.
+void add(std::string& out, const char* name, const std::string& value) {
+    if (!value.empty()) out += std::string(" ") + name + "=" + value;
+}
+
+// A byte count as MiB (a sysfs value in bytes, or in pages of page_bytes); empty when it is not a number.
+std::string mib(const std::string& v, unsigned long long unit = 1) {
+    char* end = nullptr;
+    const unsigned long long n = std::strtoull(v.c_str(), &end, 10);
+    return v.empty() || end == v.c_str() ? std::string() : std::to_string(n * unit / (1024 * 1024)) + "MiB";
+}
+
+// "Key:   value kB" in /proc/meminfo as MiB.
+std::string meminfo_mib(const char* key) {
+    std::ifstream f("Z:\\proc\\meminfo");
+    std::string line;
+    const std::string k = std::string(key) + ":";
+    while (std::getline(f, line))
+        if (line.rfind(k, 0) == 0) return mib(text::trim(line.substr(k.size())), 1024);
+    return {};
+}
+
+}  // namespace
+
+// One line, Wine/Linux only; every field is omitted when its file is missing or empty. No serial, uuid, user name, hostname or path.
+void host_log_facts() {
+    if (!host_is_wine()) return;
+    std::string o;
+    add(o, "kernel", first_line("/proc/sys/kernel/osrelease"));
+    static const char* const kDmi[][2] = {{"vendor", "sys_vendor"}, {"product", "product_name"}, {"family", "product_family"},
+                                          {"board", "board_name"}, {"bios", "bios_version"}};
+    for (const auto& d : kDmi) add(o, d[0], first_line(std::string("/sys/class/dmi/id/") + d[1]));
+    {   // the first "model name" line, and how many "processor" lines
+        std::ifstream f("Z:\\proc\\cpuinfo");
+        std::string line, model;
+        int cpus = 0;
+        for (int i = 0; i < 20000 && std::getline(f, line); ++i) {
+            if (line.rfind("processor", 0) == 0) ++cpus;
+            else if (model.empty() && line.rfind("model name", 0) == 0 && line.find(':') != std::string::npos) model = text::trim(line.substr(line.find(':') + 1));
+        }
+        add(o, "cpu", model);
+        if (cpus) add(o, "cpus", std::to_string(cpus));
+    }
+    const std::string cpu0 = "/sys/devices/system/cpu/cpu0/cpufreq/";
+    add(o, "governor", first_line(cpu0 + "scaling_governor"));
+    add(o, "epp", first_line(cpu0 + "energy_performance_preference"));
+    add(o, "pstate", first_line("/sys/devices/system/cpu/amd_pstate/status"));
+    add(o, "boost", first_line("/sys/devices/system/cpu/cpufreq/boost"));
+    for (int i = 0; i < 8; ++i) {   // the GPU: the first card whose PCI vendor is AMD
+        const std::string d = "/sys/class/drm/card" + std::to_string(i) + "/device/";
+        if (first_line(d + "vendor") != "0x1002") continue;
+        add(o, "gpu", first_line(d + "vendor") + ":" + first_line(d + "device"));
+        add(o, "vram", mib(first_line(d + "mem_info_vram_total")));
+        add(o, "vis_vram", mib(first_line(d + "mem_info_vis_vram_total")));
+        add(o, "gtt", mib(first_line(d + "mem_info_gtt_total")));
+        break;
+    }
+    add(o, "ttm_pages_limit", mib(first_line("/sys/module/ttm/parameters/pages_limit"), 4096));   // pages of 4 KiB
+    add(o, "ram", meminfo_mib("MemTotal"));
+    add(o, "swap", meminfo_mib("SwapTotal"));
+    add(o, "swappiness", first_line("/proc/sys/vm/swappiness"));
+    add(o, "zram0", mib(first_line("/sys/block/zram0/disksize")));
+    add(o, "gamescope", GetEnvironmentVariableA("GAMESCOPE_WAYLAND_DISPLAY", nullptr, 0) ? "yes" : "no");
+    add(o, "steamdeck_env", env_lower("SteamDeck"));
+    add(o, "desktop", env_lower("XDG_CURRENT_DESKTOP"));
+    add(o, "proton", GetEnvironmentVariableA("STEAM_COMPAT_DATA_PATH", nullptr, 0) ? "yes" : "no");
+    NXLOG_I("host", "host facts:%s", o.c_str());
+}
 
 bool host_steam_keyboard_wanted() {
     static const bool want = [] {

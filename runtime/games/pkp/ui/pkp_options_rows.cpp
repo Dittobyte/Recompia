@@ -179,11 +179,7 @@ const Row kMouse[] = {
     choice("Invert Horizontal", "Moving the mouse left looks right.", kOffOn, 2, ROW_BOOL(mouse.invert_x)),
     choice("Mouse Pointer in Menus", "Use the mouse as a pointer: hover, click, right click, wheel.", kOffOn, 2, ROW_BOOL(mouse.menu_cursor)),
     names("Button Icons", "The button icons in prompts. Automatic follows the last device used.", kPromptNames, static_cast<uint8_t>(std::size(kPromptNames)), ROW_ENUM(prompts.style, play::PromptStyle)),
-    // parked with the Joy-Con 2 mouse mode (pkp_mouse_mode.cpp kMouseModeParked): put the row back when the mode returns
-#if 0
-    dynamic("Mouse Mode Key", "Turns the Joy-Con 2 mouse mode on and off (point and click to place and break). To change it, press left or right on this row (or click it), then press the new key or mouse button. Esc cancels.",
-            mouse_mode_text, mouse_mode_max, [](const S&) { return kMmMid; }, [](S&, int) {}),
-#endif
+    // The Joy-Con 2 "Mouse Mode Key" row is parked with the mode (pkp_mouse_mode.cpp kMouseModeParked): its helpers stay in pkp_options.cpp, the row is in the git history (commit b3581ea) and goes back here when the mode returns.
 };
 
 const Row kController[] = {
@@ -198,6 +194,10 @@ const Row kController[] = {
     choice("Motion Sensor", "Pass the controller's gyro to the game.", kOffOn, 2, ROW_BOOL(pad.gyro)),
     number("Motion Strength", "Scales the gyro.", 0, 78, "%.2fx", 0.1, 0.05, ROW_STEP(pad.gyro_scale, 0.1, 0.05)),
     number("Rumble Strength", "Scales the vibration.", 0, 200, "%.0f%%", 0, 1, ROW_PCT(pad.rumble_scale)),
+    dynamic("Controller Button", "Pick a controller button, then set what it presses on the next row.",
+            pad_button_text, pad_cycle_max, [](const S&) { return kPadMid; }, [](S&, int) {}),
+    dynamic("Presses", "What the controller button above presses on the Switch pad. Default keeps the built-in layout.",
+            pad_press_text, pad_cycle_max, [](const S&) { return kPadMid; }, [](S&, int) {}),
 };
 
 // The gameplay mods (the gameplay() rows of pkp_settings_table.h), labelled as in the launcher's Settings > Gameplay (settings-schema.js

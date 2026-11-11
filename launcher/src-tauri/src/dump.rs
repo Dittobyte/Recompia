@@ -226,7 +226,7 @@ fn check_candidate(kind: &str, version: &str, dir: &Path, want: Option<&(String,
             let got = main_build_id(&exefs.join("main"));
             let ok = got.as_deref() == Some(id.as_str());
             checks.push(Check { label: format!("version {}", text), ok });
-            if !ok && got.as_deref().map_or(false, |g| g.starts_with(OLDER_MAIN_BUILD)) {
+            if !ok && got.as_deref().is_some_and(|g| g.starts_with(OLDER_MAIN_BUILD)) {
                 checks.push(Check { label: OLDER_LABEL.to_string(), ok: false });
             }
         }
@@ -299,7 +299,7 @@ fn scan_need(path: &str, want: Option<(String, String)>, need: Option<RomfsNeed>
     let base_romfs = base.join("romfs");
     if let Some(d) = &direct {
         // updates/<version> picked by hand: the base game is at ../../base
-        let up = d.parent().filter(|p| p.file_name().map_or(false, |n| n.eq_ignore_ascii_case("updates")));
+        let up = d.parent().filter(|p| p.file_name().is_some_and(|n| n.eq_ignore_ascii_case("updates")));
         let near = up.and_then(|p| p.parent()).map(|p| p.join("base").join("romfs"));
         report.candidates.push(check_candidate("folder", "", d, want.as_ref(), need, near.as_deref()));
     }

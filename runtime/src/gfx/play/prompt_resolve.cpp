@@ -65,7 +65,8 @@ bool source_for_button(const PadSettings& pad, bool label_abxy, uint64_t bit, Pa
 // directions have none in any set (the d-pad prompt is the set's whole cross, `dpad`, and pad_pack_name adds the direction). The entries
 // are built by runtime/scripts/build_prompt_pack.py (PAD_SETS: same prefixes and names). Columns: South East West North,
 // LeftShoulder RightShoulder LeftTrigger RightTrigger, Start Back, LeftStick RightStick, DpadUp DpadDown DpadLeft DpadRight,
-// RightPaddle1 LeftPaddle1 RightPaddle2 LeftPaddle2, Touchpad TouchpadRight.
+// RightPaddle1 LeftPaddle1 RightPaddle2 LeftPaddle2, Touchpad TouchpadRight, Guide Misc1. Every set lists all kPadSrcCount entries (a
+// missing one would be a null name).
 struct PadIconSet {
     PromptStyle style;
     const char* dpad;
@@ -74,40 +75,40 @@ struct PadIconSet {
 constexpr PadIconSet kPadSets[] = {
     {PromptStyle::Xbox, "xbox/dpad",
      {"xbox/a", "xbox/b", "xbox/x", "xbox/y", "xbox/lb", "xbox/rb", "xbox/lt", "xbox/rt", "xbox/menu", "xbox/view",
-      "", "", "", "", "", "", "", "", "", "", "", ""}},
+      "", "", "", "", "", "", "", "", "", "", "", "", "", ""}},
     {PromptStyle::PlayStation, "ps/dpad",
      {"ps/cross", "ps/circle", "ps/square", "ps/triangle", "ps/l1", "ps/r1", "ps/l2", "ps/r2", "ps/options", "ps/create",
-      "", "", "", "", "", "", "", "", "", "", "", ""}},
-    // the grips (upper and lower on a side share the icon) and the trackpad clicks
+      "", "", "", "", "", "", "", "", "", "", "", "", "", ""}},
+    // the four rear grips and the trackpad clicks (Steam Controller 2026), the Steam button and the quick-access button
     {PromptStyle::Steam, "steam/dpad",
      {"steam/a", "steam/b", "steam/x", "steam/y", "steam/lb", "steam/rb", "steam/lt", "steam/rt", "steam/menu", "steam/view",
-      "", "", "", "", "", "", "steam/rg", "steam/lg", "steam/rg", "steam/lg", "steam/lp", "steam/rp"}},
+      "", "", "", "", "", "", "steam/r4", "steam/l4", "steam/r5", "steam/l5", "steam/lp", "steam/rp", "steam/guide", "steam/qam"}},
     // the rear buttons R4 L4 R5 L5 and the trackpads
     {PromptStyle::SteamDeck, "deck/dpad",
      {"deck/a", "deck/b", "deck/x", "deck/y", "deck/l1", "deck/r1", "deck/l2", "deck/r2", "deck/menu", "deck/view",
-      "", "", "", "", "", "", "deck/r4", "deck/l4", "deck/r5", "deck/l5", "deck/lp", "deck/rp"}},
+      "", "", "", "", "", "", "deck/r4", "deck/l4", "deck/r5", "deck/l5", "deck/lp", "deck/rp", "steam/guide", "steam/qam"}},
     // Nintendo layout: B at the bottom, A at the right, Y at the left, X at the top; Plus is Start, Minus is Back
     {PromptStyle::NintendoSwitch, "ns1/dpad",
      {"ns1/b", "ns1/a", "ns1/y", "ns1/x", "ns1/l", "ns1/r", "ns1/zl", "ns1/zr", "ns1/plus", "ns1/minus",
-      "", "", "", "", "", "", "", "", "", "", "", ""}},
+      "", "", "", "", "", "", "", "", "", "", "", "", "", ""}},
     {PromptStyle::Switch2, "ns2/dpad",   // + the Switch 2 Pro Controller's rear GR and GL
      {"ns2/b", "ns2/a", "ns2/y", "ns2/x", "ns2/l", "ns2/r", "ns2/zl", "ns2/zr", "ns2/plus", "ns2/minus",
-      "", "", "", "", "", "", "ns2/gr", "ns2/gl", "ns2/gr", "ns2/gl", "", ""}},
+      "", "", "", "", "", "", "ns2/gr", "ns2/gl", "ns2/gr", "ns2/gl", "", "", "", ""}},
     {PromptStyle::WiiU, "wiiu/dpad",
      {"wiiu/b", "wiiu/a", "wiiu/y", "wiiu/x", "wiiu/l", "wiiu/r", "wiiu/zl", "wiiu/zr", "wiiu/plus", "wiiu/minus",
-      "", "", "", "", "", "", "", "", "", "", "", ""}},
+      "", "", "", "", "", "", "", "", "", "", "", "", "", ""}},
     {PromptStyle::SteamFrame, "frame/dpad",   // the grips like the Steam Controller's
      {"frame/a", "frame/b", "frame/x", "frame/y", "frame/l1", "frame/r1", "frame/l2", "frame/r2", "frame/menu", "frame/view",
-      "", "", "", "", "", "", "frame/rg", "frame/lg", "frame/rg", "frame/lg", "", ""}},
+      "", "", "", "", "", "", "frame/rg", "frame/lg", "frame/rg", "frame/lg", "", "", "", ""}},
     // A, B, the triggers and the trackpad press; no X, Y, shoulders, Start or Back. The d-pad is the left stick (SteamVR's usual binding).
     {PromptStyle::ValveIndex, "index/dpad",
      {"index/a", "index/b", "", "", "", "", "index/lt", "index/rt", "", "",
-      "", "", "", "", "", "", "", "", "", "", "index/track", "index/track"}},
+      "", "", "", "", "", "", "", "", "", "", "index/track", "index/track", "", ""}},
     // Gestures: tap confirms, a two-finger tap goes back, hold and double tap for the other two, swipes for the shoulders, pinch for the
     // triggers, a two-finger double tap and hold for Start and Back, a one-finger swipe for the d-pad.
     {PromptStyle::Touch, "touch/dpad",
      {"touch/tap", "touch/two", "touch/hold", "touch/double", "touch/swipe_left", "touch/swipe_right", "touch/zoom_out", "touch/zoom_in",
-      "touch/two_double", "touch/two_hold", "", "", "", "", "", "", "", "", "", "", "", ""}},
+      "touch/two_double", "touch/two_hold", "", "", "", "", "", "", "", "", "", "", "", "", "", ""}},
 };
 
 const PadIconSet* pad_set(PromptStyle style) {

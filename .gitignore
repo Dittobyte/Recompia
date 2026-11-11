@@ -30,3 +30,10 @@ obj/
 __pycache__/
 /export/
 /saves/
+# Local reverse-engineering and modding notes, reference clones and play-test output. Never commit these.
+modding-docs/
+/refs/
+/play/
+*.nsz
+*.xcz
+*.tik

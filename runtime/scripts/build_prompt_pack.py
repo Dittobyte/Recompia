@@ -13,6 +13,11 @@ Add the derived entries (the d-pad direction icons) to an existing pack without 
 Add (or replace) controller sets of PAD_SETS in an existing pak, by prefix; every other entry is kept byte for byte:
   python -I scripts/build_prompt_pack.py --add-sets <pack folder or .zip> --sets deck,ns1,ns2 --out assets/prompts/prompt_icons.pak
 
+Fit steam/ to the Steam Controller (2026) in an existing pak (needs no Kenney pack): View and Menu from xbox/, one icon per rear grip
+(l4, l5, r4, r5) instead of the original controller's two, and icons for the Steam (guide) and quick-access (qam) buttons; other entries are kept byte for byte
+(--build and --add-sets do this for steam/ themselves):
+  python -I scripts/build_prompt_pack.py --add-sc2 --out assets/prompts/prompt_icons.pak
+
 Pack format, little endian:
   header (24 bytes): char magic[4]="MPIP", u32 version=1, u32 count, u32 icon_w=36, u32 icon_h=36, u32 reserved=0
   count directory entries (48 bytes each): char name[40] (ASCII, NUL padded), u32 offset, u32 size (=5184)
@@ -35,7 +40,7 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 ICON = 36
 BOX = 33                    # icon content is fitted into a BOX x BOX square
@@ -96,8 +101,8 @@ PAD_SETS: tuple[PadSet, ...] = (
         "l1": "playstation_trigger_l1", "r1": "playstation_trigger_r1", "l2": "playstation_trigger_l2", "r2": "playstation_trigger_r2",
         "options": "playstation5_button_options", "create": "playstation5_button_create", "dpad": "playstation_dpad",
     }, core=0.0),
-    # Laid out like the Xbox set (the controller's left small button is View, the right one Menu); the two rear buttons on a side share
-    # the grip icon; lp/rp are the trackpad clicks.
+    # Kenney's art is the original Steam Controller (< and > buttons, two rear grips, drawn here as lg/rg); sc2_fit() turns it into the Steam
+    # Controller (2026) set: View and Menu like the Xbox set, grips l4 l5 r4 r5, plus guide and qam. lp/rp are the trackpad clicks.
     PadSet("steam", "Steam Controller", {
         "a": "steam_button_a", "b": "steam_button_b", "x": "steam_button_x", "y": "steam_button_y",
         "lb": "steam_lb", "rb": "steam_rb", "lt": "steam_lt", "rt": "steam_rt",
@@ -572,7 +577,10 @@ def verify(path: Path) -> int:
     bases = [n for n in names if not n.endswith("_pressed")]
     print(f"base {len(bases)}, _pressed {len(names) - len(bases)}")
     for ps in PAD_SETS:   # every entry the runtime can ask for
-        want = [f"{ps.prefix}/{short}" for short in ps.icons] + [f"{ps.prefix}/dpad_{d}" for d in DPAD_DIRS]
+        shorts = list(ps.icons)
+        if ps.prefix == "steam":   # sc2_fit() renames the grips and adds the Steam and quick-access buttons
+            shorts = [s for s in shorts if f"steam/{s}" not in SC2_GRIP_OLD] + [n.split("/")[1] for n in (*SC2_GRIPS, *SC2_EXTRA_LABELS)]
+        want = [f"{ps.prefix}/{short}" for short in shorts] + [f"{ps.prefix}/dpad_{d}" for d in DPAD_DIRS]
         absent = [n for n in want if n not in s]
         if absent:
             problems.append(f"{ps.prefix}/ entries missing: {absent}")
@@ -626,6 +634,89 @@ def write_preview(path: Path, icons: dict[str, Image.Image], font_path: Path) ->
 
 # ---------------------------------------------------------------- build
 
+# The Steam Controller (2026) differs from Kenney's original-controller art in three places: its small buttons are View and Menu like an Xbox
+# pad (not < and >), it has four rear grips (L4, L5, R4, R5) where the original had two, and its trackpads keep the LP and RP icons.
+# Kenney has no art for it, so the grips are the original grip shape with the label redrawn, and View and Menu are the Xbox symbols. The Steam
+# button and the quick-access ("...") button, which [padmap] can bind, get an S and three dots on the trackpad's round shape.
+SC2_VIEW_MENU = {"steam/view": "xbox/view", "steam/menu": "xbox/menu"}
+SC2_GRIPS = {"steam/l4": ("steam/lg", "L4"), "steam/l5": ("steam/lg", "L5"),
+             "steam/r4": ("steam/rg", "R4"), "steam/r5": ("steam/rg", "R5")}
+SC2_GRIP_OLD = ("steam/lg", "steam/rg")
+SC2_EXTRA_LABELS = {"steam/guide": "S", "steam/qam": None}    # the Steam button (an S) and the quick-access button (three dots) on the trackpad's round shape
+GRIP_TEXT_SCALE = 4         # the label is drawn this many times larger and scaled down, for smooth edges
+GRIP_TEXT_PX = 13           # label height in icon pixels (the original LG / RG text is about this tall)
+
+
+def solid_shape(shape: Image.Image) -> Image.Image:
+    """The alpha of `shape` with its label filled in: the label is a transparent knockout (plus a half-transparent rim) inside the white shape."""
+    alpha = shape.getchannel("A")
+    outside = alpha.point(lambda v: 255 if v < 128 else 0)
+    ImageDraw.floodfill(outside, (0, 0), 128)                       # the corner is outside the shape: mark what touches it
+    holes = outside.point(lambda v: 255 if v == 255 else 0)           # transparent and not reachable from outside: the old label
+    holes = holes.filter(ImageFilter.MaxFilter(3))                    # plus its half-transparent rim, or the old letters ghost through
+    return ImageChops.lighter(alpha, holes)
+
+
+def knock_out(shape: Image.Image, mask: Image.Image) -> Image.Image:
+    """`shape` (any label) as a white icon with `mask` (ICON x ICON, 255 = cut) knocked out of it."""
+    icon = Image.new("RGBA", (ICON, ICON), (255, 255, 255, 0))
+    icon.putalpha(ImageChops.multiply(solid_shape(shape), ImageChops.invert(mask)))
+    return icon
+
+
+def text_mask(text: str, font_path: Path) -> Image.Image:
+    big = GRIP_TEXT_SCALE
+    font = ImageFont.truetype(str(font_path), GRIP_TEXT_PX * big)
+    mask = Image.new("L", (ICON * big, ICON * big), 0)
+    ImageDraw.Draw(mask).text((ICON * big // 2, ICON * big // 2), text, font=font, fill=255, anchor="mm", stroke_width=big // 2, stroke_fill=255)
+    return mask.resize((ICON, ICON), RESAMPLE)
+
+
+def dots_mask() -> Image.Image:
+    """Three dots in a row: the quick-access ("...") button."""
+    big = GRIP_TEXT_SCALE
+    mask = Image.new("L", (ICON * big, ICON * big), 0)
+    d = ImageDraw.Draw(mask)
+    r, gap, c = 2.6 * big, 7.5 * big, ICON * big / 2
+    for k in (-1, 0, 1):
+        d.ellipse((c + k * gap - r, c - r, c + k * gap + r, c + r), fill=255)
+    return mask.resize((ICON, ICON), RESAMPLE)
+
+
+def sc2_fit(icons: dict[str, Image.Image], font_path: Path) -> None:
+    """Turns the steam/ entries into the Steam Controller (2026) set, in place; running it again changes nothing."""
+    for name, src in SC2_VIEW_MENU.items():
+        icons[name] = icons[src].copy()
+        icons[name + "_pressed"] = icons[src + "_pressed"].copy() if src + "_pressed" in icons else pressed_variant(icons[name])
+    for name, (old, text) in SC2_GRIPS.items():
+        if old not in icons:
+            if name not in icons:
+                raise SystemExit(f"no grip shape for {name}: the pak has neither {old} nor {name}")
+            continue                                    # already fitted: keep the icon
+        icons[name] = knock_out(icons[old], text_mask(text, font_path))
+    for name, text in SC2_EXTRA_LABELS.items():
+        if name not in icons:
+            icons[name] = knock_out(icons["steam/lp"], text_mask(text, font_path) if text else dots_mask())
+    for old in SC2_GRIP_OLD:
+        icons.pop(old, None)
+        icons.pop(old + "_pressed", None)
+    for name in [*SC2_GRIPS, *SC2_EXTRA_LABELS]:
+        icons[name + "_pressed"] = pressed_variant(icons[name])
+
+
+def add_sc2(args: argparse.Namespace) -> int:
+    """Fits the steam/ entries of an existing pak to the Steam Controller (2026); every other entry is kept as it is."""
+    font_path = Path(args.font)
+    if not font_path.is_file():
+        raise SystemExit(f"font not found: {font_path}")
+    out = Path(args.out)
+    icons = read_pak(out)
+    sc2_fit(icons, font_path)
+    size = write_pak(out, icons)
+    print(f"wrote {out} ({size} bytes), {len(icons)} entries; steam/: {sum(1 for n in icons if n.startswith('steam/'))}")
+    return 0
+
+
 def pick_sets(arg: str | None) -> list[PadSet]:
     if not arg:
         return list(PAD_SETS)
@@ -650,6 +741,8 @@ def add_sets(args: argparse.Namespace) -> int:
             for name, im in load_pad_set(root, ps).items():
                 icons[name] = im
                 icons[name + "_pressed"] = pressed_variant(im)
+        if any(ps.prefix == "steam" for ps in sets):
+            sc2_fit(icons, Path(args.font))
         size = write_pak(out, icons)
         print(f"wrote {out} ({size} bytes), {len(icons)} entries")
         for ps in sets:
@@ -692,6 +785,7 @@ def build(args: argparse.Namespace) -> int:
 
         for name in list(icons):
             icons[name + "_pressed"] = pressed_variant(icons[name])
+        sc2_fit(icons, font_path)
 
         out = Path(args.out)
         size = write_pak(out, icons)
@@ -721,12 +815,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--verify", metavar="PAK", help="check an existing pak and exit")
     ap.add_argument("--add-sets", metavar="KENNEY", help="add (or replace) controller sets from the Kenney pack (folder or .zip) in the pak given by --out, in place, and exit")
     ap.add_argument("--sets", help="with --add-sets: comma-separated set prefixes (" + ",".join(ps.prefix for ps in PAD_SETS) + "); default all")
+    ap.add_argument("--add-sc2", action="store_true", help="fit steam/ in the pak given by --out to the Steam Controller (2026), in place, and exit")
     ap.add_argument("--derive", metavar="PAK", help="add the derived d-pad direction entries to an existing pak in place and exit")
     args = ap.parse_args(argv)
     if args.verify:
         return verify(Path(args.verify))
     if args.derive:
         return derive(Path(args.derive))
+    if args.add_sc2:
+        return add_sc2(args)
     if args.add_sets:
         return add_sets(args)
     if not args.kenney:

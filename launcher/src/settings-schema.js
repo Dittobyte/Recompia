@@ -26,6 +26,7 @@ import { num, t } from './i18n.js';
 import { previewItem } from './prompt-pack-model.js';
 import controlsSchema from '../../runtime/docs/controls_schema.json' with { type: 'json' };
 import gameIniSchema from '../../runtime/docs/pkp_ini_schema.json' with { type: 'json' };
+import { modsNotice } from './mods-notice-model.js';
 
 const controls = (section, key) => ({ file: 'controls', section, key });
 const pkp = (section, key) => ({ file: 'pkp', section, key });
@@ -281,7 +282,7 @@ const WRITE = {
 
 // ---- the page ---------------------------------------------------------------------------------------------------------------------
 
-const REPO_URL = 'https://github.com/featureJosh/pokopia-recomp';
+export const REPO_URL = 'https://github.com/featureJosh/pokopia-recomp';
 const DISCORD_URL = 'https://discord.gg/gN5g4MtWHr';
 const open = (url, label = t('Open')) => ({ act: 'open-url', arg: url, label, icon: 'external-link' });
 const hasControls = (src) => src.controls_exists !== false;
@@ -315,6 +316,8 @@ const gameplaySchema = () => SCHEMAS.pkp.sections.find((s) => s.name === 'pkp').
 export const gameplayKeys = () => gameplaySchema().map((k) => k.key);
 /** A mod's switch (not the setting of another switch). */
 export const isGameplaySwitch = (k) => k.group === 'gameplay' && !k.parent;
+/** The mods whose switch the launcher shows (a hidden mod has no field, so its value is unknown here): what the mods notice lists. pkp.log's `mods:` line covers all. */
+export const gameplaySwitchKeys = () => gameplaySchema().filter((k) => isGameplaySwitch(k) && !k.hidden).map((k) => k.key);
 
 function gameplayRow(k) {
   const g = GAMEPLAY[k.key];
@@ -351,6 +354,19 @@ export const DLSS_DOWNLOAD = {
 };
 
 export const IMPORT_FACTS = t('Your current save moves to a backup folder first, and the source is only read. A copied save cannot join its original in Link Play.');
+
+// Features still being tried that are not gameplay mods: on by default, with their switch in the Testing tab on the Testing channel.
+const EXPERIMENTAL_ROWS = [
+  { id: 'menu_in_game', label: "Mouse in the game's menus", type: 'toggle', ...fromSchema(pkp('pkp', 'menu_in_game')) },
+  { id: 'taller_fov', label: 'Taller view on 16:10 screens', type: 'toggle', ...fromSchema(pkp('pkp', 'taller_fov')) },
+];
+// Experimental and OFF by default: switch on only to try them and report back with pkp.log. Testing tab on the Testing channel.
+const EXPERIMENTAL_OFF_ROWS = [
+  { id: 'fix_4x3', label: '4:3 Fix (very experimental)', type: 'toggle', ...fromSchema(pkp('pkp', 'fix_4x3')) },
+];
+const isTesting = (v) => v.channel === 'testing';
+const showWhen = (on) => (rows) => rows.map((r) => ({ ...r, when: (v, e) => on(v) && (r.when ? r.when(v, e) : true) }));
+const onTesting = showWhen(isTesting);
 
 export const SECTIONS = [
   {
@@ -491,6 +507,10 @@ export const SECTIONS = [
           },
           { id: 'prompt_preview', label: t('Preview'), type: 'glyphs', glyphs: (v) => promptPreview(v.prompt_style) },
           { id: 'f1_bindings', label: t('Change bindings in game'), type: 'keycap', key: 'F1' },
+          {
+            id: 'steam_input_note', type: 'note', when: (_v, env) => env.linux,
+            note: () => ({ text: 'Steam Controller or other pad on Linux: add the game to Steam (Game tab, Steam) and keep Steam Input on for it. With Steam Input on, the game sees an Xbox style pad, so the Steam Controller rows (back grips, trackpad clicks) only react if your Steam layout sends them. With Steam Input off, a Steam Controller may not be detected under Proton; if your pad does not work, turn Steam Input on.' }),
+          },
         ],
       },
     ],
@@ -596,6 +616,7 @@ export const SECTIONS = [
         rows: [
           { id: 'gameplay_note', type: 'note', note: () => ({ text: t('New ways of playing: switch each one on or off here. They take effect the next time the game starts, and they need the game built with this version (Set up again once after an update).') }) },
           ...gameplayRows(),
+          { id: 'mods_notice', type: 'note', note: (_e, v) => ({ text: modsNotice(v, gameplaySwitchKeys(), [...EXPERIMENTAL_ROWS, ...EXPERIMENTAL_OFF_ROWS].map((r) => r.id)).text }) },
         ],
       },
       {
@@ -761,7 +782,41 @@ export const SECTIONS = [
       },
     ],
   },
+  {
+    id: 'testing',
+    label: 'Testing',
+    only: 'testing',   // shown on the Testing channel only (sectionsFor)
+    groups: [
+      {
+        title: 'Send logs',
+        rows: [
+          { id: 'logs_note', type: 'note', note: () => ({ text: 'Export and report makes one zip of your logs (names in paths, account and server settings and IP addresses are removed), opens its folder and the bug form. Drag the zip into the form: the launcher has no GitHub login, so nothing is sent for you.' }) },
+          {
+            id: 'logs', label: 'Logs', type: 'info', value: 'pkp.log, setup.log, crash files and pkp.ini',
+            actions: [
+              { act: 'logs-send', label: 'Export and report', icon: 'upload' },
+              { act: 'logs-view', label: 'View logs', icon: 'file-text' },
+              { act: 'logs-handheld', label: 'Copy handheld report', icon: 'copy' },
+              { act: 'logs-folder', label: 'Open folder', icon: 'folder-open' },
+            ],
+          },
+        ],
+      },
+      {
+        title: 'Experimental features',
+        rows: [
+          { id: 'experimental_note', type: 'note', note: () => ({ text: 'Features still being tried, on by default: switch one off here if it causes trouble. They take effect the next time the game starts. Tell us what you find.' }) },
+          ...onTesting(EXPERIMENTAL_ROWS),
+          { id: 'experimental_off_note', type: 'note', when: isTesting, note: () => ({ text: 'Very experimental and off by default. 4:3 Fix is for screens narrower than 16:9 (4:3, 16:10): full-screen backgrounds, fades and dimming fill the whole picture. If you have a 4:3 or 16:10 screen and try it, please send us pkp.log (Export and report above) and tell us what looked wrong.' }) },
+          ...onTesting(EXPERIMENTAL_OFF_ROWS),
+        ],
+      },
+    ],
+  },
 ];
+
+/** The sections a channel shows: Testing-only sections appear on the Testing channel. */
+export const sectionsFor = (channel) => SECTIONS.filter((sec) => !sec.only || sec.only === channel);
 
 export const FIELDS = Object.fromEntries(
   SECTIONS.flatMap((s) => s.groups.flatMap((g) => g.rows)).filter((r) => r.at).map((f) => [f.id, f]),

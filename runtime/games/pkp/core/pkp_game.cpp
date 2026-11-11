@@ -10,7 +10,9 @@
 #include "ui/pkp_key_guide.h"
 #include "core/pkp_layout.h"
 #include "core/pkp_linkplay.h"
+#include "core/pkp_mods_notice.h"
 #include "ui/pkp_menu.h"
+#include "render/pkp_ui_backdrop.h"
 #if NXRT_TESTTOOLS
 #include "test/pkp_movie_test.h"
 #include "test/pkp_taa_probe.h"
@@ -57,6 +59,8 @@ constexpr uint64_t kFrameUpdate = 0x1fdcde4;
 //                       order
 //   key_guide           after its clients: its install registers the hooks they need
 //   options             after title: title's frame callback runs first
+//   ui_backdrop         after menu: it registers a client of the menu's pane draw hooks (pkp_menu.h) and holds no hook of its own
+//   mods_notice         any position: it only logs which gameplay mods are on, at install
 // No other two features hook the same address.
 //
 // Each row says what the feature is to the player. mod(): a gameplay mod, named with its switches (the gameplay() rows of the [pkp]
@@ -72,11 +76,11 @@ constexpr Entry port(const Feature* f) { return {f, {settings::Key::Count, setti
 
 using enum settings::Key;
 constexpr Entry kEntries[] = {
-    port(&kSaveUuidFeature), port(&kLinkplayFeature), port(&kPlayFeature), port(&kKbmFeature),
+    port(&kSaveUuidFeature), port(&kLinkplayFeature), port(&kPlayFeature), port(&kKbmFeature), port(&kModsNoticeFeature),
 #if NXRT_TESTTOOLS
     port(&kMovieTestFeature),
 #endif
-    port(&kMenuFeature), port(&kQualityFeature),
+    port(&kMenuFeature), port(&kUiBackdropFeature), port(&kQualityFeature),
     port(&kTaaFeature),
 #if NXRT_TESTTOOLS
     port(&kTaaProbeFeature),

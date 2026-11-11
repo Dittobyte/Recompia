@@ -170,7 +170,7 @@ pub fn rank(adapters: &[Adapter]) -> LanReport {
         }
         rep.lan.push(LanAddr { ip: a.ip.to_string(), adapter: a.name(), default_route, public_profile: a.public == Some(true) });
     }
-    if rep.lan.first().map_or(false, |l| l.public_profile) {
+    if rep.lan.first().is_some_and(|l| l.public_profile) {
         rep.warning = Some(PUBLIC_WARNING.to_string());
     }
     if rep.warning.is_some() || rep.lan.is_empty() {

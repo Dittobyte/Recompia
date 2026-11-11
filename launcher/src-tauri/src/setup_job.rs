@@ -142,7 +142,7 @@ pub fn start_setup(app: AppHandle, state: SetupArg, gentle: Option<bool>) -> Res
             // a finished cache of the same romfs has nothing left to translate (re-extracting would only find that out)
             let same = shaders::read_marker(&job.game_dir).romfs == job.romfs_key();
             let done = same && shaders::is_complete(&job.game_dir);
-            if !done && !shaders::run(&job, &tools, &st.cancel, |p| emit(p))? {
+            if !done && !shaders::run(&job, &tools, &st.cancel, &mut emit)? {
                 return Ok(false);
             }
             // the shaders the game builds while it runs: one hidden run collects those of the opening; later ones are

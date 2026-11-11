@@ -28,6 +28,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdio>
 #include <cstring>
 #include <deque>
 #include <mutex>
@@ -57,7 +58,10 @@ struct AutoDecision {
     gfx::Device* device = nullptr;
     VkPhysicalDevice physical = VK_NULL_HANDLE;
     bool on = false;
+    VkPhysicalDeviceType type = VK_PHYSICAL_DEVICE_TYPE_OTHER;
+    uint64_t local = 0;          // largest DEVICE_LOCAL heap in bytes; read only for an integrated GPU, else 0
 };
+constexpr uint64_t kAutoMaxLocal = 8ull << 30;
 std::mutex g_auto_mu;
 AutoDecision g_auto;
 
@@ -68,15 +72,16 @@ bool auto_copy() {
     std::lock_guard<std::mutex> lk(g_auto_mu);
     if (g_auto.device == &d && g_auto.physical == d.physical()) return g_auto.on;
     bool on = false;
-    if (d.properties().deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+    uint64_t local = 0;
+    const VkPhysicalDeviceType type = d.properties().deviceType;
+    if (type == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
         VkPhysicalDeviceMemoryProperties mp = {};
         vkGetPhysicalDeviceMemoryProperties(d.physical(), &mp);
-        uint64_t local = 0;
         for (uint32_t i = 0; i < mp.memoryHeapCount; ++i)
             if (mp.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) local = std::max<uint64_t>(local, mp.memoryHeaps[i].size);
-        on = local && local <= (8ull << 30);
+        on = local && local <= kAutoMaxLocal;
     }
-    g_auto = AutoDecision{&d, d.physical(), on};
+    g_auto = AutoDecision{&d, d.physical(), on, type, local};
     return on;
 }
 
@@ -103,11 +108,30 @@ const Cfg& cfg() {
     return c;
 }
 
+// What auto saw, for the decision line of a bug report: host, Vulkan device type, largest device-local heap (integrated GPUs only), threshold.
+std::string auto_facts() {
+    if (host_is_wine()) return ", Wine: yes";
+    char buf[256];
+    AutoDecision a;
+    {
+        std::lock_guard<std::mutex> lk(g_auto_mu);
+        a = g_auto;
+    }
+    const char* type = a.type == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU ? "integrated" : a.type == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU ? "discrete" : "other";
+    if (a.type == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU)
+        std::snprintf(buf, sizeof buf, ", Wine: no, GPU type: %s, largest device-local heap: %llu MiB, on up to %llu MiB", type,
+                 static_cast<unsigned long long>(a.local >> 20), static_cast<unsigned long long>(kAutoMaxLocal >> 20));
+    else
+        std::snprintf(buf, sizeof buf, ", Wine: no, GPU type: %s (heap not read), on only for integrated GPUs with up to %llu MiB", type,
+                 static_cast<unsigned long long>(kAutoMaxLocal >> 20));
+    return buf;
+}
+
 void log_cfg(const Cfg& c, bool on) {
     static std::once_flag once;
     std::call_once(once, [&] {
-        const char* why = !c.automatic ? "" : (host_is_wine() ? ", Wine" : (on ? ", integrated GPU with at most 8 GiB of device-local memory" : ", not Wine or a small integrated GPU"));
-        NXLOG_I(kTag, "pool_copy %s (%s%s)", on ? "on" : "off", c.mode.c_str(), why);
+        const std::string why = c.automatic ? auto_facts() : std::string();
+        NXLOG_I(kTag, "pool_copy %s (%s%s)", on ? "on" : "off", c.mode.c_str(), why.c_str());
         if (on)
             NXLOG_I(kTag, "pool_copy: shadows in cells of %llu MiB, dropped after %u idle presents, cap %llu MiB; pool_lazy, pool_lazy_chunk_mb, "
                           "pool_lazy_idle, pool_lazy_cpu_untile and compute_out_lazy are ignored",

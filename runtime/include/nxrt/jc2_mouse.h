@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Switch 2 Joy-Con 2 mouse ("Nmouse" / "Jcms") from the PC mouse. The hid service reports one virtual Joy-Con 2 (R) that works as a
-// mouse and writes its state into the game's Nmouse transfer memory (layout: docs/hid_mouse_sw2.md). The play layer feeds it the host
+// mouse and writes its state into the game's Nmouse transfer memory (layout: the local Joy-Con 2 mouse notes). The play layer feeds it the host
 // pointer once per frame; whoever owns the mouse camera asks here whether it must hand the mouse over.
 //
 // Config: [input] jc2_mouse = auto | on | off (default auto).

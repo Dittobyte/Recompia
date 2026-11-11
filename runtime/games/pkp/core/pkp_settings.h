@@ -21,6 +21,7 @@ inline constexpr const char* kSection = "pkp";   // the game-ini section of ever
 enum class Key : uint8_t {
     // play mode (pkp_play.cpp, pkp_render_size.cpp, pkp_render_targets.cpp)
     TallerFov,
+    Fix4x3,
     RenderOverride,
     TargetFix,
     SceneViewportFix,

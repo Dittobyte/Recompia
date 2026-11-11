@@ -38,6 +38,30 @@ What it cannot get past:
 - **A host on another port.** When 47600 is taken on the host (a second copy of the game), it listens on a port the system picks, and the
   sweep does not find it. Visit it by address with the port from its log.
 
+## Invites and Tailscale
+
+Instead of typing an address and a room code, the host can **copy an invite** and the friends **paste** it.
+
+- **Host:** on the launcher's Link Play page, press **Copy invite** beside an address (a same-network address, a Tailscale address, the
+  public address, or a relay). For Tailscale or the internet the invite includes the room code, so the host needs one: **New code**, or
+  start the game as host. Send the whole message to your friends in any chat.
+- **Friend:** open the Link Play page and paste the message into **Paste invite**. The launcher fills in the address and the room code and
+  picks the right mode (Same network, or Internet with Visit), then the usual steps in the game apply.
+- **Tailscale:** the game counts Tailscale's addresses (100.64.0.0/10) as internet play, so every player needs internet play and the
+  host's room code. The invite does this for you: on the host's Internet page, with **Through a relay** off, the page lists the host's
+  Tailscale address; **Copy invite** next to it, and the friends paste. Tailscale has no automatic discovery in the game (the LAN sweep
+  skips VPN adapters), so the address always travels in the invite.
+- An invite is plain text and carries the room code: share it only with the people you want to play with.
+
+Three read-only helpers on the same page (they change nothing on your PC):
+
+- **Test connection** (Visit and Same network): tries to reach the address you typed and says what happened in words: reached,
+  the PC answered but no game is hosting yet, no answer (a firewall may block the port, or it is on another network), or not an address.
+- **Check my setup:** looks at this PC's addresses, the Windows network profile and, on Linux, what the firewall says, and lists what may
+  stop friends from joining, with a short fix for each. It never changes a firewall or network setting.
+- **Friends on my Tailscale** (Visit): if Tailscale is installed, lists your devices and which of them are hosting right now; **Join**
+  fills in that device's address, then paste the host's invite (or type the room code) to finish.
+
 ## Ports and firewall
 
 | Port | Who | What |
@@ -47,8 +71,11 @@ What it cannot get past:
 
 - The first time you host, Windows Firewall may ask about pkp.exe: allow it on **private** networks. If nobody finds you, check that your
   network is set to Private (Settings, Network & internet, your connection, Network profile type) and that pkp.exe is allowed.
-- **Internet without a relay:** the host forwards TCP and UDP 47600 on its router; visitors pick Visit by address with the host's public
-  address and enter the host's room code.
+- **Internet without a relay:** the host's router must forward TCP and UDP 47600 to the host. While it hosts, the game asks the router
+  for that itself (UPnP, NAT-PMP or PCP; `[net] port_forward`, on by default, and **Ask the router to open the port** on the launcher's Host
+  view) and gives the port back when hosting ends. When the router does not allow it, or the internet provider shares one address among
+  many homes (carrier-grade NAT), `pkp.log` says so in a `nat:` line: forward the port by hand, or use a relay or a VPN. Visitors pick
+  Visit by address with the host's public address and enter the host's room code.
 - **Internet through a relay:** nobody forwards anything except whoever runs the relay. Any pokopia-native coop relay works. The launcher can
   run one too: **Run a relay here** on the Link Play page (while the launcher stays open), or `PokopiaLauncher --host` on a server
   (`--listen <IPv4>[:<port>]`, `--no-udp`, and pokopia-native's limits options). Forward TCP 47610 to it, and UDP 47610 too for the faster path.

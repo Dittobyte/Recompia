@@ -20,6 +20,8 @@ mod home_count;
 mod host;
 mod ini;
 mod lan;
+mod linkcheck;
+mod linkcheck_cmds;
 mod nsp;
 mod launch;
 mod nup;
@@ -51,6 +53,8 @@ mod shader_archive;
 mod shaders;
 mod steam;
 mod steam_cmds;
+mod testlogs;
+mod testlogs_cmds;
 mod states;
 mod storage;
 #[cfg(debug_assertions)]
@@ -84,6 +88,7 @@ fn main() {
     states::install(tauri::Builder::default().plugin(tauri_plugin_dialog::init()))
         // a swap cut off by closing the window would have to wait for the next start to be undone
         .on_window_event(window::on_event)
+        .on_page_load(window::mark_game_mode)
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 // a failed screen query only means the window keeps its default size: it must never stop the launcher from starting
@@ -169,6 +174,10 @@ fn main() {
             steam_cmds::steam_remove,
             open::open_game_file,
             open::open_game_dir,
+            testlogs_cmds::testing_logs_list,
+            testlogs_cmds::testing_log_read,
+            testlogs_cmds::testing_logs_export,
+            testlogs_cmds::testing_logs_open_dir,
             relay_cmds::relay_start,
             relay_cmds::relay_stop,
             relay_cmds::relay_status,
@@ -177,6 +186,9 @@ fn main() {
             relay_cmds::room_code_new,
             relay_cmds::room_code_check,
             relay_cmds::room_code_host,
+            linkcheck_cmds::link_probe,
+            linkcheck_cmds::setup_facts,
+            linkcheck_cmds::tailscale_peers,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the launcher");

@@ -1,7 +1,10 @@
 import '@fontsource-variable/inter/opsz.css';
 import './theme.css';
 import './layout.css';
+import './layout-modes.css';
+import './background.css';
 import './components.css';
+import './gamemode.css';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import markUrl from './art/mark.svg';
 import markTestingUrl from './art/mark-testing.png';
@@ -12,6 +15,8 @@ import { errText, esc, icon } from './ui.js';
 import { store } from './store.js';
 import { isFirstRun } from './action.js';
 import { startGamepadNav } from './gamepad-nav.js';
+import { loadLayout, applyLayout } from './layout-apply.js';
+import { loadBackground, applyBackground } from './background-apply.js';
 import * as home from './pages/home.js';
 import * as linkplay from './pages/linkplay.js';
 import * as news from './pages/news.js';
@@ -60,6 +65,8 @@ function applyTheme(theme) {
   if (b) b.querySelector('.nav-label').textContent = b.querySelector('.nav-tip').textContent = t('Colours: {name}', { name: THEME_NAME[theme] });
 }
 applyTheme(readTheme());
+applyLayout(loadLayout());
+applyBackground(loadBackground());
 
 // Hide sidebar: a per-PC preference kept in localStorage like the theme. When hidden the nav collapses so the art is
 // unobstructed; the floating #show-sidebar button (index.html) is the only way back. data-sidebar="hide" on <html> drives the CSS.
@@ -78,19 +85,24 @@ function drawNav() {
   nav.innerHTML = `
     <div class="brand" data-tauri-drag-region><img class="brand-mark" src="${markUrl}" alt="" /><img class="brand-mark-testing" src="${markTestingUrl}" alt="${esc(t('Testing'))}" /><img class="brand-name brand-logo" src="${logoUrl}" alt="Pokopia" /><span class="brand-tag">${esc(t('Testing'))}</span></div>
     ${items.join('')}
-    <div class="nav-spacer"></div>
+    <div class="nav-spacer" data-tauri-drag-region></div>
     <button class="nav-item" id="theme-btn" aria-label="${esc(t('Change colours'))}">${icon('palette')}<span class="nav-label"></span><span class="nav-tip" aria-hidden="true"></span></button>
+    <button class="nav-item" id="layout-btn" aria-label="Change layout">${icon('layout-dashboard')}<span class="nav-label">Layout</span><span class="nav-tip" aria-hidden="true">Layout</span></button>
     <button class="nav-item" id="ui-hide-btn" aria-label="${esc(t('Hide sidebar'))}">${icon('eye-off')}<span class="nav-label">${esc(t('Hide sidebar'))}</span><span class="nav-tip" aria-hidden="true">${esc(t('Hide sidebar'))}</span></button>
     <button class="task-pill" id="task-pill" hidden>
       ${icon('loader-circle', 'spin')}<span class="task-name clip"></span><span class="task-pct"></span>
       <span class="task-track"><span class="task-fill"></span></span>
     </button>`;
   applyTheme(readTheme());
+  applyLayout(loadLayout());
   nav.addEventListener('click', (e) => {
     if (e.target.closest('#theme-btn')) {
       const next = THEMES[(THEMES.indexOf(readTheme()) + 1) % THEMES.length];
       try { localStorage.setItem('theme', next); } catch { /* the choice lasts until the launcher closes */ }
       applyTheme(next);
+    }
+    if (e.target.closest('#layout-btn')) {
+      import('./layout-panel.js').then((m) => m.openLayoutPanel()).catch((err) => console.error(err));
     }
     if (e.target.closest('#ui-hide-btn')) {
       const hide = !readSidebar();

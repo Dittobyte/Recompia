@@ -4,9 +4,10 @@
 
 namespace nxrt {
 
-// A gaming handheld played with its own controls: a Steam Deck (LCD or OLED) or a Lenovo Legion Go S, under SteamOS/Proton or
-// Windows. Detected from Steam's SteamDeck=1 in the environment or the board (SMBIOS product name Jupiter or Galileo, family
-// "Legion Go S ..."), read from the registry's BIOS key (Windows, and Wine fills it from SMBIOS) or Wine's Z:\sys\class\dmi.
+// A gaming handheld played with its own controls: a Steam Deck (LCD or OLED), a Lenovo Legion Go, Go S or Go 2, an ASUS ROG Ally,
+// Ally X or ROG Xbox Ally, or an MSI Claw A8, under SteamOS/Proton or Windows. Detected from Steam's SteamDeck=1 in the environment or
+// the board (the list in src/host_device.cpp, matched on the SMBIOS product name or family), read from the registry's BIOS key (Windows,
+// and Wine fills it from SMBIOS) or Wine's Z:\sys\class\dmi.
 // [host] handheld = auto (default) | on | off overrides it. What it changes: [display] render_scale auto renders at the window's
 // size instead of at least 1920x1080 (a handheld's GPU), and [prompts] style auto keeps controller prompts when the trackpad,
 // touchscreen or on-screen keyboard send mouse or keyboard input.
@@ -18,6 +19,10 @@ bool host_is_steam_deck();
 
 // Running under Wine (Proton, SteamOS): ntdll exports wine_get_version. Read once; any thread.
 bool host_is_wine();
+// Logs one `host facts:` line (kernel, board, CPU, power governor, GPU memory split, RAM, swap, session) for bug reports. Wine/Linux only:
+// reads files through Z:\\ (read only, a missing one leaves its field out); logs no serial, user name, host name or path. Call once at start.
+void host_log_facts();
+
 // Steam's on-screen keyboard for text the game asks for (the software keyboard applet). Wanted under Wine (Proton) on a Steam Deck
 // (host_is_steam_deck), on SteamOS (SteamOS=1) and in Steam's gamepad UI (SteamGamepadUI=1); [applet] steam_keyboard = auto (default)
 // | on | off overrides it. Not on Windows by default: a steam:// URL there would start the Steam client if it is not running.

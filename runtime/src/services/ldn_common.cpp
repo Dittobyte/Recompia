@@ -80,8 +80,9 @@ bool room_code_setup(std::array<uint8_t, 16>* key) {
         std::fprintf(f, "%s\n", shown.c_str());
         std::fclose(f);
     }
-    NXLOG_I("net", "ldn: room code %s%s: a room hosted here is seen only by players with this code; scans show open rooms and rooms with it",
-            shown.c_str(), lower == "new" ? " (new)" : "");
+    // only the first group: players attach pkp.log to public bug reports; the launcher reads the whole code from room-code.txt
+    NXLOG_I("net", "ldn: room code %.4s-****-****-****%s: a room hosted here is seen only by players with this code; scans show open rooms and "
+            "rooms with it", shown.c_str(), lower == "new" ? " (new)" : "");
     return true;
 }
 std::string nickname() {
