@@ -16,6 +16,8 @@ Changing ZIG_MINGW changes the players' build stamp and object cache keys (every
 
 # what the generated code's meaning depends on: guest memory is untyped (no type-based alias analysis), and lifted FP must
 # not be fused or reordered (smo-recomp's flags)
+import platform
+
 SEMANTIC = ['-fno-strict-aliasing', '-ffp-contract=off']
 
 # -mcx16 asks for the 128-bit cmpxchg the lifted code's exclusive-monitor emulation needs on x86-64 (docs/GAPS.md). It is an
@@ -34,8 +36,9 @@ CLANG = ['-O1', '-w', '-fno-exceptions', '-fno-rtti'] + SEMANTIC
 
 
 def for_arch(arch, kind):
-    """The flags of one build of the lifted code: kind 'clang_cl' or 'clang', arch the target processor (CMAKE_SYSTEM_PROCESSOR)."""
+    """The flags of one build of the lifted code: kind 'clang_cl' or 'clang', arch the target processor
+    (CMAKE_SYSTEM_PROCESSOR, or the host's when a toolchain file leaves it empty)."""
     base = CLANG_CL if kind == 'clang_cl' else CLANG
-    return base + _arch_flags(arch)
+    return base + _arch_flags(arch or platform.machine())
 ZIG_MINGW = (['-target', 'x86_64-windows-gnu', '-mcpu=x86_64+cx16', '-std=c++20', '-O1', '-w', '-fno-exceptions', '-fno-rtti']
              + SEMANTIC + ['-fno-threadsafe-statics'])
