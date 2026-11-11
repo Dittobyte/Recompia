@@ -598,6 +598,24 @@ export const SECTIONS = [
     label: t('Game'),
     groups: [
       {
+        // online.rs: sends data off the PC, so off by default; the notice must say exactly what is sent (recompia.com #online says the
+        // same). The switch is pkp.ini [pkp] online_presence, the same key as the Home chip and the game's own Settings (Online tab).
+        title: t('Online'),
+        rows: [
+          { id: 'online_presence', label: t('Share that I am online'), type: 'toggle', ...fromSchema(pkp('pkp', 'online_presence')) },
+          {
+            id: 'online_name', label: t('Online name'), type: 'text', at: config('online_name'), def: '', placeholder: () => t('anonymous'),
+            enabled: (src) => truthy(rawOf(src, pkp('pkp', 'online_presence')) ?? '0'),
+          },
+          {
+            id: 'online_note', type: 'note',
+            note: () => ({ text: t('While the game runs, the launcher sends your online name (empty: anonymous), the Recompia version, Windows or Linux, and how many Pokemon have a home in your save to the Recompia online server. Your save, your profile nickname and your user ID are never sent. recompia.com says how long it is kept.') }),
+          },
+          { id: 'online_where', type: 'note', note: () => ({ text: t("The same switch is on Home and in the game's own Settings, on the Online tab.") }) },
+          { id: 'online_id', label: t('Online ID'), type: 'info', actions: [{ act: 'online-reset', label: t('Reset my online ID'), icon: 'rotate-ccw' }] },
+        ],
+      },
+      {
         title: '',
         rows: [
           {
@@ -678,17 +696,6 @@ export const SECTIONS = [
           },
           { id: 'minimize_on_play', label: t('Minimise while playing'), type: 'toggle', at: config('minimize_on_play'), def: false },
           { id: 'discord_presence', label: t('Show on Discord while playing'), type: 'toggle', at: config('discord_presence'), def: false },
-          // online.rs: sends data off the PC, so off by default; the notice must say exactly what is sent (recompia.com #online says the same)
-          { id: 'online_presence', label: t('Share that I am online'), type: 'toggle', at: config('online_presence'), def: false },
-          {
-            id: 'online_name', label: t('Online name'), type: 'text', at: config('online_name'), def: '', placeholder: () => t('anonymous'),
-            enabled: (src) => truthy(src.config?.online_presence),
-          },
-          {
-            id: 'online_note', type: 'note',
-            note: () => ({ text: t('While the game runs, the launcher sends your online name (empty: anonymous), the Recompia version, Windows or Linux, and how many Pokemon have a home in your save to the Recompia online server. Your save, your profile nickname and your user ID are never sent. recompia.com says how long it is kept.') }),
-          },
-          { id: 'online_id', label: t('Online ID'), type: 'info', actions: [{ act: 'online-reset', label: t('Reset my online ID'), icon: 'rotate-ccw' }] },
         ],
       },
       {

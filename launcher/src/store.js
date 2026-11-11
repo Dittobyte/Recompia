@@ -6,6 +6,7 @@ import { num, t } from './i18n.js';
 import { fromBackend } from './backend-text.js';
 import { confirm, errCode, errText, esc, icon, toast } from './ui.js';
 import { canInstall, canUpdate, gamePhase, needsFinish, taskOf } from './action.js';
+import { askOnlineOnce } from './online.js';
 
 const subs = new Set();
 let autoFinishDone = false;   // `updated` is acted on once
@@ -205,6 +206,7 @@ export const store = {
 
   async play() {
     if (store.state.starting) return;
+    await askOnlineOnce();   // once per install, before the first Play: online presence is off unless the player says yes
     set({ starting: true }, 'task');
     try {
       await api.play();
