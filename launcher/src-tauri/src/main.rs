@@ -23,6 +23,7 @@ mod lan;
 mod nsp;
 mod launch;
 mod nup;
+mod online;
 mod open;
 mod paths;
 mod play;

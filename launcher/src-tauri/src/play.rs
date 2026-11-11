@@ -65,6 +65,7 @@ fn report_files(dir: &Path, started: SystemTime) -> Vec<ReportFile> {
 
 pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config) -> Result<(), String> {
     let (minimize, discord) = (cfg.minimize_on_play, cfg.discord_presence);
+    let online = crate::online::player_of(app, game_dir, cfg);
     {
         let st = app.play();
         if st.0.lock().unwrap().state == GameState::Running {
@@ -118,7 +119,9 @@ pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config) -> Result<(), Strin
         // the player's save backups: a timer while the game runs (when switched on), one more copy once it has ended
         let backups = crate::savebackup::Watch::start(&dir);
         let presence = crate::presence::Watch::start(discord);
+        let online = crate::online::Watch::start(online, &dir);
         let result = child.wait();
+        online.finish();
         presence.finish();
         backups.finish();
         let (code, wait_err) = match result {
