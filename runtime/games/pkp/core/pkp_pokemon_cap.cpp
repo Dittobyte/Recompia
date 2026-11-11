@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Pokopia v2.0.1a: configurable resident parameter limits (25..50 living, five extra object slots).
-// This does NOT expand model resources or guarantee visibility of all 50 Pokemon.
+// Pokopia v2.0.1a resident limit and active-appearance budget.
+// Ported from the Eglantine cap's default (non-staged) behavior. The game
+// still has 64 actor slots; a 100-resident setting cannot create 100 actors.
 #include "core/pkp_pokemon_cap.h"
 #include "core/pkp_resident_census.h"
 
+#include <algorithm>
 #include <cstdint>
 
 #include "core/pkp_guest.h"
@@ -17,65 +19,98 @@ namespace {
 constexpr std::uint64_t kParamsLink = 0x20;
 constexpr std::uint64_t kLivingOffset = 0x4bc;
 constexpr std::uint64_t kObjectsOffset = 0x4c0;
+constexpr std::uint64_t kActiveField = 0;    // [holder+0]: active budget block
+constexpr std::uint64_t kActiveBudget = 0xc; // u32, original 30
 constexpr std::uint32_t kOriginalLiving = 25;
 constexpr std::uint32_t kOriginalObjects = 30;
-constexpr std::uint32_t kMinimumLiving = 25;
-constexpr std::uint32_t kMaximumLiving = 50;
+constexpr std::uint32_t kPoolSize = 64;
+constexpr std::uint32_t kMaximumLiving = 100;
+constexpr std::uint32_t kVisitorHeadroom = 14; // the remaining slots with 50 residents
 
 struct State {
     std::uint64_t base = 0;
-    std::uint64_t observed_params = 0;
+    std::uint64_t params = 0;
+    std::uint64_t active_block = 0;
+    std::uint32_t requested = 31;
     bool enabled = false;
-    std::uint32_t limit = 31;
-    bool reported = false;
-    bool warned = false;
+    bool limits_reported = false;
+    bool active_reported = false;
+    bool warned_layout = false;
+    bool warned_active = false;
 };
 State g;
 
 void game_frame(::Ctx*) {
     if (!g.base) return;
-    // Run read-only diagnostics even when cap parameters are not initialized yet.
     resident_census::tick();
     if (!g.enabled) return;
 
-    // All addresses are v2.0.1a guest offsets, not process-native pointers.
-    const std::uint64_t root = g.base + layout::kPokemonParamsRoot;
-    if (!guest::ok(root, sizeof(std::uint64_t))) return;
-    const std::uint64_t holder = guest::rd<std::uint64_t>(root);
+    // Pointers are guest-mapped addresses, not native process offsets.
+    const auto global = g.base + layout::kPokemonParamsRoot;
+    if (!guest::ok(global, sizeof(std::uint64_t))) return;
+    const auto holder = guest::rd<std::uint64_t>(global);
     if (!guest::ok(holder, kParamsLink + sizeof(std::uint64_t))) return;
-    const std::uint64_t params = guest::rd<std::uint64_t>(holder + kParamsLink);
+    const auto params = guest::rd<std::uint64_t>(holder + kParamsLink);
     if (!guest::ok(params, kObjectsOffset + sizeof(std::uint32_t))) return;
 
-    if (params != g.observed_params) {
-        g.observed_params = params;
-        g.reported = false;
-        g.warned = false;
+    if (params != g.params) {
+        g.params = params;
+        g.limits_reported = false;
+        g.warned_layout = false;
     }
 
-    const std::uint32_t living = guest::rd<std::uint32_t>(params + kLivingOffset);
-    const std::uint32_t objects = guest::rd<std::uint32_t>(params + kObjectsOffset);
-
-    // Refuse unexpected layouts instead of treating arbitrary memory as counters.
-    // Include the two mixed states in case one field is reinitialized independently.
-    const bool expected_living = living >= kMinimumLiving && living <= kMaximumLiving;
-    const bool expected_objects = objects >= kOriginalObjects && objects <= kMaximumLiving + 5;
-    if (!expected_living || !expected_objects) {
-        if ((living != 0 || objects != 0) && !g.warned) {
-            NXLOG_W("pkp", "pokemon cap: unexpected resident limits (%u/%u), leaving them unchanged",
-                    static_cast<unsigned>(living), static_cast<unsigned>(objects));
-            g.warned = true;
+    const auto living = guest::rd<std::uint32_t>(params + kLivingOffset);
+    const auto objects = guest::rd<std::uint32_t>(params + kObjectsOffset);
+    // Never interpret an unknown layout or not-yet-initialized parameter as a cap.
+    if (living < kOriginalLiving || living > kMaximumLiving ||
+        objects < kOriginalObjects || objects > kPoolSize) {
+        if ((living || objects) && !g.warned_layout) {
+            NXLOG_W("pkp", "pokemon cap: unexpected limits %u living / %u objects; untouched",
+                    living, objects);
+            g.warned_layout = true;
         }
         return;
     }
 
-    const std::uint32_t target_objects = g.limit + 5;
-    if (living != g.limit) guest::wr<std::uint32_t>(params + kLivingOffset, g.limit);
-    if (objects != target_objects) guest::wr<std::uint32_t>(params + kObjectsOffset, target_objects);
-    if (!g.reported) {
-        NXLOG_I("pkp", "pokemon cap: applied %u living / %u objects (previous %u/%u)",
-                static_cast<unsigned>(g.limit), static_cast<unsigned>(target_objects),
-                static_cast<unsigned>(living), static_cast<unsigned>(objects));
-        g.reported = true;
+    // Eglantine's parameter forcing, with its unsigned 64-100 underflow fixed:
+    // never lower a previously admitted population during the same session.
+    const auto target_living = std::max(g.requested, living);
+    const auto desired_objects = std::max(objects, target_living + kVisitorHeadroom);
+    const auto target_objects = std::min(kPoolSize, desired_objects);
+    if (living != target_living)
+        guest::wr<std::uint32_t>(params + kLivingOffset, target_living);
+    if (objects != target_objects)
+        guest::wr<std::uint32_t>(params + kObjectsOffset, target_objects);
+    if (!g.limits_reported) {
+        NXLOG_I("pkp", "pokemon cap: applied %u living / %u objects (previous %u/%u; pool capacity 64)",
+                target_living, target_objects, living, objects);
+        g.limits_reported = true;
+    }
+
+    // The separate active-appearance budget is the critical new part of this
+    // port. The original 30-budget keeper parks excess actors out of the scene.
+    const auto block = guest::rd<std::uint64_t>(holder + kActiveField);
+    if (block != g.active_block) {
+        g.active_block = block;
+        g.active_reported = false;
+        g.warned_active = false;
+    }
+    if (!guest::ok(block, kActiveBudget + sizeof(std::uint32_t))) return;
+    const auto active = guest::rd<std::uint32_t>(block + kActiveBudget);
+    if (active == 0 || active > kPoolSize) {
+        if (active && !g.warned_active) {
+            NXLOG_W("pkp", "pokemon cap: unexpected active budget %u; untouched", active);
+            g.warned_active = true;
+        }
+        return;
+    }
+    const auto target_active = std::max(active, target_objects);
+    if (active != target_active)
+        guest::wr<std::uint32_t>(block + kActiveBudget, target_active);
+    if (!g.active_reported) {
+        NXLOG_I("pkp", "pokemon cap: active budget %u -> %u (pool capacity 64)",
+                active, target_active);
+        g.active_reported = true;
     }
 }
 
@@ -83,13 +118,20 @@ void install(const FeatureInstall& in) {
     g = {};
     g.base = in.base;
     resident_census::start(in.base);
+    // Retain the old switch name so existing pkp.ini files continue to work.
     g.enabled = settings::get_bool(settings::Key::PokemonCap50);
-    g.limit = static_cast<std::uint32_t>(settings::get_int(settings::Key::PokemonCapLimit));
-    NXLOG_I("pkp", "pokemon cap: %s (%u living / %u objects)", g.enabled ? "enabled" : "disabled",
-            static_cast<unsigned>(g.limit), static_cast<unsigned>(g.limit + 5));
+    g.requested = static_cast<std::uint32_t>(settings::get_int(settings::Key::PokemonCapLimit));
+    NXLOG_I("pkp", "pokemon cap: %s, requested %u living (physical actor pool: 64)",
+            g.enabled ? "enabled" : "disabled", g.requested);
+    if (g.enabled && g.requested > kPoolSize)
+        NXLOG_W("pkp", "pokemon cap: requested %u exceeds the 64-slot actor pool; only the living parameter reaches that value",
+                g.requested);
 }
 
-void remove() { resident_census::stop(); g = {}; }
+void remove() {
+    resident_census::stop();
+    g = {};
+}
 
 } // namespace
 
