@@ -37,7 +37,7 @@
   <a href="../../SECURITY.md">Segurança</a> ·
   <a href="../../LEGAL.md">Aviso legal</a> ·
   <a href="https://github.com/featureJosh/pokopia-recomp/issues">Problemas</a> ·
-  <a href="https://discord.gg/gN5g4MtWHr">Discord</a>
+  <a href="https://discord.recompia.com">Discord</a>
 </p>
 
 > [!IMPORTANT]
@@ -88,7 +88,7 @@
 - **Os ícones de botão no ecrã correspondem ao que tem na mão:** teclado, Xbox, PlayStation, Steam Controller ou Switch.
 - **Escrever o seu nome** funciona com comando, rato ou teclado.
 - **Saia sem Alt+F4:** mantenha premidos Select e Start (View e Menu num comando Xbox), ou use **Quit game** no F1.
-- **Abra o menu F1 com um comando:** desativado por predefinição; defina `[overlay] pad` em `controls.ini` (por exemplo `left_stick+right_stick`). Não pode ser a combinação de saída.
+- **Abra o menu F1 com um comando:** prima os dois manípulos ao mesmo tempo (L3 + R3); altere ou desative com `[overlay] pad` em `controls.ini` (`none` = desativado). Não pode ser a combinação de saída.
 
 ### Steam Deck e consolas portáteis
 - O Steam Deck, o Legion Go S e outras consolas portáteis são reconhecidos: os ícones do comando ficam no ecrã e o tamanho da imagem ajusta-se ao ecrã.
@@ -242,7 +242,7 @@ Nunca anexe ficheiros do jogo, as pastas `build` ou `shader_cache`, nem saves a 
 
 ## Comunidade
 
-Dúvidas, ajuda com bugs, testes e conversa: junte-se ao [Discord do Recompia](https://discord.gg/gN5g4MtWHr). O launcher também tem um botão **Join Discord** em Settings > About > Community. Os bugs que precisam de correção continuam a ser comunicados no [GitHub](https://github.com/featureJosh/pokopia-recomp/issues/new/choose).
+Dúvidas, ajuda com bugs, testes e conversa: junte-se ao [Discord do Recompia](https://discord.recompia.com). O launcher também tem um botão **Join Discord** em Settings > About > Community. Os bugs que precisam de correção continuam a ser comunicados no [GitHub](https://github.com/featureJosh/pokopia-recomp/issues/new/choose).
 
 ## Comunicar problemas
 

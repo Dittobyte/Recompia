@@ -743,7 +743,7 @@ void setup_hid(ipc::Service& svc) {
     ignore_cmd(svc, 1003, "IsFirmwareUpdateNeededForNotification", 1);
     ignore_cmd(svc, 1004, "SetTouchScreenResolution");
     // ---- Switch 2 Joy-Con 2 mouse (Nmouse / Jcms). Ids from the sdk proxy thunks (0x75006701b4..0x75006702ec, IHidServer vtable
-    // slots 0x538..0x5B8) matched to the nn::hid::detail callers; raw-data layouts from the thunks' CMIF writers. docs/hid_mouse_sw2.md.
+    // slots 0x538..0x5B8) matched to the nn::hid::detail callers; raw-data layouts from the thunks' CMIF writers (the local Joy-Con 2 mouse notes).
     // Pokopia imports only the wrappers behind 3110, 3111, 3112, 3131 and 3136-3139; the others get the answer a server with the two
     // listed devices gives. There is no 3114-3129 or 3134 in the SDK's table.
     svc.add_cmd(3110, "InitializeJcms", [](ipc::Request& req, ipc::Response&) -> uint32_t {
@@ -902,7 +902,8 @@ void hid_reset() {
 
 void hid_sample_once() {
     HidState& s = st();
-    const InputSnapshot snap = read_input();
+    InputSnapshot snap = read_input();
+    snap.npad[0].buttons |= jc2_pad_buttons();
     const bool docked = profile().docked;
     std::lock_guard<std::mutex> lk(s.mu);
     uint8_t* host = host_of(s);

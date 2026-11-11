@@ -34,7 +34,7 @@ The runtime keeps the committed save in `account/<key>/` and only changes it in 
 ## Building on it (nothing here is built yet)
 - **In-game F1 page:** read the `[backup]` keys and the `manifest.json` files to show the state and the list; write the keys to change the interval. No change to this module is needed.
 - **Restore from the game:** the game cannot be restored while it runs. A page could write a request (for example `save-backups/restore.request` holding the folder name) and the launcher could apply it the next time it starts the game; that protocol is open and not implemented.
-- **Another launcher page:** `savebackup.rs` exposes `status`, `list`, `snapshot` and `restore` and the commands `backup_status`, `backup_list`, `backup_now`, `backup_restore`, `open_backup_dir`.
+- **Another launcher page:** `savebackup.rs` exposes `status`, `list`, `snapshot`, `restore` and `read_committed` (one file of the committed save under the same rule; `home_count.rs` uses it) and the commands `backup_status`, `backup_list`, `backup_now`, `backup_restore`, `open_backup_dir`.
 - **A runtime-side copier** could replace the timer later: it only has to write the same layout and manifest.
 
 ## Not touched on purpose

@@ -12,6 +12,7 @@ export const api = {
   getOverview: () => invoke('get_overview'),
   readSettings: () => invoke('read_settings'),
   writeSettings: (args) => invoke('write_settings', args),   // { edits }
+  promptIconPack: () => invoke('prompt_icon_pack'),   // ArrayBuffer: assets/prompts/prompt_icons.pak
 
   // Updates and builds
   getReleases: (args) => invoke('get_releases', args),   // { refresh }
@@ -27,6 +28,12 @@ export const api = {
   openSaveDir: () => invoke('open_save_dir'),
   openBackupDir: () => invoke('open_backup_dir'),
   openSetupLog: () => invoke('open_setup_log'),
+
+  // The Testing tab's logs (testlogs_cmds.rs)
+  testingLogsList: () => invoke('testing_logs_list'),
+  testingLogRead: (args) => invoke('testing_log_read', args),   // { name, lines }
+  testingLogsExport: (args) => invoke('testing_logs_export', args),   // { version }
+  testingLogsOpenDir: () => invoke('testing_logs_open_dir'),
 
   // Choosing the game files
   pickFolder: (args) => invoke('pick_folder', args),   // { title, start }
@@ -85,4 +92,8 @@ export const api = {
   roomCodeNew: () => invoke('room_code_new'),
   roomCodeCheck: (args) => invoke('room_code_check', args),   // { code }
   roomCodeHost: () => invoke('room_code_host'),
+  // Link Play checks (src-tauri/src/linkcheck.rs holds the shapes): read only
+  linkProbe: (args) => invoke('link_probe', args),   // { addr } -> { kind: answered | refused | timed_out | bad_address, ms?, message? }
+  setupFacts: () => invoke('setup_facts'),           // -> { firewalld: { state, zones, ports } }
+  tailscalePeers: () => invoke('tailscale_peers'),   // -> { found, error?, self, peers: [{ name, dns_name, ips, online, hosting }] }
 };

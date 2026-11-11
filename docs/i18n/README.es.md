@@ -39,7 +39,7 @@
   <a href="../../SECURITY.md">Seguridad</a> ·
   <a href="../../LEGAL.md">Información legal</a> ·
   <a href="https://github.com/featureJosh/pokopia-recomp/issues">Problemas</a> ·
-  <a href="https://discord.gg/gN5g4MtWHr">Discord</a>
+  <a href="https://discord.recompia.com">Discord</a>
 </p>
 
 > [!IMPORTANT]
@@ -91,7 +91,7 @@
 - **Los iconos de los botones en pantalla corresponden al dispositivo que estás usando:** teclado, Xbox, PlayStation o Switch.
 - **Escribir tu nombre** funciona con mando, ratón o teclado.
 - **Sal sin Alt+F4:** mantén pulsados Select y Start (View y Menu en un mando de Xbox), o usa **Quit game** en F1.
-- **Abre el menú F1 desde un mando:** está desactivado de forma predeterminada; configura `[overlay] pad` en `controls.ini`, por ejemplo `left_stick+right_stick`. No puede ser la misma combinación usada para salir.
+- **Abre el menú F1 desde un mando:** pulsa los dos sticks a la vez (L3 + R3); cámbialo o desactívalo con `[overlay] pad` en `controls.ini` (`none` = desactivado). No puede ser la misma combinación usada para salir.
 
 ### Steam Deck y dispositivos portátiles
 - Se reconocen Steam Deck, Legion Go S y otros dispositivos portátiles: los iconos del mando permanecen en pantalla y el tamaño de la imagen se adapta a la pantalla.
@@ -245,7 +245,7 @@ No adjuntes nunca archivos del juego, las carpetas `build` o `shader_cache`, ni 
 
 ## Comunidad
 
-Preguntas, ayuda con errores, pruebas y chat: únete al [Discord de Recompia](https://discord.gg/gN5g4MtWHr). El launcher también tiene un botón **Join Discord** en **Settings > About > Community**. Los errores que necesitan una corrección se siguen informando en [GitHub](https://github.com/featureJosh/pokopia-recomp/issues/new/choose).
+Preguntas, ayuda con errores, pruebas y chat: únete al [Discord de Recompia](https://discord.recompia.com). El launcher también tiene un botón **Join Discord** en **Settings > About > Community**. Los errores que necesitan una corrección se siguen informando en [GitHub](https://github.com/featureJosh/pokopia-recomp/issues/new/choose).
 
 ## Informar de problemas
 

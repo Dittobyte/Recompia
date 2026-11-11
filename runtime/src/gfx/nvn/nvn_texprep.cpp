@@ -73,6 +73,23 @@ std::atomic<uint64_t> s_provisional{0};  // quick stand-ins the render thread up
 const bool g_hitch_tc_registered = (nxrt::hitch_add_counter("texprep_transcodes", []() -> uint64_t { return s_transcoded.load(std::memory_order_relaxed); }),
                                     nxrt::hitch_add_counter("texture_standins", []() -> uint64_t { return s_provisional.load(std::memory_order_relaxed); }), true);
 
+// Why a texture upload got no background job (log only; they change no decision). Relaxed atomics: read when the summary line is printed.
+// skip_*: counted when a texture is looked at for a job (consider) and found unfit. none_*: counted when the render thread asks for a result (take) and has none.
+struct SkipCounters {
+    std::atomic<uint64_t> skip_small{0};       // smaller than [nvn] tex_prep_min_kb: prepared inline, the hand-over costs more than the work
+    std::atomic<uint64_t> skip_large{0};       // larger than 256 MB
+    std::atomic<uint64_t> skip_format{0};      // not block-compressed (ASTC, BCn), multisampled, or not a color aspect
+    std::atomic<uint64_t> skip_other{0};       // destroyed, display image, or no storage
+    std::atomic<uint64_t> skip_gpu_off{0};     // the GPU layer was not active
+    std::atomic<uint64_t> none_unknown{0};     // upload with no entry at all: the texture was never considered (not bound dirty before, or skipped above)
+    std::atomic<uint64_t> none_idle{0};        // an entry existed but held no job
+    std::atomic<uint64_t> none_stale{0};       // a job was running for older content: its result would be stale
+    std::atomic<uint64_t> none_slow{0};        // a transcode was running: not waited for, a stand-in was uploaded
+};
+SkipCounters g_skip;
+inline void bump(std::atomic<uint64_t>& c) { c.fetch_add(1, std::memory_order_relaxed); }
+inline unsigned long long ld(const std::atomic<uint64_t>& c) { return static_cast<unsigned long long>(c.load(std::memory_order_relaxed)); }
+
 State* g_state = nullptr;
 std::once_flag g_once;
 std::atomic<int> g_enabled{-1};
@@ -121,11 +138,14 @@ void log_summary_locked(bool force) {
     if (!force && n - s.last_log_ns < 10ull * 1000000000ull) return;
     if (s.st.scheduled == 0) return;
     s.last_log_ns = n;
-    NXLOG_I(kTag, "scheduled %llu, used %llu (waited for %llu), stale %llu, taken back by the render thread %llu, no job %llu, failed %llu, crashed %llu, over budget %llu, evicted %llu, held %.1f MB",
+    NXLOG_I(kTag, "scheduled %llu, used %llu (waited for %llu), stale %llu, taken back by the render thread %llu, no job %llu, failed %llu, crashed %llu, over budget %llu, evicted %llu, held %.1f MB; "
+                  "not scheduled: too small %llu, too large %llu, not block-compressed %llu, other %llu, GPU off %llu; no job at upload: never considered %llu, idle %llu, stale %llu, transcode running %llu",
             static_cast<unsigned long long>(s.st.scheduled), static_cast<unsigned long long>(s.st.hits), static_cast<unsigned long long>(s.st.waited_hits),
             static_cast<unsigned long long>(s.st.stale), static_cast<unsigned long long>(s.st.stolen), static_cast<unsigned long long>(s.st.none),
             static_cast<unsigned long long>(s.st.failed), static_cast<unsigned long long>(s.st.crashes), static_cast<unsigned long long>(s.st.skipped_budget),
-            static_cast<unsigned long long>(s.st.evicted), static_cast<double>(s.held_bytes) / 1048576.0);
+            static_cast<unsigned long long>(s.st.evicted), static_cast<double>(s.held_bytes) / 1048576.0,
+            ld(g_skip.skip_small), ld(g_skip.skip_large), ld(g_skip.skip_format), ld(g_skip.skip_other), ld(g_skip.skip_gpu_off),
+            ld(g_skip.none_unknown), ld(g_skip.none_idle), ld(g_skip.none_stale), ld(g_skip.none_slow));
     if (s.verify)
         NXLOG_I(kTag, "verify: %llu results compared with a fresh preparation, %llu differed", static_cast<unsigned long long>(s.st.verified), static_cast<unsigned long long>(s.st.mismatches));
 }
@@ -377,8 +397,17 @@ bool eligible(const Texture* t) {
     return true;
 }
 
+// Log only: the reason eligible(t) is false, counted once per content version of a texture that was looked at for a job (not once per texture).
+void count_skip(const Texture* t) {
+    if (!t || t->destroyed.load() || !t->fmt || t->is_display || (!t->mem && !t->vpool)) bump(g_skip.skip_other);
+    else if (!(t->fmt->astc || t->fmt->bc) || t->b.samples > 1 || t->fmt->aspect != kAspectColor) bump(g_skip.skip_format);
+    else if (t->storage_size < S().min_bytes) bump(g_skip.skip_small);
+    else bump(g_skip.skip_large);
+}
+
 void consider(Texture* t) {
-    if (!eligible(t) || !gpu::active()) return;
+    if (!eligible(t)) { count_skip(t); return; }
+    if (!gpu::active()) { bump(g_skip.skip_gpu_off); return; }
     if (!S().caps_ready.load(std::memory_order_acquire)) {
         static std::mutex cm;
         std::lock_guard<std::mutex> cl(cm);
@@ -475,12 +504,14 @@ bool take(Texture* t, PreparedTexture& out, gfx::Buffer* staged, uint64_t* src_h
         auto it = s.map.find(t);
         if (it == s.map.end()) {
             s.st.none++;
+            bump(g_skip.none_unknown);
             return false;
         }
         Entry& e = it->second;
         if (e.st == Entry::Idle) {
             s.map.erase(it);
             s.st.none++;
+            bump(g_skip.none_idle);
             return false;
         }
         if (e.st == Entry::Waiting || e.st == Entry::Queued) {   // not started: cheaper to do it here than to wait for a free worker or for the writes to stop
@@ -497,10 +528,12 @@ bool take(Texture* t, PreparedTexture& out, gfx::Buffer* staged, uint64_t* src_h
         if (e.st == Entry::Running) {
             if (e.job_gen != t->prep_gen.load(std::memory_order_acquire)) {   // written again after the job started: its result will be stale
                 s.st.none++;
+                bump(g_skip.none_stale);
                 return false;
             }
             if (e.slow) {                 // a transcode: not waited for (the caller uploads a stand-in; the result replaces it when ready)
                 s.st.none++;
+                bump(g_skip.none_slow);
                 return false;
             }
             waited = true;

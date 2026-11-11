@@ -42,7 +42,7 @@
   <a href="../../SECURITY.md">الأمان</a> ·
   <a href="../../LEGAL.md">الشؤون القانونية</a> ·
   <a href="https://github.com/featureJosh/pokopia-recomp/issues">المشكلات</a> ·
-  <a href="https://discord.gg/gN5g4MtWHr">Discord</a>
+  <a href="https://discord.recompia.com">Discord</a>
 </p>
 
 > [!IMPORTANT]
@@ -94,7 +94,7 @@
 - **أيقونات الأزرار على الشاشة تطابق ما تحمله:** لوحة مفاتيح، أو Xbox، أو PlayStation، أو Switch.
 - **كتابة اسمك** تعمل بذراع التحكم أو الفأرة أو لوحة المفاتيح.
 - **الخروج دون Alt+F4:** اضغط باستمرار Select وStart (View وMenu على ذراع Xbox)، أو استخدم **Quit game** في F1.
-- **افتح قائمة F1 من ذراع التحكم:** معطّل افتراضياً؛ اضبط `[overlay] pad` في `controls.ini` (مثلاً `left_stick+right_stick`). لا يمكن أن يكون مزيج الخروج.
+- **افتح قائمة F1 من ذراع التحكم:** اضغط على العصاتين معاً (L3 + R3)؛ غيّره أو عطّله عبر `[overlay] pad` في `controls.ini` (`none` = معطّل). لا يمكن أن يكون مزيج الخروج.
 
 ### Steam Deck والأجهزة المحمولة
 - يتم التعرف على Steam Deck وLegion Go S والأجهزة المحمولة الأخرى: تبقى أيقونات ذراع التحكم على الشاشة ويناسب حجم الصورة الشاشة.
@@ -248,7 +248,7 @@ Link Play يضع عدة لاعبين على جزيرة واحدة. يعمل ال
 
 ## المجتمع
 
-للأسئلة والمساعدة في الأخطاء والاختبار والدردشة: انضم إلى [Recompia Discord](https://discord.gg/gN5g4MtWHr). يحتوي المشغّل أيضاً على زر **Join Discord** ضمن **Settings > About > Community**. الأخطاء التي تحتاج إلى إصلاح يتم الإبلاغ عنها على [GitHub](https://github.com/featureJosh/pokopia-recomp/issues/new/choose).
+للأسئلة والمساعدة في الأخطاء والاختبار والدردشة: انضم إلى [Recompia Discord](https://discord.recompia.com). يحتوي المشغّل أيضاً على زر **Join Discord** ضمن **Settings > About > Community**. الأخطاء التي تحتاج إلى إصلاح يتم الإبلاغ عنها على [GitHub](https://github.com/featureJosh/pokopia-recomp/issues/new/choose).
 
 ## الإبلاغ عن المشكلات
 

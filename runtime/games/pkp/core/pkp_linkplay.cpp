@@ -36,21 +36,19 @@ constexpr const char* kTag = "pkp";
 constexpr InteractSite kSites[] = {
     {"76a489f3bd3642fa5e18bd83d32c98ba", 0xb0f60, 0xb1030, 0xf2c0002du},
 };
-// Story co-op (pokopia-native docs/story-coop.md): the talk handler 0x4c024c gives an online player who is not the host a visitor's reply;
-// at 0x4c06d8 (`orr w8, w25, w0`) w0 is IsHost's answer, and x0 = 1 there makes a visitor take the host's path.
-constexpr InteractSite kStorySites[] = {
-    {"76a489f3bd3642fa5e18bd83d32c98ba", 0x4c024c, 0x4c06d8, 0x2a000328u},
-};
-constexpr uint64_t kSpectatorFlagReg = 22, kPatternReg = 13;
+constexpr uint64_t kSpectatorFlagReg = 22, kPatternReg = 13, kHostArgReg = 20;
 constexpr uint64_t kNormalPattern = 0x5ffffffeull;   // bits 1-28 and 30: Palette Town, Spectator Mode Off
+constexpr uint64_t kStoryBit = 1;                    // bit 0: the story system (the per-frame story update 0xba660, quests, events)
 
 struct State {
     uint64_t base = 0;
     HookSet* hooks = nullptr;              // the registry's set for Link Play (pkp_feature.h)
     uint32_t hook = 0;                     // 0: not installed
-    uint32_t story_hook = 0;               // 0: Story co-op off or not installed
+    uint32_t story_hooks[kStorySiteCount] = {};   // all 0: Story co-op off or not installed
     std::atomic<bool> story_armed{false};
+    std::atomic<bool> story_host{false};   // this player hosts the session in a story area (set by the mask builder)
     std::atomic<bool> logged_story{false};
+    std::atomic<bool> logged_story_host{false};
     std::atomic<bool> armed{false};        // main checked: the hook may change the mask
     std::atomic<bool> checked{false};      // the frame callback made its decision
     std::atomic<bool> logged_change{false};
@@ -64,7 +62,13 @@ State& st() {
 int hook_mask(::Ctx* c, uint64_t, void*) {
     State& s = st();
     if (!s.armed.load(std::memory_order_acquire)) return 0;
-    if (interact_apply(c->x)) {
+    bool keep_story = false;
+    if (s.story_armed.load(std::memory_order_acquire) && !(c->x[kSpectatorFlagReg] & 1)) {
+        keep_story = c->x[kHostArgReg] & 1;   // the builder's host argument
+        s.story_host.store(keep_story, std::memory_order_release);
+        if (keep_story && !s.logged_story_host.exchange(true)) NXLOG_I(kTag, "Story co-op: the host's story keeps going in this session");
+    }
+    if (interact_apply(c->x, keep_story)) {
         s.changes.fetch_add(1, std::memory_order_relaxed);
         if (!s.logged_change.exchange(true))
             NXLOG_I(kTag, "Interact everywhere: this story area's Link Play session has Palette Town's permissions (Spectator Mode lifted)");
@@ -79,6 +83,40 @@ int hook_talk(::Ctx* c, uint64_t, void*) {
     c->x[0] = 1;   // IsHost: yes
     return 0;
 }
+
+// The mask builder's first instruction (0xb0f74, `mov x19, x0`): a rebuild forgets the role; the story-area site sets it again.
+int hook_role(::Ctx*, uint64_t, void*) {
+    st().story_host.store(false, std::memory_order_release);
+    return 0;
+}
+
+// Talk conditions 0x19 and 0x60, right after their IsOnline call: the host's answer is "not online".
+int hook_alone(::Ctx* c, uint64_t, void*) {
+    if (st().story_host.load(std::memory_order_acquire)) c->x[0] = 0;
+    return 0;
+}
+
+// Talk condition 0x22 (0x4d04fc, `b IsOnline`): for the host it returns "not online" itself (nothing is pushed yet, x0 is the result).
+int hook_alone_tail(::Ctx* c, uint64_t, void*) {
+    if (!st().story_host.load(std::memory_order_acquire)) return 0;
+    c->x[0] = 0;
+    return 1;
+}
+
+// Pokopia 2.0.1 main: Story co-op's sites (pokopia-native coop_interact.c g_story @9cb7f07).
+struct StorySite {
+    uint64_t site;
+    uint32_t word;
+    SiteHookFn fn;
+    bool entry = false;   // an entry hook (the site is a function's first instruction), else a midhook
+};
+constexpr StorySite kStorySites[kStorySiteCount] = {
+    {0x4c06d8, 0x2a000328u, &hook_talk},         // talk handler 0x4c024c: `orr w8, w25, w0`, w0 = IsHost's answer
+    {0xb0f74, 0xaa0003f3u, &hook_role},          // the mask builder 0xb0f60 starts: `mov x19, x0`
+    {0x4cfe20, 0x52800028u, &hook_alone},        // condition 0x19 (not online) 0x4cfe10: `mov w8, #1` after IsOnline
+    {0x4d4860, 0x37001da0u, &hook_alone},        // condition 0x60 (not online and more) 0x4d4844: `tbnz w0, #0` after IsOnline
+    {0x4d04fc, 0x17ed40adu, &hook_alone_tail, true},   // condition 0x22 (online): `b 0x207b0`, IsOnline
+};
 
 const char* check_str(InteractCheck c) {
     switch (c) {
@@ -98,12 +136,6 @@ const InteractSite* interact_site(const std::string& build_id) {
     return nullptr;
 }
 
-const InteractSite* story_site(const std::string& build_id) {
-    for (const InteractSite& s : kStorySites)
-        if (build_id.compare(0, std::strlen(s.build), s.build) == 0) return &s;
-    return nullptr;
-}
-
 InteractCheck interact_check(const std::string& build_id, bool site_lifted, uint32_t word, const InteractSite** site) {
     const InteractSite* s = interact_site(build_id);
     if (site) *site = s;
@@ -113,10 +145,11 @@ InteractCheck interact_check(const std::string& build_id, bool site_lifted, uint
     return InteractCheck::Ok;
 }
 
-bool interact_apply(uint64_t* x) {
+bool interact_apply(uint64_t* x, bool keep_story) {
     if (x[kSpectatorFlagReg] & 1) return false;           // the session's own Spectator flag: left as the game has it
-    if (x[kPatternReg] == kNormalPattern) return false;
-    x[kPatternReg] = kNormalPattern;                      // the movk that follows adds bit 32 (online)
+    const uint64_t want = keep_story ? kNormalPattern | kStoryBit : kNormalPattern;
+    if (x[kPatternReg] == want) return false;
+    x[kPatternReg] = want;                                // the movk that follows adds bit 32 (online)
     return true;
 }
 
@@ -137,7 +170,9 @@ void install(const FeatureInstall& in) {
     s.logged_change.store(false);
     s.changes.store(0);
     s.story_armed.store(false);
+    s.story_host.store(false);
     s.logged_story.store(false);
+    s.logged_story_host.store(false);
     services::ldnapi::set_session_variant(0, kInteractName);
     services::ldnapi::set_coop_mods({});
     bool want_story = story;
@@ -157,36 +192,51 @@ void install(const FeatureInstall& in) {
     NXLOG_I(kTag, "Interact everywhere ([pkp] link_interact_everywhere): on, hook at main+0x%llx, main is checked once the game runs",
             static_cast<unsigned long long>(kSites[0].site));
     if (want_story) {
-        s.story_hook = in.hooks.add_mid(base + kStorySites[0].site, &hook_talk);
-        NXLOG_I(kTag, "Story co-op ([pkp] link_story_coop): on, hook at main+0x%llx, main is checked once the game runs",
-                static_cast<unsigned long long>(kStorySites[0].site));
+        for (size_t i = 0; i < kStorySiteCount; i++) {
+            const StorySite& ss = kStorySites[i];
+            s.story_hooks[i] = ss.entry ? in.hooks.add_entry(base + ss.site, ss.fn) : in.hooks.add_mid(base + ss.site, ss.fn);
+        }
+        NXLOG_I(kTag, "Story co-op ([pkp] link_story_coop): on, %zu hooks (talk at main+0x%llx), main is checked once the game runs",
+                kStorySiteCount, static_cast<unsigned long long>(kStorySites[0].site));
     }
 }
 
 }  // namespace
 
-InteractCheck story_arm(const std::string& build_id, bool site_lifted, uint32_t word) {
+InteractCheck story_arm(const std::string& build_id, const StorySiteFacts (&facts)[kStorySiteCount]) {
     State& s = st();
-    if (!s.story_hook) return InteractCheck::Ok;
-    const InteractSite* site = story_site(build_id);
+    if (!s.story_hooks[0]) return InteractCheck::Ok;
     const std::string shown = build_id.substr(0, 32);
     InteractCheck c = InteractCheck::Ok;
-    if (!s.armed.load() || !site) c = InteractCheck::UnknownBuild;   // Story co-op builds on an armed Interact everywhere
-    else if (!site_lifted) c = InteractCheck::NotLifted;
-    else if (word != site->word) c = InteractCheck::WordDiffers;
+    size_t bad = 0;   // the first site that fails
+    if (!s.armed.load() || build_id.compare(0, std::strlen(kStoryBuild), kStoryBuild) != 0) {
+        c = InteractCheck::UnknownBuild;   // Story co-op builds on an armed Interact everywhere
+    } else {
+        for (; bad < kStorySiteCount; bad++) {
+            if (!facts[bad].lifted) c = InteractCheck::NotLifted;
+            else if (facts[bad].word != kStorySites[bad].word) c = InteractCheck::WordDiffers;
+            if (c != InteractCheck::Ok) break;
+        }
+    }
     if (c == InteractCheck::Ok) {
         services::ldnapi::set_coop_mods({kStoryName});
         s.story_armed.store(true, std::memory_order_release);
-        NXLOG_I(kTag, "Story co-op: armed at main+0x%llx (build %s); Link Play sessions are refused to players without it (mods fingerprint)",
-                static_cast<unsigned long long>(site->site), shown.c_str());
+        NXLOG_I(kTag, "Story co-op: armed, %zu sites (build %s); Link Play sessions are refused to players without it (mods fingerprint)",
+                kStorySiteCount, shown.c_str());
         return c;
     }
     s.story_armed.store(false);
-    s.hooks->remove(s.story_hook);
-    s.story_hook = 0;
+    s.story_host.store(false);
+    for (uint32_t& h : s.story_hooks) {
+        s.hooks->remove(h);
+        h = 0;
+    }
     if (c == InteractCheck::WordDiffers)
         NXLOG_W(kTag, "Story co-op: not applied: the word at main+0x%llx is %08x, expected %08x (build %s)",
-                static_cast<unsigned long long>(site->site), word, site->word, shown.c_str());
+                static_cast<unsigned long long>(kStorySites[bad].site), facts[bad].word, kStorySites[bad].word, shown.c_str());
+    else if (c == InteractCheck::NotLifted)
+        NXLOG_W(kTag, "Story co-op: not applied: %s, main+0x%llx (build %s)", check_str(c),
+                static_cast<unsigned long long>(kStorySites[bad].site), shown.c_str());
     else
         NXLOG_W(kTag, "Story co-op: not applied: %s (build %s)", s.armed.load() ? check_str(c) : "Interact everywhere is not armed",
                 shown.empty() ? "unknown" : shown.c_str());
@@ -238,16 +288,14 @@ void frame(bool, double, play::GameFrame*) {
         if (mem::is_mapped(a, 4)) std::memcpy(&word, reinterpret_cast<const void*>(a), 4);
     }
     linkplay_arm(build, lifted, word);
-    if (s.story_hook) {
-        const InteractSite* ss = story_site(build);
-        bool story_lifted = false;
-        uint32_t story_word = 0;
-        if (ss) {
-            const uint64_t a = s.base + ss->site;
-            story_lifted = fn_lookup(a) != nullptr;
-            if (mem::is_mapped(a, 4)) std::memcpy(&story_word, reinterpret_cast<const void*>(a), 4);
+    if (s.story_hooks[0]) {
+        StorySiteFacts facts[kStorySiteCount];
+        for (size_t i = 0; i < kStorySiteCount; i++) {
+            const uint64_t a = s.base + kStorySites[i].site;
+            facts[i].lifted = fn_lookup(a) != nullptr;
+            if (mem::is_mapped(a, 4)) std::memcpy(&facts[i].word, reinterpret_cast<const void*>(a), 4);
         }
-        story_arm(build, story_lifted, story_word);
+        story_arm(build, facts);
     }
 }
 
@@ -255,7 +303,8 @@ void remove() {   // the registry has removed the hooks
     State& s = st();
     s.armed.store(false);
     s.story_armed.store(false);
-    s.story_hook = 0;
+    s.story_host.store(false);
+    for (uint32_t& h : s.story_hooks) h = 0;
     services::ldnapi::set_coop_mods({});
     s.hook = 0;
     s.hooks = nullptr;

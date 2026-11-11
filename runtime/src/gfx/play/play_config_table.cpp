@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "ini_text.h"
+#include "prompt_resolve.h"
 #include "nxrt/extras.h"
 
 namespace nxrt::play {
@@ -21,6 +22,7 @@ constexpr const char* kUpscaleQualityWords[] = {"native", "quality", "balanced",
 constexpr const char* kShadowWords[] = {"default", "high", "very_high", "ultra", "extreme"};   // [display] shadow_quality, indexed by gfx::ShadowQuality
 constexpr const char* kAaWords[] = {"off", "smaa_low", "smaa_medium", "smaa_high", "smaa_ultra"};   // [upscale] aa, indexed by extras::AaMode
 constexpr const char* kLatencyWords[] = {"off", "auto", "on", "boost"};
+constexpr const char* kClockFormatWords[] = {"auto", "12h", "24h"};
 constexpr const char* kWindowModeWords[] = {"windowed", "borderless", "exclusive"};
 constexpr const char* kAstcWords[] = {"fast", "high", "uncompressed"};
 constexpr const char* kFpsSnapWords[] = {"auto", "true", "false"};
@@ -52,15 +54,28 @@ bool read_pitch_source(const std::string& k, const std::string& v, Settings* s, 
     return true;
 }
 
-bool read_prompt_style(const std::string&, const std::string& v, Settings* s, std::string* msg) {
-    if (parse_prompt_style(v, &s->prompts.style)) return true;
-    *msg = "style must be switch, xbox, playstation, steam, keyboard or auto, got '" + v + "'";
-    return false;
-}
-std::string write_prompt_style(const Settings& s) { return prompt_style_name(s.prompts.style); }
 std::vector<std::string> prompt_style_words() {
     std::vector<std::string> r;
     for (int i = 0; i < kPromptStyleCount; ++i) r.push_back(prompt_style_name(static_cast<PromptStyle>(i)));
+    return r;
+}
+bool read_prompt_style(const std::string&, const std::string& v, Settings* s, std::string* msg) {
+    if (parse_prompt_style(v, &s->prompts.style)) return true;
+    std::string words;
+    for (const std::string& w : prompt_style_words()) words += (words.empty() ? "" : ", ") + w;
+    *msg = "style must be one of " + words + ", got '" + v + "'";
+    return false;
+}
+std::string write_prompt_style(const Settings& s) { return prompt_style_name(s.prompts.style); }
+// The launcher's preview of each style: "A=xbox/a" per Switch button (prompt_preview), with the factory pad mapping and bindings.
+std::vector<std::pair<std::string, std::vector<std::string>>> prompt_style_details(const Settings& defaults) {
+    std::vector<std::pair<std::string, std::vector<std::string>>> r;
+    for (int i = 0; i < kPromptStyleCount; ++i) {
+        const PromptStyle style = static_cast<PromptStyle>(i);
+        std::vector<std::string> items;
+        for (const PromptPreviewItem& it : prompt_preview(style, defaults)) items.push_back(std::string(it.button) + "=" + it.icon);
+        if (!items.empty()) r.emplace_back(prompt_style_name(style), std::move(items));
+    }
     return r;
 }
 
@@ -215,6 +230,9 @@ const SettingDef kTable[] = {
     {ROW("tweaks", "language", Text), TEXT(language), .auto_word = "auto", .nxrt_key = "system.language",
      .doc = "The game's language: auto (the Windows display language when the game has it, else English) or a name such as French. Applies at the next start."},
 
+    {ROW("tweaks", "clock_format", Choice), TEXT(clock_format), .words = kClockFormatWords,
+     .doc = "How the game shows the time of day: auto (the game's language decides: 12 hours with AM/PM for English, 24 hours for German), 12h or 24h."},
+
     {ROW("pad", "label_abxy", Bool), FLAG(pad.label_abxy),
      .doc = "0: Switch layout, by position (the right face button is Switch A). 1: Xbox layout, by the printed letter."},
     {ROW("pad", "deadzone", Real), REAL(pad.stick_deadzone), .lo = 0.0, .hi = 0.5, .ranged = true,
@@ -339,7 +357,8 @@ const SettingDef kTable[] = {
     {ROW("picture", "gamma", Real), REAL(extras.picture.gamma), .lo = 0.5, .hi = 2.0, .ranged = true, .exact = true,
      .nxrt_key = "picture.gamma", .doc = "Mid-tone brightness; above 1 brightens."},
 
-    {ROW("prompts", "style", Custom), CUSTOM(read_prompt_style, write_prompt_style), .word_fn = prompt_style_words, .syntax = "choice",
+    {ROW("prompts", "style", Custom), CUSTOM(read_prompt_style, write_prompt_style), .word_fn = prompt_style_words,
+     .details_fn = prompt_style_details, .syntax = "choice",
      .doc = "Which button icons the game's prompts show; auto follows the last used input device."},
 
     {ROW("fps", "show", Bool), FLAG(fps.show), .doc = "The frame rate counter."},
@@ -356,7 +375,7 @@ const SettingDef kTable[] = {
      .doc = "A keyboard key that opens the Close the game prompt; none = off."},
 
     {ROW("overlay", "pad", Custom), CUSTOM(read_overlay_pad, write_overlay_pad), .syntax = "pad_combo",
-     .doc = "Pad buttons held together that open and close the F1 menu; none = off. One equal to [quit] pad is ignored."},
+     .doc = "Pad buttons held together (left_stick+right_stick) that open and close the F1 menu; none = off. One equal to [quit] pad is ignored."},
 
     // Keys older builds wrote that nothing reads any more.
     {ROW("tweaks", "glow_color", Retired)}, {ROW("tweaks", "suit_glow", Retired)}, {ROW("tweaks", "ball_glow", Retired)},
@@ -588,6 +607,7 @@ std::vector<setting_doc::Row> settings_doc_rows() {
             for (const char* w : d.words) r.choices.push_back(w);
             for (int a : d.allowed) r.choices.push_back(std::to_string(a));
             if (d.word_fn) r.choices = d.word_fn();
+            if (d.details_fn) r.choice_details = d.details_fn(defaults);
             if (d.auto_word) r.auto_word = d.auto_word;
             if (d.renamed_from) r.aliases.push_back(d.renamed_from);
             if (d.fallback) r.fallback = d.fallback;

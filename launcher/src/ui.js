@@ -2,17 +2,21 @@
 // `change` / `input` events (delegate on the page root). Inside row() they are named by the row's label.
 import {
   ArrowLeft, Check, ChevronDown, ChevronRight, CircleAlert, CircleCheck, CircleX, Copy, Download, ExternalLink, Eye, EyeOff, FileArchive, FileText,
-  Folder, FolderOpen, Gamepad2, Globe, HardDrive, House, Info, Keyboard, Link, LoaderCircle, Minus, Mouse, Newspaper, Palette, Pause,
+  Folder, FolderOpen, Gamepad2, Globe, HardDrive, House, Info, Keyboard, LayoutDashboard, Link, LoaderCircle, Minus, Mouse, Newspaper, Palette, Pause,
   Pencil, Play, Plus, RefreshCw, RotateCcw, Save, Settings, Square, Trash2, TriangleAlert, Upload, UserCheck, Users, Wrench, X,
 } from 'lucide';
 
 const ICONS = {
   ArrowLeft, Check, ChevronDown, ChevronRight, CircleAlert, CircleCheck, CircleX, Copy, Download, ExternalLink, Eye, EyeOff, FileArchive, FileText,
-  Folder, FolderOpen, Gamepad2, Globe, HardDrive, House, Info, Keyboard, Link, LoaderCircle, Minus, Mouse, Newspaper, Palette, Pause,
+  Folder, FolderOpen, Gamepad2, Globe, HardDrive, House, Info, Keyboard, LayoutDashboard, Link, LoaderCircle, Minus, Mouse, Newspaper, Palette, Pause,
   Pencil, Play, Plus, RefreshCw, RotateCcw, Save, Settings, Square, Trash2, TriangleAlert, Upload, UserCheck, Users, Wrench, X,
 };
 
-export const errText = (e) => (typeof e === 'string' ? e : e?.message ?? String(e));
+import { fromBackend } from './backend-text.js';
+import { t } from './i18n.js';
+
+/** The words of an error, in the player's language when the backend's sentence is a known one (backend-text.js). */
+export const errText = (e) => fromBackend(typeof e === 'string' ? e : e?.message ?? String(e));
 
 /** The code of an error a command tagged (error.rs CmdError), else null. Branch on this, never on errText. */
 export const errCode = (e) => (typeof e === 'object' && e !== null ? e.code ?? null : null);
@@ -50,10 +54,11 @@ export function toast(message, kind = '') {
 
 /**
  * A modal question on a native <dialog>. Resolves true for OK; Esc, Cancel or a click outside give false.
- * opts: { title, body (plain text), html (trusted markup, instead of body), ok = 'OK', cancel = 'Cancel', danger, alert (no Cancel) }
+ * opts: { title, body (plain text), html (trusted markup, instead of body), ok = 'OK', cancel = 'Cancel', danger, alert (no Cancel),
+ *         setup (dlg) => void, called once the markup is in the page, to wire its controls }
  */
 export function confirm(opts = {}) {
-  const { title = '', body = '', html = '', ok = 'OK', cancel = 'Cancel', danger = false, alert = false } = opts;
+  const { title = '', body = '', html = '', ok = t('OK'), cancel = t('Cancel'), danger = false, alert = false, focusCancel = false, setup } = opts;
   return new Promise((resolve) => {
     const dlg = document.createElement('dialog');
     dlg.className = 'modal glass strong';
@@ -68,6 +73,7 @@ export function confirm(opts = {}) {
         <button class="btn ${danger ? 'danger' : 'primary'}" data-answer="ok">${esc(ok)}</button>
       </div>`;
     document.body.appendChild(dlg);
+    setup?.(dlg);
     dlg.addEventListener('close', () => {
       dlg.remove();
       resolve(dlg.returnValue === 'ok');
@@ -78,8 +84,8 @@ export function confirm(opts = {}) {
       else if (e.target === dlg) dlg.close('');   // the dialog has no padding, so only the backdrop hits it
     });
     dlg.showModal();
-    // Enter on a dangerous question must not be the dangerous answer
-    dlg.querySelector(danger && !alert ? '[data-answer=""]' : '[data-answer="ok"]').focus();
+    // Enter on a dangerous question, or on one whose safe answer is no (focusCancel), must not be the yes
+    dlg.querySelector((danger || focusCancel) && !alert ? '[data-answer=""]' : '[data-answer="ok"]').focus();
   });
 }
 
@@ -88,7 +94,7 @@ export function confirm(opts = {}) {
  * opts: { title, body, label, value, ok = 'OK', max }
  */
 export function askText(opts = {}) {
-  const { title = '', body = '', label = '', value = '', ok = 'OK', max = 24 } = opts;
+  const { title = '', body = '', label = '', value = '', ok = t('OK'), max = 24 } = opts;
   return new Promise((resolve) => {
     const dlg = document.createElement('dialog');
     dlg.className = 'modal glass strong';
@@ -101,7 +107,7 @@ export function askText(opts = {}) {
           <input class="input" id="ask-text" type="text" maxlength="${max}" value="${esc(value)}" aria-label="${esc(label || title)}" autocomplete="off" spellcheck="false" />
         </div>
         <div class="modal-actions">
-          <button class="btn quiet" type="button" data-answer="">Cancel</button>
+          <button class="btn quiet" type="button" data-answer="">${esc(t('Cancel'))}</button>
           <button class="btn primary" type="submit" value="ok" data-answer="ok">${esc(ok)}</button>
         </div>
       </form>`;

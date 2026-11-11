@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Pokémon Pokopia: the table of [pkp] keys (pkp_settings.h) and its doc rows. Pure data, in nxrt_game_pkp_data, so the docs generator
-// (apps/settings_doc.cpp) reads it without the runtime; the getters are in pkp_settings.cpp. Defaults and ranges are the ones each module
-// used before the table.
-#include "core/pkp_settings.h"
+// Pokémon Pokopia: spec() and the doc rows of the [pkp] table (pkp_settings_table.h). Pure data, in nxrt_game_pkp_data, so the docs
+// generator (apps/settings_doc.cpp) reads it without the runtime; the getters are in pkp_settings.cpp.
+#include "core/pkp_settings_table.h"
 
 namespace nxrt::games::pkp::settings {
 
@@ -87,16 +86,15 @@ constexpr bool gameplay_ok(bool release) {
 }
 static_assert(gameplay_ok(false), "a gameplay mod is a bool");
 #if PKP_GAMEPLAY_DEFAULTS_CHECK
-static_assert(gameplay_ok(true), "release build: a gameplay mod ([pkp] key marked gameplay()) defaults off; turn it back on");
+static_assert(table::switches_default_on(),
+              "release build: a gameplay mod switch ([pkp] key marked gameplay(), not opt_in()) defaults off; turn it back on");
 #endif
 
-}  // namespace
-
-const Spec& spec(Key k) { return kSpecs[static_cast<size_t>(k)]; }
+const Spec& spec(Key k) { return table::at(k); }
 
 std::vector<setting_doc::Row> doc_rows() {
     std::vector<setting_doc::Row> rows;
-    for (const Spec& sp : kSpecs) {
+    for (const Spec& sp : table::kSpecs) {
         setting_doc::Row r;
         r.section = kSection;
         r.key = sp.name;
@@ -130,6 +128,9 @@ std::vector<setting_doc::Row> doc_rows() {
         }
         if (r.optional) r.def.clear();
         if (sp.gameplay) r.group = "gameplay";
+        if (sp.parent != Key::Count) r.parent = table::at(sp.parent).name;
+        r.opt_in = sp.opt_in;
+        r.hidden = sp.hidden;
         r.doc = sp.doc;
         if (sp.applies == Applies::AtStart) r.doc += " Next start.";
         rows.push_back(std::move(r));

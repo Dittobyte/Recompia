@@ -22,28 +22,19 @@
 #include "nxrt/lowlat.h"
 #include "nxrt/overlay.h"
 #include "nxrt/platform.h"
+#include "pad_choices.h"
 #include "play_game.h"
+#include "play_ui_prompt_preview.h"
 
 namespace nxrt::play {
 namespace ui {
 
 constexpr Trig kTrigChoices[] = {Trig::Press, Trig::Tap, Trig::Hold, Trig::Toggle, Trig::DoubleTap};
 // The Button prompts combo on the Controller tab, in PromptStyle order.
-constexpr const char* kPromptLabels[kPromptStyleCount] = {"Switch (the game's own)", "Xbox", "PlayStation", "Steam Controller", "Steam Deck", "Keyboard and mouse",
-                                                          "Auto (follows the last used device)"};
+constexpr const char* kPromptLabels[kPromptStyleCount] = {"Switch (the game's own)", "Xbox", "PlayStation", "Steam Controller", "Steam Deck",
+                                                          "Nintendo Switch", "Nintendo Switch 2", "Wii U", "Steam Frame", "Valve Index", "Touch",
+                                                          "Keyboard and mouse", "Auto (follows the last used device)"};
 
-struct SwitchButton {
-    const char* name;
-    hid::NpadButtonBit bit;
-};
-constexpr SwitchButton kSwitchButtons[] = {
-    {"A", hid::kBtnA},         {"B", hid::kBtnB},         {"X", hid::kBtnX},         {"Y", hid::kBtnY},
-    {"L", hid::kBtnL},         {"R", hid::kBtnR},         {"ZL", hid::kBtnZL},       {"ZR", hid::kBtnZR},
-    {"PLUS", hid::kBtnPlus},   {"MINUS", hid::kBtnMinus}, {"UP", hid::kBtnUp},       {"DOWN", hid::kBtnDown},
-    {"LEFT", hid::kBtnLeft},   {"RIGHT", hid::kBtnRight}, {"LSTICK", hid::kBtnStickL}, {"RSTICK", hid::kBtnStickR},
-};
-constexpr int kSwitchButtonCount = static_cast<int>(sizeof kSwitchButtons / sizeof kSwitchButtons[0]);
-static_assert(kSwitchButtonCount == 16, "the Switch pad has 16 buttons in the status view");
 
 // ---- Mouse --------------------------------------------------------------------------------------------------------------------------
 
@@ -89,41 +80,6 @@ void mouse_tab(Page& p) {
 }
 
 // ---- Controller ---------------------------------------------------------------------------------------------------------------------
-
-// The 22 controller buttons, in PadSrc order.
-constexpr const char* kPadSrcLabels[kPadSrcCount] = {
-    "A / Cross (bottom)", "B / Circle (right)", "X / Square (left)", "Y / Triangle (top)",
-    "LB / L1",            "RB / R1",            "LT / L2",            "RT / R2",
-    "Menu / Options",     "View / Create",      "Left stick click",   "Right stick click",
-    "D-pad up",           "D-pad down",         "D-pad left",         "D-pad right",
-    "Right grip R4 (upper)", "Left grip L4 (upper)", "Right grip R5 (lower)", "Left grip L5 (lower)",
-    "Touchpad / left trackpad click", "Right trackpad click",
-};
-static_assert(sizeof kPadSrcLabels / sizeof kPadSrcLabels[0] == 22, "one label per controller button");
-
-// The choices of a controller button: Default, Nothing, then the single Switch buttons in kSwitchButtons order.
-constexpr const char* kPadChoiceNames[] = {
-    "Default", "Nothing",
-    "A", "B", "X", "Y", "L", "R", "ZL", "ZR", "Plus", "Minus",
-    "D-pad up", "D-pad down", "D-pad left", "D-pad right", "Left stick click", "Right stick click",
-};
-constexpr int kPadChoiceCount = static_cast<int>(sizeof kPadChoiceNames / sizeof kPadChoiceNames[0]);
-static_assert(kPadChoiceCount == 2 + kSwitchButtonCount, "one choice per Switch button, plus Default and Nothing");
-constexpr const char* kPadCustomLabel = "Custom (edit in controls.ini)";
-
-// The value a choice stores.
-uint64_t pad_choice_value(int c) {
-    if (c == 0) return kPadDefault;
-    if (c == 1) return 0;
-    return static_cast<uint64_t>(hid::btn(kSwitchButtons[c - 2].bit));
-}
-
-// The choice a stored value shows as, or -1 when no choice holds it (a mask such as two buttons, set in the file).
-int pad_choice_of(uint64_t v) {
-    for (int c = 0; c < kPadChoiceCount; ++c)
-        if (pad_choice_value(c) == v) return c;
-    return -1;
-}
 
 void pad_buttons_group(Page& p) {
     ImGui::SeparatorText("Pad buttons");
@@ -219,11 +175,15 @@ void prompts_row(const LiveStatus& live, Page& p) {
         }
         ImGui::EndCombo();
     }
-    tip("The button icons in the game's prompts: the game's own Switch icons, Xbox, PlayStation, Steam Controller, Steam Deck, keyboard and mouse, or Auto to follow the device you used last.");
+    tip("The button icons in the game's prompts: the game's own Switch icons, another controller's (Xbox, PlayStation, Steam Controller, Steam Deck, Nintendo Switch, "
+        "Switch 2, Wii U, Steam Frame, Valve Index), touch gestures, keyboard and mouse, or Auto to follow the device you used last.");
+    PromptStyle shown = prompts.style;
     if (prompts.style == PromptStyle::Auto) {
         ImGui::SameLine();
         ImGui::TextDisabled("showing %s", cstr(live.prompt_now));
+        if (!parse_prompt_style(cstr(live.prompt_now), &shown)) shown = PromptStyle::Switch;
     }
+    prompt_preview_strip(shown, p.edit);
 }
 
 void pad_tab(const LiveStatus& live, Page& p) {   // the Gamepad tab of the Controls page

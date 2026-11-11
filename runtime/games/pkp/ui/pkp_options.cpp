@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // In-game Options: the PC settings of the F1 page, as tabs and rows of the game's own Settings screen. [pkp] options_menu, on by default.
-// Nothing reaches the save file: the rows read and write the Settings behind controls.ini, the same store as the F1 page.
+// Nothing reaches the save file: the rows read and write the Settings behind controls.ini, the same store as the F1 page, or a [pkp] key
+// of the game ini (Row::key, settings::set_*).
 //
 // How the game's Options screen works (main 2.0.1a, static reading):
 //  * Rows come from a data table of 51 records of 24 bytes (ids 0x25..0x32 are empty). A record names its tab, type, value count and text.
@@ -10,10 +11,13 @@
 //  * Text ids above 800 are skipped by the game's guards; text 0xa8 is a bare "show this string" entry in every language.
 //
 // 14 free ids for about 60 rows, so the ids are slots: only one tab shows at a time, and a tab change rewrites the slot records and swaps
-// the slot values in the vector. g.cur / g.orig hold every tab's values; they reach Settings only when the screen commits (0x10092a0).
+// the slot values in the vector. g.cur / g.orig hold every tab's values; they reach Settings and the game ini only when the screen commits
+// (0x10092a0), and a discard drops them.
 // Long lists and decimals are sliders whose numeric text is replaced by the row's own (hook after 0x710100f0a0's text call).
 // Hooks are the sites listed in recomp/games/pkp/main.sites.
+// The files it is split into: pkp_options_internal.h.
 #include "ui/pkp_options.h"
+#include "ui/pkp_options_internal.h"
 #include "core/pkp_guest.h"
 #include "core/pkp_layout.h"
 #include "core/pkp_settings.h"
@@ -27,23 +31,51 @@
 #include <string>
 #include <vector>
 
-#include "nxrt/audio_sink.h"
-#include "nxrt/dispatch.h"
 #include "nxrt/extras.h"
-#include "nxrt/host_device.h"
 #include "nxrt/hooks.h"
 #include "nxrt/log.h"
 #include "nxrt/memory.h"
-#include "nxrt/platform.h"
+#include "pad_choices.h"
 #include "play_game.h"
 #include "play_types.h"
 
 namespace nxrt::games::pkp {
+namespace options_detail {
+
+// The Mouse mode key (the Joy-Con 2 mouse mode, pkp_play.cpp): its binding in play, any key, mouse button or wheel notch. The row shows the
+// key; moving it either way starts a capture (play mode's rebind capture, GameHost::begin_capture) and the next input becomes the key, saved
+// at once (Escape cancels). The slider sits in the middle of a wide range, so every left/right press or click moves it and starts a capture
+// (with 0..1 it stuck at the end after one change and the next press did nothing). The new key replaces any other play binding of that input; an all-context binding of it still works elsewhere.
 namespace {
 
-using S = play::Settings;
+play::GameHost* g_host = nullptr;
+bool g_mm_capture = false;     // waiting for the key
+bool g_mm_redraw = false;      // the row's text changed outside a value change
+std::string g_mm_shown;        // the key just picked, until play::apply_settings reaches current_settings (next frame)
 
-constexpr const char* kTag = "pkp";
+std::string mouse_mode_key_name(const S& s) {
+    std::string out;
+    for (const play::Binding& b : s.bindings)
+        if (b.act == play::Act::MouseMode && (b.ctx == play::Ctx::Play || b.ctx == play::Ctx::All))
+            out += (out.empty() ? "" : ", ") + play::input_name(b.in);
+    return out.empty() ? "None" : out;
+}
+void set_mouse_mode_key(S& s, const play::InputId& in) {
+    std::erase_if(s.bindings, [&](const play::Binding& b) { return b.act == play::Act::MouseMode || (b.in == in && b.ctx == play::Ctx::Play); });
+    s.bindings.push_back(play::Binding{in, play::Ctx::Play, play::Act::MouseMode, play::Trig::Press, 0});
+}
+
+}  // namespace
+
+const char* mouse_mode_text(int, char* out, size_t n) {
+    if (g_mm_capture) return "Press the new key (Esc: cancel)";
+    std::snprintf(out, n, "%s", g_mm_shown.empty() ? mouse_mode_key_name(play::current_settings()).c_str() : g_mm_shown.c_str());
+    return out;
+}
+int mouse_mode_max() { return 2 * kMmMid; }
+
+namespace {
+
 constexpr uint64_t kOpen = 0x1006628;         // Options screen, open (vtable +0x38)
 constexpr uint64_t kOption = 0xe81b3c;        // option get/set
 constexpr uint64_t kValueNames = 0x100fce0;   // choice widget: value names
@@ -57,10 +89,12 @@ constexpr uint64_t kRebuildList = 0x10070e0;  // (screen) row list for the curre
 constexpr uint64_t kRedraw = 0x1007380;       // (screen, 1, 1, 0) as the game's tab change calls it
 constexpr uint64_t kCursor = 0x1008728;       // (screen, 1) as the game's tab change calls it
 constexpr uint64_t kListCap = 0x1012a60;      // inline at the bl that sizes the tab list (w1 = capacity)
-constexpr uint64_t kBarList = 0x10132a4;      // inline in the tab bar build: the three tabs are in the list (x0/x22 = list, x19 = parent, x21 = bar, w24 = mode)
+constexpr uint64_t kBarList = 0x10132a4;      // inline in the tab bar build: the three tabs are in the list (x0/x22 = list, w24 = mode)
 constexpr uint64_t kBarState = 0x10132d0;     // inline at the bl that picks the bar's layout for its tab count (x21 = bar, x9 = the table, w1 = the entry)
 constexpr uint64_t kBarIcons = 0x101334c;     // inline before the bar's icons are set (x21 = bar)
+constexpr uint64_t kClockText = 0xead978;     // (hour, minute, out): the time of day as text, in the layout of the game language (out holds 0x1000 bytes)
 constexpr uint64_t kBarTitle = 0xeb1b40;      // (bar, title byte): the title under the bar
+constexpr uint64_t kBarTitleBuild = 0x10134e8, kBarTitleChange = 0x1013f54, kBarTitleChangeAlt = 0x1014004;   // its return addresses in the Options bar (x19 = the bar's holder)
 using layout::kChildOf;
 constexpr uint64_t kSetSprite = 0xa7c05c;     // (pane holder, slot, sprite, 0, 0)
 using layout::kTables;
@@ -74,8 +108,6 @@ constexpr uint64_t kPaneIndex = 0xa72644;     // the slot to pane lookup (with l
 constexpr uint32_t kPaneWidth = 0xf0;         // int16, text pane
 constexpr int16_t kSliderTextWidth = 420;     // room for the longest value name above the slider
 constexpr uint8_t kFirstId = 0x25;
-constexpr int kSlots = 14;
-constexpr int kDirtySlot = kSlots - 1;        // never shown: its saved value differs from its cur while another tab holds changes (the game's own dirty scan sees only the vector)
 constexpr uint8_t kNoGroup = 0xee;            // a slot not used by the current tab
 constexpr uint8_t kFirstOrder = 40;           // after the game's own rows of the tab
 constexpr uint8_t kCellClass = 0x49;
@@ -83,241 +115,7 @@ constexpr uint32_t kFirstCell = 0x62b;        // the bar's cell widgets, 16 of t
 // ponytail: every new tab shows the Game tab's icon until there is art; add a sprite pair per tab when it exists.
 constexpr uint32_t kIconOn = 0x88, kIconOff = 0x87;
 
-// ---- rows ------------------------------------------------------------------------------------------------------------------------
-
-struct Row {
-    const char* label;
-    const char* desc;
-    const char* names[4];                 // a choice row: its values
-    uint8_t choices;                      // 2..4; 0 = a slider
-    uint8_t lo, hi;                       // a slider's range (positions, step 1)
-    const char* fmt;                      // a slider's text: fmt of base + position * step ...
-    double base, step;
-    const char* const* list;              // ... or list[position - lo]
-    const char* zero;                     // ... and this at position lo, when set
-    const char* (*text)(int, char*, size_t);   // ... or this
-    int (*max)();                         // a slider whose last position is known at run time
-    int (*get)(const S&);
-    void (*set)(S&, int);
-    bool restart, live;
-};
-
-// clang-format off
-#define ROW_BOOL(p) [](const S& s) { return static_cast<int>(s.p); }, [](S& s, int v) { s.p = v != 0; }
-#define ROW_ENUM(p, T) [](const S& s) { return static_cast<int>(s.p); }, [](S& s, int v) { s.p = static_cast<T>(v); }
-#define ROW_PCT(p) [](const S& s) { return static_cast<int>(std::lround(s.p * 100.0)); }, [](S& s, int v) { s.p = v / 100.0; }
-#define ROW_INT(p) [](const S& s) { return static_cast<int>(s.p); }, [](S& s, int v) { s.p = v; }
-#define ROW_STEP(p, base, step) [](const S& s) { return static_cast<int>(std::lround((s.p - (base)) / (step))); }, [](S& s, int v) { s.p = (base) + v * (step); }
-
-constexpr Row choice(const char* label, const char* desc, const char* const (&n)[4], uint8_t count, int (*get)(const S&), void (*set)(S&, int), bool restart = false) {
-    return Row{label, desc, {n[0], n[1], n[2], n[3]}, count, 0, 0, nullptr, 0, 0, nullptr, nullptr, nullptr, nullptr, get, set, restart, false};
-}
-constexpr Row number(const char* label, const char* desc, uint8_t lo, uint8_t hi, const char* fmt, double base, double step, int (*get)(const S&), void (*set)(S&, int), bool live = false) {
-    return Row{label, desc, {}, 0, lo, hi, fmt, base, step, nullptr, nullptr, nullptr, nullptr, get, set, false, live};
-}
-constexpr Row autonum(const char* label, const char* desc, uint8_t hi, const char* fmt, double base, double step, int (*get)(const S&), void (*set)(S&, int), bool restart = false) {
-    return Row{label, desc, {}, 0, 0, hi, fmt, base, step, nullptr, "Auto", nullptr, nullptr, get, set, restart, false};
-}
-constexpr Row names(const char* label, const char* desc, const char* const* list, uint8_t count, int (*get)(const S&), void (*set)(S&, int), bool restart = false) {
-    return Row{label, desc, {}, 0, 0, static_cast<uint8_t>(count - 1), nullptr, 0, 0, list, nullptr, nullptr, nullptr, get, set, restart, false};
-}
-constexpr Row dynamic(const char* label, const char* desc, const char* (*text)(int, char*, size_t), int (*max)(), int (*get)(const S&), void (*set)(S&, int), bool restart = false) {
-    return Row{label, desc, {}, 0, 0, 0, nullptr, 0, 0, nullptr, nullptr, text, max, get, set, restart, false};
-}
-
-int index_of(const int* values, int n, int v, int otherwise) {
-    for (int i = 0; i < n; ++i) if (values[i] == v) return i;
-    return otherwise;
-}
-
-constexpr const char* kOffOn[4] = {"Off", "On"};
-
-constexpr int kFpsValues[] = {-1, 30, 40, 45, 60, 90, 120, 144, 165, 240, 0};
-constexpr int kFpsCount = static_cast<int>(std::size(kFpsValues));
-constexpr const char* kFpsNames[kFpsCount + 1] = {"Match Display", "30", "40", "45", "60", "90", "120", "144", "165", "240", "Unlimited", "Custom"};
-constexpr int kWidths[] = {1280, 1600, 1920, 2560, 3840}, kHeights[] = {720, 900, 1080, 1440, 2160};
-constexpr int kSizeCount = static_cast<int>(std::size(kWidths));
-constexpr const char* kSizeNames[kSizeCount + 1] = {"1280 x 720", "1600 x 900", "1920 x 1080", "2560 x 1440", "3840 x 2160", "Custom"};
-constexpr int kAniso[] = {0, 2, 4, 8, 16};
-constexpr const char* kAnisoNames[] = {"Game Default", "2x", "4x", "8x", "16x"};
-// In play::PromptStyle order (the row stores the enum's number).
-constexpr const char* kPromptNames[] = {"Switch", "Xbox", "PlayStation", "Steam Controller", "Steam Deck", "Keyboard", "Automatic"};
-static_assert(std::size(kPromptNames) == play::kPromptStyleCount, "one name per PromptStyle");
-constexpr const char* kAheadNames[] = {"No Limit", "0", "1", "2", "3"};
-constexpr const char* kAaNames[] = {"Off", "SMAA Low", "SMAA Medium", "SMAA High", "SMAA Ultra"};      // indexed by extras::AaMode
-constexpr const char* kShadowNames[] = {"Game Default", "High (2x)", "Very High (3x)", "Ultra (4x)", "Extreme (8x)"};      // indexed by extras::ShadowQuality
-constexpr const char* kAstcKeys[] = {"fast", "high", "uncompressed"};
-constexpr const char* kWindowKeys[] = {"windowed", "borderless", "exclusive"};
-constexpr extras::UpscaleMode kUpscalers[] = {extras::UpscaleMode::Off, extras::UpscaleMode::Fsr1, extras::UpscaleMode::Nearest};
-
-std::vector<std::string> g_devices;   // audio output names, refreshed when the screen opens
-
-int key_index(const char* const* keys, int n, const std::string& v) {
-    for (int i = 0; i < n; ++i) if (v == keys[i]) return i;
-    return 0;
-}
-
-const char* preset_text(int v, char*, size_t) {
-    int n = 0;
-    const play::QualityPresetInfo* q = play::quality_presets(&n);
-    return q[std::clamp(v, 0, n - 1)].name;
-}
-int preset_max() { int n = 0; play::quality_presets(&n); return n - 1; }
-
-const char* monitor_text(int v, char* out, size_t n) {
-    if (v <= 0) return "Automatic";
-    if (!platform::display_name(v, out, static_cast<int>(n))) std::snprintf(out, n, "Display %d", v);
-    return out;
-}
-int monitor_max() { return std::max(platform::display_count(), 1); }
-
-const char* device_text(int v, char*, size_t) {
-    return v <= 0 || v > static_cast<int>(g_devices.size()) ? "System Default" : g_devices[static_cast<size_t>(v - 1)].c_str();
-}
-int device_max() { return std::clamp(static_cast<int>(g_devices.size()), 1, 250); }
-
-const Row kSound[] = {
-    number("Master Volume", "The volume of everything in the game, on top of the sliders above.", 0, 100, "%.0f%%", 0, 1, ROW_PCT(audio.volume)),
-    choice("Mute in Background", "Silence the game while its window is not in focus.", kOffOn, 2, ROW_BOOL(audio.mute_unfocused)),
-    dynamic("Output Device", "The sound device the game plays through.", device_text, device_max,
-            [](const S& s) { for (size_t i = 0; i < g_devices.size() && i < 250; ++i) if (g_devices[i] == s.audio.device) return static_cast<int>(i) + 1; return 0; },
-            [](S& s, int v) { s.audio.device = v <= 0 || v > static_cast<int>(g_devices.size()) ? "default" : g_devices[static_cast<size_t>(v - 1)]; }, true),
-};
-
-const Row kDisplay[] = {
-    choice("Window Mode", "Windowed, borderless fullscreen or exclusive fullscreen.", {"Windowed", "Borderless", "Fullscreen"}, 3,
-           [](const S& s) { return key_index(kWindowKeys, 3, s.display.window_mode); }, [](S& s, int v) { s.display.window_mode = kWindowKeys[v]; }),
-    dynamic("Monitor", "The display the window moves to. Fullscreen modes use this display.", monitor_text, monitor_max, ROW_INT(display.monitor)),
-    names("Window Size", "The size of the window in windowed mode.", kSizeNames, kSizeCount + 1,
-          [](const S& s) { for (int i = 0; i < kSizeCount; ++i) if (s.display.width == kWidths[i] && s.display.height == kHeights[i]) return i; return kSizeCount; },
-          [](S& s, int v) { if (v < kSizeCount) { s.display.width = kWidths[v]; s.display.height = kHeights[v]; } }),
-    choice("Keep 16:9 Picture", "Letterbox the picture instead of stretching it to the window.", kOffOn, 2, ROW_BOOL(display.keep_aspect)),
-    choice("VSync", "Wait for the display between frames: no tearing, a little more delay.", kOffOn, 2, ROW_BOOL(display.vsync)),
-    names("Frame Rate Limit", "The highest frame rate. Match Display follows the refresh rate.", kFpsNames, kFpsCount + 1,
-          [](const S& s) { return index_of(kFpsValues, kFpsCount, s.display.fps_cap, kFpsCount); },
-          [](S& s, int v) { if (v < kFpsCount) { s.display.fps_cap = kFpsValues[v]; play::quality_preset_edited(s.display, play::QualityField::FrameLimit); } }),
-    choice("Even Frame Pacing", "With VSync, run at an even divisor of the refresh rate (Steam Deck: 30 instead of 40).", kOffOn, 2,
-           [](const S& s) { return static_cast<int>(s.display.fps_snap == "true" || (s.display.fps_snap == "auto" && nxrt::host_is_steam_deck())); },
-           [](S& s, int v) { s.display.fps_snap = v ? "true" : "false"; }),
-    autonum("Render Scale", "The game's resolution; 100% is 1920 x 1080. Auto follows the window.", 76, "%.0f%%", 20, 5,
-            [](const S& s) { return s.display.render_scale <= 0 ? 0 : std::clamp((s.display.render_scale - 20) / 5, 1, 76); },
-            [](S& s, int v) { s.display.render_scale = v <= 0 ? 0 : 20 + v * 5; play::quality_preset_edited(s.display, play::QualityField::RenderScale); }, true),
-};
-
-const Row kPerformance[] = {
-    choice("Upscaler", "How the picture is enlarged from a lower resolution.", {"Off", "FSR 1", "Nearest"}, 3,
-           [](const S& s) { for (int i = 0; i < 3; ++i) if (s.extras.upscale.mode == kUpscalers[i]) return i; return 0; },
-           [](S& s, int v) { s.extras.upscale.mode = kUpscalers[v]; }),
-    number("Sharpness", "How much FSR 1 sharpens the picture.", 0, 20, "%.2f", 0, 0.05, ROW_STEP(extras.upscale.sharpness, 0.0, 0.05)),
-    number("Scene Resolution", "Renders the 3D scene smaller and keeps the menus sharp. 100% turns it off.", 25, 100, "%.0f%%", 0, 1, ROW_INT(extras.upscale.scene_scale)),
-    names("Anti-Aliasing", "Smooths jagged edges of the 3D scene. The menus are not filtered.", kAaNames, 5,
-          [](const S& s) { return static_cast<int>(s.extras.upscale.aa); },
-          [](S& s, int v) { s.extras.upscale.aa = static_cast<extras::AaMode>(v); play::quality_preset_edited(s.display, play::QualityField::AntiAliasing); }),
-    choice("Low Latency", "Reduces input delay on GPUs that support it.", {"Off", "Auto", "On", "Boost"}, 4, ROW_ENUM(extras.latency.mode, extras::LatencyMode), true),
-    names("Frames Ahead", "How many frames may wait for the screen. Fewer is more responsive.", kAheadNames, 5,
-          [](const S& s) { return s.extras.latency.frames_ahead + 1; }, [](S& s, int v) { s.extras.latency.frames_ahead = v - 1; }, true),
-    choice("Frame Rate Counter", "Show the frame rate on screen.", kOffOn, 2, ROW_BOOL(fps.show)),
-    choice("Counter Corner", "Where the frame rate counter sits.", {"Top Left", "Top Right", "Bottom Left", "Bottom Right"}, 4, ROW_ENUM(fps.corner, play::Corner)),
-    choice("Counter Detail", "What the frame rate counter shows.", {"FPS", "FPS and Time", "Full"}, 3, ROW_INT(fps.detail)),
-};
-
-const Row kGraphics[] = {
-    dynamic("Quality Preset", "Sets the texture options together.", preset_text, preset_max,
-            [](const S& s) { int n = 0; const play::QualityPresetInfo* q = play::quality_presets(&n); for (int i = 0; i < n; ++i) if (s.display.quality_preset == q[i].id) return i; return n - 1; },
-            [](S& s, int v) { int n = 0; const play::QualityPresetInfo* q = play::quality_presets(&n); const play::GamePlay* gp = play::game_play(); if (v < n - 1 && gp && gp->quality_preset) gp->quality_preset(q[v].id, s); }),
-    choice("Dynamic Resolution", "Let the game lower its resolution when the GPU falls behind.", kOffOn, 2, ROW_BOOL(display.dynamic_resolution)),
-    names("Texture Filtering", "Sharper textures at an angle.", kAnisoNames, 5,
-          [](const S& s) { return index_of(kAniso, 5, s.display.anisotropy, 0); },
-          [](S& s, int v) { s.display.anisotropy = kAniso[v]; play::quality_preset_edited(s.display, play::QualityField::Anisotropy); }),
-    names("Shadow Quality", "Makes the game's shadow maps 2x, 3x, 4x or 8x sharper per side. Ultra and Extreme cost a lot of video memory.", kShadowNames, 5,
-          [](const S& s) { return static_cast<int>(s.display.shadow_quality); },
-          [](S& s, int v) { s.display.shadow_quality = static_cast<gfx::ShadowQuality>(v); play::quality_preset_edited(s.display, play::QualityField::Shadows); }),
-    number("Texture Sharpness", "Texture level of detail. Negative is sharper.", 0, 80, "%+.2f", -2, 0.05,
-           [](const S& s) { return static_cast<int>(std::lround((s.display.lod_bias + 2.0) / 0.05)); },
-           [](S& s, int v) { s.display.lod_bias = -2.0 + v * 0.05; play::quality_preset_edited(s.display, play::QualityField::LodBias); }),
-    choice("Texture Compression", "Fast loads quickest; Uncompressed uses a lot of video memory.", {"Fast", "High", "Uncompressed"}, 3,
-           [](const S& s) { return key_index(kAstcKeys, 3, s.display.astc_quality); }, [](S& s, int v) { s.display.astc_quality = kAstcKeys[v]; }, true),
-    choice("Faster GPU Memory", "Uses more video memory for smoother drawing.", kOffOn, 2, ROW_BOOL(display.fast_gpu_memory), true),
-    choice("Fewer GPU Waits", "Skips pipeline waits that are not needed.", kOffOn, 2, ROW_BOOL(display.fewer_gpu_waits), true),
-    choice("Prepare Shaders", "Builds known shaders early to reduce stutter.", kOffOn, 2, ROW_BOOL(display.shader_prewarm), true),
-};
-
-const Row kPicture[] = {
-    choice("HDR", "High dynamic range output on a display that supports it.", {"Off", "Auto", "On", "Native"}, 4, ROW_ENUM(extras.hdr.mode, extras::HdrMode), true),
-    choice("HDR Format", "The HDR signal sent to the display.", {"Auto", "HDR10", "scRGB"}, 3, ROW_ENUM(extras.hdr.format, extras::HdrFormat), true),
-    autonum("Peak Brightness", "The brightest the display can go in HDR.", 197, "%.0f nits", 150, 50,
-            [](const S& s) { return s.extras.hdr.peak_nits <= 0 ? 0 : std::clamp(static_cast<int>(std::lround((s.extras.hdr.peak_nits - 150) / 50.0)), 1, 197); },
-            [](S& s, int v) { s.extras.hdr.peak_nits = v <= 0 ? 0 : 150 + v * 50; }),
-    autonum("Paper White", "The brightness of white in HDR.", 43, "%.0f nits", 70, 10,
-            [](const S& s) { return s.extras.hdr.paper_white_nits <= 0 ? 0 : std::clamp(static_cast<int>(std::lround((s.extras.hdr.paper_white_nits - 70) / 10.0)), 1, 43); },
-            [](S& s, int v) { s.extras.hdr.paper_white_nits = v <= 0 ? 0 : 70 + v * 10; }),
-    number("Highlight Boost", "How far highlights reach toward peak brightness.", 0, 40, "%.2f", 0, 0.05, ROW_STEP(extras.hdr.highlight_boost, 0.0, 0.05)),
-    Row{"Color Preset", "Neutral is the game's own picture.", {"Neutral", "Vivid", "Custom"}, 3, 0, 0, nullptr, 0, 0, nullptr, nullptr, nullptr, nullptr,
-        [](const S& s) { extras::PictureSettings v; extras::picture_preset("vivid", &v); const auto& p = s.extras.picture; if (p.neutral()) return 0; return p.contrast == v.contrast && p.saturation == v.saturation && p.black == v.black && p.gamma == v.gamma ? 1 : 2; },
-        [](S& s, int v) { if (v < 2) extras::picture_preset(v ? "vivid" : "neutral", &s.extras.picture); }, false, true},
-    number("Contrast", "Spreads the tones away from mid grey. 1.00 is the game's own.", 0, 100, "%.2f", 0.5, 0.01, ROW_STEP(extras.picture.contrast, 0.5, 0.01), true),
-    number("Saturation", "Color intensity. 1.00 is the game's own.", 0, 100, "%.2f", 0, 0.02, ROW_STEP(extras.picture.saturation, 0.0, 0.02), true),
-    number("Black Level", "Below 0 deepens the blacks, above 0 lifts them.", 0, 150, "%+.3f", -0.5, 0.005, ROW_STEP(extras.picture.black, -0.5, 0.005), true),
-    number("Gamma", "Mid-tone brightness. 1.00 is the game's own.", 0, 150, "%.2f", 0.5, 0.01, ROW_STEP(extras.picture.gamma, 0.5, 0.01), true),
-};
-
-// The Mouse mode key (the Joy-Con 2 mouse mode, pkp_play.cpp): its binding in play, any key, mouse button or wheel notch. The row shows the
-// key; moving it either way starts a capture (play mode's rebind capture, GameHost::begin_capture) and the next input becomes the key, saved
-// at once (Escape cancels). The slider sits in the middle of a wide range, so every left/right press or click moves it and starts a capture
-// (with 0..1 it stuck at the end after one change and the next press did nothing). The new key replaces any other play binding of that input; an all-context binding of it still works elsewhere.
-play::GameHost* g_host = nullptr;
-bool g_mm_capture = false;     // waiting for the key
-bool g_mm_redraw = false;      // the row's text changed outside a value change
-std::string g_mm_shown;        // the key just picked, until play::apply_settings reaches current_settings (next frame)
-constexpr int kMmMid = 100;
-
-std::string mouse_mode_key_name(const S& s) {
-    std::string out;
-    for (const play::Binding& b : s.bindings)
-        if (b.act == play::Act::MouseMode && (b.ctx == play::Ctx::Play || b.ctx == play::Ctx::All))
-            out += (out.empty() ? "" : ", ") + play::input_name(b.in);
-    return out.empty() ? "None" : out;
-}
-const char* mouse_mode_text(int, char* out, size_t n) {
-    if (g_mm_capture) return "Press the new key (Esc: cancel)";
-    std::snprintf(out, n, "%s", g_mm_shown.empty() ? mouse_mode_key_name(play::current_settings()).c_str() : g_mm_shown.c_str());
-    return out;
-}
-[[maybe_unused]] int mouse_mode_max() { return 2 * kMmMid; }   // the parked Mouse Mode Key row
-void set_mouse_mode_key(S& s, const play::InputId& in) {
-    std::erase_if(s.bindings, [&](const play::Binding& b) { return b.act == play::Act::MouseMode || (b.in == in && b.ctx == play::Ctx::Play); });
-    s.bindings.push_back(play::Binding{in, play::Ctx::Play, play::Act::MouseMode, play::Trig::Press, 0});
-}
-
-#define SENS(p) [](const S& s) { return static_cast<int>(std::lround(play::source_sens(s.mouse.p) * 10.0)); }, [](S& s, int v) { s.mouse.p = play::rad_per_count(v / 10.0); }
-const Row kMouse[] = {
-    number("Horizontal Sensitivity", "How fast the mouse turns the camera sideways.", 1, 200, "%.1f", 0, 0.1, SENS(yaw_rad)),
-    number("Vertical Sensitivity", "How fast the mouse tilts the camera.", 1, 200, "%.1f", 0, 0.1, SENS(pitch_rad)),
-    choice("Invert Vertical", "Moving the mouse up looks down.", kOffOn, 2, ROW_BOOL(mouse.invert_y)),
-    choice("Invert Horizontal", "Moving the mouse left looks right.", kOffOn, 2, ROW_BOOL(mouse.invert_x)),
-    choice("Mouse Pointer in Menus", "Use the mouse as a pointer: hover, click, right click, wheel.", kOffOn, 2, ROW_BOOL(mouse.menu_cursor)),
-    names("Button Icons", "The button icons in prompts. Automatic follows the last device used.", kPromptNames, static_cast<uint8_t>(std::size(kPromptNames)), ROW_ENUM(prompts.style, play::PromptStyle)),
-    // parked with the Joy-Con 2 mouse mode (pkp_mouse_mode.cpp kMouseModeParked): put the row back when the mode returns
-#if 0
-    dynamic("Mouse Mode Key", "Turns the Joy-Con 2 mouse mode on and off (point and click to place and break). To change it, press left or right on this row (or click it), then press the new key or mouse button. Esc cancels.",
-            mouse_mode_text, mouse_mode_max, [](const S&) { return kMmMid; }, [](S&, int) {}),
-#endif
-};
-
-const Row kController[] = {
-    choice("Face Buttons", "Switch keeps the buttons by position, Xbox by their letters.", {"Switch", "Xbox"}, 2, ROW_BOOL(pad.label_abxy)),
-    number("Left Stick Dead Zone", "Ignores small movements of the left stick.", 0, 50, "%.0f%%", 0, 1, ROW_PCT(pad.stick_deadzone)),
-    number("Right Stick Dead Zone", "Ignores small movements of the right stick.", 0, 50, "%.0f%%", 0, 1, ROW_PCT(pad.right_deadzone)),
-    number("Left Stick Range", "How much of the stick's travel counts as full. Lower it for a worn stick.", 50, 100, "%.0f%%", 0, 1, ROW_PCT(pad.stick_max)),
-    number("Right Stick Range", "How much of the stick's travel counts as full. Lower it for a worn stick.", 50, 100, "%.0f%%", 0, 1, ROW_PCT(pad.right_stick_max)),
-    choice("Invert Look", "Stick up looks down. Adds to the game's own invert option.", kOffOn, 2, ROW_BOOL(pad.invert_y)),
-    number("Look Sensitivity", "Multiplies the right stick while playing.", 0, 55, "%.2fx", 0.25, 0.05, ROW_STEP(pad.look_sens, 0.25, 0.05)),
-    number("Trigger Threshold", "How far a trigger must be pressed to count.", 5, 100, "%.0f%%", 0, 1, ROW_PCT(pad.trigger_threshold)),
-    choice("Motion Sensor", "Pass the controller's gyro to the game.", kOffOn, 2, ROW_BOOL(pad.gyro)),
-    number("Motion Strength", "Scales the gyro.", 0, 78, "%.2fx", 0.1, 0.05, ROW_STEP(pad.gyro_scale, 0.1, 0.05)),
-    number("Rumble Strength", "Scales the vibration.", 0, 200, "%.0f%%", 0, 1, ROW_PCT(pad.rumble_scale)),
-};
-// clang-format on
+// ---- tabs ------------------------------------------------------------------------------------------------------------------------
 
 struct Tab {
     const char* title;      // nullptr: the game's own title
@@ -326,36 +124,82 @@ struct Tab {
     int count;
 };
 
-template <size_t N>
-constexpr Tab tab(const char* title, uint8_t group, const Row (&r)[N]) {
-    static_assert(N <= kDirtySlot, "a tab has one slot per row and one slot is the dirty marker");
-    return Tab{title, group, r, static_cast<int>(N)};
-}
+constexpr Tab tab(const char* title, uint8_t group, RowList r) { return Tab{title, group, r.rows, r.count}; }
 
-const Tab kTabs[] = {
+Tab kTabs[] = {
     {nullptr, 1, nullptr, 0},   // Game
     {nullptr, 2, nullptr, 0},   // Camera
-    tab(nullptr, 3, kSound),
-    tab("Display", 4, kDisplay),
-    tab("Performance", 5, kPerformance),
-    tab("Graphics", 6, kGraphics),
-    tab("Picture", 7, kPicture),
-    tab("Mouse", 8, kMouse),
-    tab("Controller", 9, kController),
+    tab(nullptr, 3, kSoundRows),
+    tab("Online", 13, kOnlineRows),   // first of ours: the launcher's online presence, easy to find (group 13: the next free one)
+    tab("Display", 4, kDisplayRows),
+    tab("Performance", 5, kPerformanceRows),
+    tab("Graphics", 6, kGraphicsRows),
+    tab("Picture", 7, kPictureRows),
+    tab("Mouse", 8, kMouseRows),
+    tab("Controller", 9, kControllerRows),
+    tab("Gameplay", 10, kGameplayRows),
+    tab("Time", 11, kTimeRows),
+    {"Events", 12, g_event_rows, 1},   // the count follows the event file (load_events)
 };
 constexpr int kTabCount = static_cast<int>(std::size(kTabs));
 constexpr int kGameTabs = 3;
+// The pad rows end the Controller tab; the Gameplay, Time and Events tabs follow it (pad_sync_last checks the tab is the right one).
+constexpr int kControllerTab = kTabCount - 4, kTimeTab = kTabCount - 2, kEventsTab = kTabCount - 1;
+// The bar has 16 cells (kFirstCell) and its layout table (hook_bar_state) has 16 entries: one more tab needs nothing else.
+static_assert(kTabCount <= 16, "the tab bar has 16 cells");
 
 // ---- state -------------------------------------------------------------------------------------------------------------------------
 
 struct State {
     uint64_t base = 0;
-    uint64_t child = 0, parent = 0, bar = 0;
+    uint64_t child = 0;
     bool active = false, bar_extended = false;
     int tab = 0;
     int cur[kTabCount][kSlots] = {}, orig[kTabCount][kSlots] = {};
     uint8_t* rec[kSlots] = {};
+    int pad_sel = 0;                                              // the controller button the pad rows show (a PadSrc)
+    int pad_cur[play::kPadSrcCount] = {}, pad_orig[play::kPadSrcCount] = {};   // per button: its choice index in play::kPadChoiceNames
+    int pad_last[2] = {kPadMid, kPadMid};                         // where the two pad sliders were last seen: a move is the step from here
 } g;
+}  // namespace
+
+// The pad rows' text and range (declared in pkp_options_internal.h, used by the Controller tab's rows).
+int pad_cycle_max() { return 2 * kPadMid; }
+const char* pad_button_text(int, char* out, size_t n) {
+    std::snprintf(out, n, "%s", play::kPadSrcLabels[g.pad_sel]);
+    return out;
+}
+const char* pad_press_text(int, char* out, size_t n) {
+    const int c = g.pad_cur[g.pad_sel];
+    std::snprintf(out, n, "%s", c < play::kPadChoiceCount ? play::kPadChoiceNames[c] : play::kPadCustomLabel);
+    return out;
+}
+
+namespace {
+
+bool is_pad_row(const Row& r) { return r.text == &pad_button_text || r.text == &pad_press_text; }
+
+// A pad slider went to `value`: the step from where it was is a step through the buttons (row 0) or through the choices of the shown
+// button (row 1). The "Custom" entry is a mask only the file can make: it is offered while the file holds one, never written back.
+void pad_row_moved(int row, int value) {
+    const int delta = value - g.pad_last[row];
+    g.pad_last[row] = value;
+    const auto wrap = [](int v, int n) { return ((v % n) + n) % n; };
+    if (row == 0) {
+        g.pad_sel = wrap(g.pad_sel + delta, play::kPadSrcCount);
+    } else {
+        int& c = g.pad_cur[g.pad_sel];
+        c = wrap(c + delta, g.pad_orig[g.pad_sel] == play::kPadChoiceCount ? play::kPadChoiceCount + 1 : play::kPadChoiceCount);
+    }
+}
+
+// The sliders' positions in the value vector are the screen's own: after the values were reset, the next move starts from there.
+void pad_sync_last() {
+    const Tab& t = kTabs[kControllerTab];
+    if (t.rows != kControllerRows.rows) return;            // the tab list changed and this is not the Controller tab any more
+    g.pad_last[0] = g.cur[kControllerTab][t.count - 2];
+    g.pad_last[1] = g.cur[kControllerTab][t.count - 1];
+}
 
 using guest::rd;
 using guest::wr;
@@ -376,6 +220,41 @@ const char* value_text(const Row& r, int v, char* out, size_t n) {
     if (r.zero && v == r.lo) return r.zero;
     std::snprintf(out, n, r.fmt, r.base + v * r.step);
     return out;
+}
+
+// ---- a row's value: a play-mode setting (Row::get, Row::set) or a [pkp] key (Row::key) -------------------------------------------------
+
+bool is_key_row(const Row& r) { return r.key != settings::Key::Count; }
+int key_position(const Row& r, double v) { return static_cast<int>(std::lround((v - settings::spec(r.key).lo) / r.unit)); }
+
+// The position of the value in force.
+int row_get(const Row& r, const S& s) {
+    if (!is_key_row(r)) return r.get(s);
+    switch (settings::spec(r.key).type) {
+        case settings::Type::Bool: return settings::get_bool(r.key) ? 1 : 0;
+        case settings::Type::Int: return key_position(r, static_cast<double>(settings::get_int(r.key)));
+        case settings::Type::Double: return key_position(r, settings::get_double(r.key));
+        case settings::Type::String: break;   // no row kind (key_row)
+    }
+    return 0;
+}
+
+// The position of the default (the record's default value).
+int row_default(const Row& r, const S& defaults) {
+    if (!is_key_row(r)) return r.get(defaults);
+    const settings::Spec& sp = settings::spec(r.key);
+    return sp.type == settings::Type::Bool ? (sp.def != 0 ? 1 : 0) : key_position(r, sp.def);
+}
+
+// A [pkp] row's position, saved: the game ini, and the getters at once.
+void save_key(const Row& r, int pos) {
+    const settings::Spec& sp = settings::spec(r.key);
+    switch (sp.type) {
+        case settings::Type::Bool: settings::set_bool(r.key, pos != 0); break;
+        case settings::Type::Int: settings::set_int(r.key, std::llround(sp.lo + pos * r.unit)); break;
+        case settings::Type::Double: settings::set_double(r.key, sp.lo + pos * r.unit); break;
+        case settings::Type::String: break;
+    }
 }
 
 bool has_changes(int skip_tab) {
@@ -404,7 +283,7 @@ void write_records(int tab) {
         r[6] = 1;                                    // the dirty scan skips rows with 0 here
         r[5] = r[7] = 0;
         if (!row) continue;
-        r[5] = static_cast<uint8_t>(std::clamp(row->get(defaults), static_cast<int>(row->lo), row_hi(*row)));
+        r[5] = static_cast<uint8_t>(std::clamp(row_default(*row, defaults), static_cast<int>(row->lo), row_hi(*row)));
         r[6] = static_cast<uint8_t>(row->choices ? row->choices - 1 : row_hi(*row));
         r[7] = row->lo;
     }
@@ -432,15 +311,28 @@ void store_to_vector() {
     if (other_tabs) wr<uint8_t>(g.child + kDirty, 1);
 }
 
+// The changed rows of play-mode settings into s; true when there is one.
 bool build_settings(S& s) {
     bool changed = false;
     for (int t = 0; t < kTabCount; ++t)
         for (int i = 0; i < kTabs[t].count; ++i)
-            if (g.cur[t][i] != g.orig[t][i]) {
+            if (g.cur[t][i] != g.orig[t][i] && !is_key_row(kTabs[t].rows[i])) {
                 kTabs[t].rows[i].set(s, g.cur[t][i]);
                 changed = true;
             }
+    for (int i = 0; i < play::kPadSrcCount; ++i)
+        if (g.pad_cur[i] != g.pad_orig[i] && g.pad_cur[i] < play::kPadChoiceCount) {
+            s.pad.remap[i] = play::pad_choice_value(g.pad_cur[i]);
+            changed = true;
+        }
     return changed;
+}
+
+// The changed rows of [pkp] keys, saved.
+void save_key_rows() {
+    for (int t = 0; t < kTabCount; ++t)
+        for (int i = 0; i < kTabs[t].count; ++i)
+            if (g.cur[t][i] != g.orig[t][i] && is_key_row(kTabs[t].rows[i])) save_key(kTabs[t].rows[i], g.cur[t][i]);
 }
 
 // ---- hooks -------------------------------------------------------------------------------------------------------------------------
@@ -477,13 +369,18 @@ int hook_open(::Ctx* c, uint64_t, void*) {
     g.tab = std::clamp(rd<int>(child + kTabIndex), 0, kTabCount - 1);
     if (g.tab >= kGameTabs) wr<uint8_t>(child + kGroup, kTabs[g.tab].group);   // the game's table only knows its own three tabs
     if (!returning) {
-        g_devices.clear();
-        for (const audio::OutputDevice& d : audio::list_output_devices())
-            if (!d.name.empty()) g_devices.push_back(d.name);
+        kTabs[kEventsTab].count = load_events();
+        refresh_audio_devices();
         const S s = play::current_settings();
         for (int t = 0; t < kTabCount; ++t)
             for (int i = 0; i < kTabs[t].count; ++i)
-                g.cur[t][i] = g.orig[t][i] = std::clamp(kTabs[t].rows[i].get(s), static_cast<int>(kTabs[t].rows[i].lo), row_hi(kTabs[t].rows[i]));
+                g.cur[t][i] = g.orig[t][i] = std::clamp(row_get(kTabs[t].rows[i], s), static_cast<int>(kTabs[t].rows[i].lo), row_hi(kTabs[t].rows[i]));
+        g.pad_sel = 0;
+        for (int i = 0; i < play::kPadSrcCount; ++i) {
+            const int c = play::pad_choice_of(s.pad.remap[i]);
+            g.pad_cur[i] = g.pad_orig[i] = c < 0 ? play::kPadChoiceCount : c;
+        }
+        pad_sync_last();
     }
     write_records(g.tab);
     return 0;
@@ -500,11 +397,16 @@ int hook_commit(::Ctx* c, uint64_t, void*) {
     if (!g.active || c->x[0] != g.child) return 0;
     vector_to_store();
     if (c->x[1] & 1) {
+        if (std::memcmp(g.cur[kTimeTab], g.orig[kTimeTab], 6 * sizeof(int)) != 0) apply_time_tab(g.cur[kTimeTab]);
         S s = play::current_settings();
         if (build_settings(s)) play::apply_settings(s);   // main thread, next frame; also writes controls.ini
+        save_key_rows();                             // the game ini, now
         std::memcpy(g.orig, g.cur, sizeof g.orig);
+        std::memcpy(g.pad_orig, g.pad_cur, sizeof g.pad_orig);
     } else if (rd<int>(g.child + 0x354) != 0) {      // "discard" (the game's other call with 0 only redraws)
         std::memcpy(g.cur, g.orig, sizeof g.cur);
+        std::memcpy(g.pad_cur, g.pad_orig, sizeof g.pad_cur);
+        pad_sync_last();
         extras::set_picture_live(play::current_settings().extras.picture);   // the colour rows preview live
     }
     store_to_vector();
@@ -513,6 +415,13 @@ int hook_commit(::Ctx* c, uint64_t, void*) {
 
 int hook_store(::Ctx* c, uint64_t, void*) {
     const Row* r = c->x[0] == g.child ? shown_row(c->x[1] & 0xff) : nullptr;
+    if (r && g.tab == kEventsTab) {                  // an event was picked: go there now, and keep the row where it was (nothing to save)
+        const int slot = static_cast<int>(c->x[1] & 0xff) - kFirstId;
+        go_to_event(slot, g.cur[kTimeTab], g.orig[kTimeTab]);
+        for (int i = 0; i < kSlots; ++i) g.cur[g.tab][i] = g.orig[g.tab][i] = i == slot ? 1 : 0;   // exactly one event is chosen
+        each_slot_element([slot](int s, uint64_t e) { wr<int>(e + 4, s == slot ? 1 : 0); wr<int>(e + 8, s == slot ? 1 : 0); });
+        return 1;
+    }
     if (r && r->text == &mouse_mode_text) {          // the Mouse Mode Key row moved: wait for the new key
         if (g_host && !g_mm_capture) {
             g_host->begin_capture();
@@ -520,6 +429,10 @@ int hook_store(::Ctx* c, uint64_t, void*) {
             g_mm_redraw = true;
             NXLOG_I(kTag, "options: Mouse Mode Key: waiting for a key");
         }
+        return 0;
+    }
+    if (r && is_pad_row(*r)) {                       // a pad slider moved: a step through its list (the rows draw their own text)
+        pad_row_moved(r->text == &pad_button_text ? 0 : 1, static_cast<int>(c->x[2]));
         return 0;
     }
     if (!r || !r->live) return 0;
@@ -556,8 +469,6 @@ void hook_list_cap(::Ctx* c, uint64_t, void*) { c->x[1] = kTabCount; }
 
 void hook_bar_list(::Ctx* c, uint64_t, void*) {
     g.bar_extended = static_cast<uint32_t>(c->x[24]) != 9;
-    g.parent = c->x[19];
-    g.bar = c->x[21];
     wr<int>(c->x[0] + 0x78, g.bar_extended ? kTabCount : kGameTabs);   // the list's columns: L and R only move within a row of the grid
     if (!g.bar_extended) return;
     const uint64_t list = rd<uint64_t>(c->x[0] + 8);
@@ -575,7 +486,7 @@ void hook_bar_list(::Ctx* c, uint64_t, void*) {
 void hook_bar_state(::Ctx* c, uint64_t, void*) {
     if (!g.bar_extended) return;
     wr<uint8_t>(c->x[21] + 0xa4, kTabCount);
-    c->x[1] = rd<uint32_t>(c->x[9] + (kTabCount - 1) * 4);   // the game masks this index to its three tabs
+    c->x[1] = rd<uint32_t>(c->x[9] + (kTabCount - 1) * 4);   // the game masks this index to its three tabs; its 16 entries are 17 - the tab count
 }
 
 void hook_bar_icons(::Ctx* c, uint64_t, void*) {
@@ -591,11 +502,14 @@ void hook_bar_icons(::Ctx* c, uint64_t, void*) {
     }
 }
 
+// The title function is shared by every screen with a tab bar, and the Pokédex reuses the bar's address after Options closed (#494):
+// only the Options bar's own calls are ours. Each of them has just stored the tab at x19 + 0xac.
 int hook_bar_title(::Ctx* c, uint64_t, void*) {
-    if (!g.bar_extended || c->x[0] != g.bar) return 0;
-    const int tab = rd<int>(g.parent + 0xac);
+    const uint64_t ret = c->x[30] - g.base;
+    if (!g.bar_extended || (ret != kBarTitleBuild && ret != kBarTitleChange && ret != kBarTitleChangeAlt)) return 0;
+    const int tab = rd<int>(c->x[19] + 0xac);
     if (tab < kGameTabs || tab >= kTabCount) return 0;
-    set_text(c, g.bar, kTitleSlot, kTabs[tab].title);
+    set_text(c, c->x[0], kTitleSlot, kTabs[tab].title);
     return 1;
 }
 
@@ -608,17 +522,26 @@ int hook_value_names(::Ctx* c, uint64_t, void*) {
 
 uint64_t text_pane(::Ctx* c, uint64_t widget, uint32_t slot);
 
+// The slider's text box is sized for a short number: room for the longest value name.
+void widen_slider_text(::Ctx* c, uint64_t row) {
+    if (const uint64_t pane = text_pane(c, row, kSliderSlot)) {
+        if (rd<int16_t>(pane + kPaneWidth) < kSliderTextWidth) wr<int16_t>(pane + kPaneWidth, kSliderTextWidth);
+    }
+}
+
 void hook_row_drawn(::Ctx* c, uint64_t, void*) {
     const Row* r = shown_row(rd<uint8_t>(c->x[19] + kRowId));
     if (!r) return;
     set_text(c, c->x[19], kLabelSlot, r->label);
     if (r->text == &mouse_mode_text && g_mm_redraw) {   // the capture started or ended: the key text, not the slider's number
         g_mm_redraw = false;
-        if (const uint64_t pane = text_pane(c, c->x[19], kSliderSlot)) {
-            if (rd<int16_t>(pane + kPaneWidth) < kSliderTextWidth) wr<int16_t>(pane + kPaneWidth, kSliderTextWidth);
-        }
+        widen_slider_text(c, c->x[19]);
         char buf[128];
         set_text(c, c->x[19], kSliderSlot, mouse_mode_text(0, buf, sizeof buf));
+    } else if (is_pad_row(*r)) {                        // the pad rows' text is the state, whichever row moved last
+        widen_slider_text(c, c->x[19]);
+        char buf[128];
+        set_text(c, c->x[19], kSliderSlot, r->text(0, buf, sizeof buf));
     }
 }
 
@@ -639,10 +562,7 @@ uint64_t text_pane(::Ctx* c, uint64_t widget, uint32_t slot) {
 void hook_slider_text(::Ctx* c, uint64_t, void*) {
     const Row* r = shown_row(rd<uint8_t>(c->x[19] + kRowId));
     if (!r || r->choices) return;
-    // The box is sized for a short number: "Match Display" came out at half size.
-    if (const uint64_t pane = text_pane(c, c->x[19], kSliderSlot)) {
-        if (rd<int16_t>(pane + kPaneWidth) < kSliderTextWidth) wr<int16_t>(pane + kPaneWidth, kSliderTextWidth);
-    }
+    widen_slider_text(c, c->x[19]);   // "Match Display" came out at half size
     char buf[128];
     set_text(c, c->x[19], kSliderSlot, value_text(*r, static_cast<int>(c->x[20]), buf, sizeof buf));
 }
@@ -684,6 +604,7 @@ void frame(bool, double, play::GameFrame*) {
 }
 
 void install(const FeatureInstall& in) {
+    in.hooks.add_entry(in.base + kClockText, &hook_clock_text);   // clock_format works without the Settings tabs too
     if (!settings::get_bool(settings::Key::OptionsMenu)) return;
     const uint64_t base = in.base;
     g.base = base;
@@ -707,7 +628,8 @@ void install(const FeatureInstall& in) {
 }
 
 }  // namespace
+}  // namespace options_detail
 
-const Feature kOptionsFeature = {.name = "options", .install = &install, .frame = &frame};
+const Feature kOptionsFeature = {.name = "options", .install = &options_detail::install, .frame = &options_detail::frame};
 
 }  // namespace nxrt::games::pkp

@@ -9,6 +9,7 @@ mod host;
 #[allow(dead_code)]
 #[path = "../src/shader_archive.rs"]
 mod shader_archive;
+#[allow(dead_code)]
 #[path = "../src/shaders.rs"]
 mod shaders;
 

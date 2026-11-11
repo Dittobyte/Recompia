@@ -87,7 +87,7 @@ pub fn load(dir: &Path) -> Store {
 /// A profiles.json that `load` would not use (it does not read, does not parse, or lists no profile). Reading it falls back to the
 /// default profile; writing over it would lose the names and ids that tie each profile to its save.
 fn is_damaged(path: &Path) -> bool {
-    path.is_file() && !fs::read_to_string(path).ok().and_then(|t| serde_json::from_str::<Store>(&t).ok()).map_or(false, |s| !s.profiles.is_empty())
+    path.is_file() && !fs::read_to_string(path).ok().and_then(|t| serde_json::from_str::<Store>(&t).ok()).is_some_and(|s| !s.profiles.is_empty())
 }
 
 /// Copies a damaged profiles.json aside (`profiles.json.damaged-<date-time>`, never an existing name) before it is replaced.

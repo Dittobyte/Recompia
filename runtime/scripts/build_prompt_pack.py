@@ -10,11 +10,13 @@ Check an existing pack:
 Add the derived entries (the d-pad direction icons) to an existing pack without the Kenney pack; other entries are kept byte for byte:
   python -I scripts/build_prompt_pack.py --derive assets/prompts/prompt_icons.pak
 
-Add the Steam Controller icons (steam/, from the Kenney "Steam Controller" folder) to an existing pak; other entries are kept byte for byte:
-  python -I scripts/build_prompt_pack.py --add-steam <pack folder or .zip> --out assets/prompts/prompt_icons.pak
+Add (or replace) controller sets of PAD_SETS in an existing pak, by prefix; every other entry is kept byte for byte:
+  python -I scripts/build_prompt_pack.py --add-sets <pack folder or .zip> --sets deck,ns1,ns2 --out assets/prompts/prompt_icons.pak
 
-Add the Steam Deck icons (deck/, the Xbox View and Menu symbols) to an existing pak; other entries are kept byte for byte:
-  python -I scripts/build_prompt_pack.py --add-deck --out assets/prompts/prompt_icons.pak
+Fit steam/ to the Steam Controller (2026) in an existing pak (needs no Kenney pack): View and Menu from xbox/, one icon per rear grip
+(l4, l5, r4, r5) instead of the original controller's two, and icons for the Steam (guide) and quick-access (qam) buttons; other entries are kept byte for byte
+(--build and --add-sets do this for steam/ themselves):
+  python -I scripts/build_prompt_pack.py --add-sc2 --out assets/prompts/prompt_icons.pak
 
 Pack format, little endian:
   header (24 bytes): char magic[4]="MPIP", u32 version=1, u32 count, u32 icon_w=36, u32 icon_h=36, u32 reserved=0
@@ -35,9 +37,10 @@ import struct
 import sys
 import tempfile
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
 
 ICON = 36
 BOX = 33                    # icon content is fitted into a BOX x BOX square
@@ -54,65 +57,88 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_FONT = SCRIPT_DIR.parent / "assets" / "fonts" / "DejaVuSans.ttf"
 RESAMPLE = getattr(Image, "Resampling", Image).LANCZOS
 
-XBOX_DIR = "Xbox Series"
-PS_DIR = "PlayStation Series"
 KBM_DIR = "Keyboard & Mouse"
-STEAM_DIR = "Steam Controller"
-
-XBOX_MAP = {
-    "xbox/a": "xbox_button_color_a",
-    "xbox/b": "xbox_button_color_b",
-    "xbox/x": "xbox_button_color_x",
-    "xbox/y": "xbox_button_color_y",
-    "xbox/lb": "xbox_lb",
-    "xbox/rb": "xbox_rb",
-    "xbox/lt": "xbox_lt",
-    "xbox/rt": "xbox_rt",
-    "xbox/menu": "xbox_button_menu",
-    "xbox/view": "xbox_button_view",
-    "xbox/dpad": "xbox_dpad",
-}
-
-PS_MAP = {
-    "ps/cross": "playstation_button_color_cross",
-    "ps/circle": "playstation_button_color_circle",
-    "ps/square": "playstation_button_color_square",
-    "ps/triangle": "playstation_button_color_triangle",
-    "ps/l1": "playstation_trigger_l1",
-    "ps/r1": "playstation_trigger_r1",
-    "ps/l2": "playstation_trigger_l2",
-    "ps/r2": "playstation_trigger_r2",
-    "ps/options": "playstation5_button_options",
-    "ps/create": "playstation5_button_create",
-    "ps/dpad": "playstation_dpad",
-}
-
-# The Steam Controller set, laid out like the Xbox one (A/B/X/Y by printed letter, bumpers, triggers; the controller's left small button is
-# View and the right one Menu). Kenney's art is coloured like the Steam Deck's.
-STEAM_MAP = {
-    "steam/a": "steam_button_color_a",
-    "steam/b": "steam_button_color_b",
-    "steam/x": "steam_button_color_x",
-    "steam/y": "steam_button_color_y",
-    "steam/lb": "steam_lb",
-    "steam/rb": "steam_rb",
-    "steam/lt": "steam_lt",
-    "steam/rt": "steam_rt",
-    "steam/menu": "steam_button_start_icon",
-    "steam/view": "steam_button_back_icon",
-    "steam/dpad": "steam_dpad",
-    "steam/lg": "steam_lg",                  # left grip (the two rear buttons on a side share it)
-    "steam/rg": "steam_rg",
-    "steam/lp": "steam_button_lp",           # left and right trackpad click
-    "steam/rp": "steam_button_rp",
-}
-
-# One d-pad direction each, for prompts that name a direction (Pokopia's left/right/up/down glyphs): <style>/dpad_<dir>, drawn from the
-# whole cross <style>/dpad by dpad_direction(). Value: the dead centre the arms leave out, in pixels from the icon centre (the Xbox cross
-# is solid there; the PlayStation arms are four pieces split along the diagonals).
 DPAD_DIRS = ("up", "down", "left", "right")
-DPAD_CORE = {"xbox/dpad": 6.5, "ps/dpad": 0.0, "steam/dpad": 6.5}
-DPAD_DIM = 0.4              # the arms not pressed: the cross's luminance x this (a grey cross), alpha kept
+DPAD_DIM = 0.4              # derived d-pad directions: the arms not pressed get the cross's luminance x this (a grey cross), alpha kept
+
+
+@dataclass(frozen=True)
+class PadSet:
+    """One controller icon set: pak entries <prefix>/<short> from the Kenney folder's Double/<stem>.png. Every set has a whole d-pad
+    `dpad`, and one entry per direction, <prefix>/dpad_<dir>, for prompts that name a direction: drawn from the whole cross by
+    dpad_direction() with `core` = the dead centre the arms leave out, in pixels from the icon centre (the Xbox cross is solid there;
+    the PlayStation and Switch arms are separate pieces split along the diagonals), or, for a set with no cross, the Kenney art in
+    `dirs` (stems by direction). Kenney's own d-pad direction art marks the arm in red, so the crosses use the monotone derived ones.
+    The runtime's table of the same sets (prompt_resolve.cpp, kPadSets) names the entries by these shorts."""
+    prefix: str
+    folder: str
+    icons: dict[str, str]
+    dirs: dict[str, str] | None = None
+    core: float = 6.5
+
+
+def _nintendo(stem: str, extra: dict[str, str] | None = None) -> dict[str, str]:
+    """The Switch, Switch 2 and Wii U sets: the buttons by printed letter (the runtime puts B at the bottom, A at the right)."""
+    icons = {k: f"{stem}_button_{k}" for k in ("a", "b", "x", "y", "l", "r", "zl", "zr", "plus", "minus")}
+    icons["dpad"] = f"{stem}_dpad"
+    icons.update(extra or {})
+    return icons
+
+
+def _dirs(stem: str) -> dict[str, str]:
+    return {d: f"{stem}_{d}" for d in DPAD_DIRS}
+
+
+PAD_SETS: tuple[PadSet, ...] = (
+    PadSet("xbox", "Xbox Series", {
+        "a": "xbox_button_a", "b": "xbox_button_b", "x": "xbox_button_x", "y": "xbox_button_y",
+        "lb": "xbox_lb", "rb": "xbox_rb", "lt": "xbox_lt", "rt": "xbox_rt",
+        "menu": "xbox_button_menu", "view": "xbox_button_view", "dpad": "xbox_dpad",
+    }, core=6.5),
+    PadSet("ps", "PlayStation Series", {
+        "cross": "playstation_button_cross", "circle": "playstation_button_circle",
+        "square": "playstation_button_square", "triangle": "playstation_button_triangle",
+        "l1": "playstation_trigger_l1", "r1": "playstation_trigger_r1", "l2": "playstation_trigger_l2", "r2": "playstation_trigger_r2",
+        "options": "playstation5_button_options", "create": "playstation5_button_create", "dpad": "playstation_dpad",
+    }, core=0.0),
+    # Kenney's art is the original Steam Controller (< and > buttons, two rear grips, drawn here as lg/rg); sc2_fit() turns it into the Steam
+    # Controller (2026) set: View and Menu like the Xbox set, grips l4 l5 r4 r5, plus guide and qam. lp/rp are the trackpad clicks.
+    PadSet("steam", "Steam Controller", {
+        "a": "steam_button_a", "b": "steam_button_b", "x": "steam_button_x", "y": "steam_button_y",
+        "lb": "steam_lb", "rb": "steam_rb", "lt": "steam_lt", "rt": "steam_rt",
+        "menu": "steam_button_start_icon", "view": "steam_button_back_icon", "dpad": "steam_dpad",
+        "lg": "steam_lg", "rg": "steam_rg", "lp": "steam_button_lp", "rp": "steam_button_rp",
+    }, core=6.5),
+    PadSet("deck", "Steam Deck", {
+        "a": "steamdeck_button_a", "b": "steamdeck_button_b", "x": "steamdeck_button_x", "y": "steamdeck_button_y",
+        "l1": "steamdeck_button_l1", "r1": "steamdeck_button_r1", "l2": "steamdeck_button_l2", "r2": "steamdeck_button_r2",
+        "menu": "steamdeck_button_options", "view": "steamdeck_button_view", "dpad": "steamdeck_dpad",
+        "l4": "steamdeck_button_l4", "l5": "steamdeck_button_l5", "r4": "steamdeck_button_r4", "r5": "steamdeck_button_r5",
+        "lp": "steamdeck_trackpad_l", "rp": "steamdeck_trackpad_r",
+    }, core=6.5),
+    PadSet("ns1", "Nintendo Switch", _nintendo("switch"), core=0.0),
+    PadSet("ns2", "Nintendo Switch 2", _nintendo("switch", {"gl": "switch_button_gl", "gr": "switch_button_gr"}), core=0.0),
+    PadSet("wiiu", "Nintendo WiiU", _nintendo("wiiu"), core=6.5),
+    PadSet("frame", "Steam Frame", {
+        "a": "frame_button_a", "b": "frame_button_b", "x": "frame_button_x", "y": "frame_button_y",
+        "l1": "frame_button_l1", "r1": "frame_button_r1", "l2": "frame_button_l2", "r2": "frame_button_r2",
+        "menu": "frame_button_options", "view": "frame_button_view", "dpad": "frame_dpad",
+        "lg": "frame_lg", "rg": "frame_rg",
+    }, core=6.5),
+    # The Index controllers have A and B, the triggers and a stick per hand and no d-pad: the left stick stands for it (SteamVR's usual
+    # d-pad binding), the trackpad press for the touchpad clicks.
+    PadSet("index", "Valve Index", {
+        "a": "index_button_a", "b": "index_button_b", "lt": "index_lt", "rt": "index_rt",
+        "dpad": "index_stick_l", "track": "index_track_press",
+    }, dirs=_dirs("index_stick_l")),
+    # Gestures for a touch screen: tap confirms, a two-finger tap goes back, swipes for the shoulders and the d-pad, pinch for the triggers.
+    PadSet("touch", "Touch", {
+        "tap": "touch_tap", "two": "touch_two", "hold": "touch_tap_hold", "double": "touch_tap_double",
+        "swipe_left": "touch_swipe_left", "swipe_right": "touch_swipe_right", "zoom_out": "touch_zoom_out", "zoom_in": "touch_zoom_in",
+        "two_double": "touch_two_double", "two_hold": "touch_two_hold", "dpad": "touch_swipe_move",
+    }, dirs={"up": "touch_swipe_up", "down": "touch_swipe_down", "left": "touch_swipe_left", "right": "touch_swipe_right"}),
+)
+PAD_PREFIXES = tuple(p.prefix + "/" for p in PAD_SETS)
 
 # Mouse plus the last-resort generic key.
 OTHER_KBM_MAP = {
@@ -307,7 +333,7 @@ def label_for(lname: str, sdl: str) -> str:
 
 # ---------------------------------------------------------------- source loading
 
-def find_pack_root(p: Path, folder: str = XBOX_DIR) -> Path:
+def find_pack_root(p: Path, folder: str = PAD_SETS[0].folder) -> Path:
     if (p / folder).is_dir():
         return p
     for dirpath, dirnames, _ in os.walk(p):
@@ -317,7 +343,7 @@ def find_pack_root(p: Path, folder: str = XBOX_DIR) -> Path:
 
 
 def open_kenney(arg: str, tmp_dirs: list[Path]) -> Path:
-    return open_kenney_for(arg, tmp_dirs, XBOX_DIR)
+    return open_kenney_for(arg, tmp_dirs, PAD_SETS[0].folder)
 
 
 def open_kenney_for(arg: str, tmp_dirs: list[Path], folder: str) -> Path:
@@ -400,15 +426,29 @@ def dpad_direction(cross: Image.Image, d: str, core: float) -> Image.Image:
 
 
 def add_dpad_directions(icons: dict[str, Image.Image]) -> list[str]:
-    """Adds <style>/dpad_<dir> for every whole cross in DPAD_CORE (no _pressed twins). Returns the added names."""
+    """Adds <prefix>/dpad_<dir> drawn from the whole cross for every set without Kenney direction art (no _pressed twins). Returns
+    the added names."""
     added = []
-    for cross, core in DPAD_CORE.items():
-        if cross not in icons:   # a pack built before the Steam set has no steam/dpad
+    for ps in PAD_SETS:
+        cross = ps.prefix + "/dpad"
+        if ps.dirs is not None or cross not in icons:   # a pack built before a set was added has no <prefix>/dpad
             continue
         for d in DPAD_DIRS:
-            icons[f"{cross}_{d}"] = dpad_direction(icons[cross], d, core)
+            icons[f"{cross}_{d}"] = dpad_direction(icons[cross], d, ps.core)
             added.append(f"{cross}_{d}")
     return added
+
+
+def load_pad_set(root: Path, ps: PadSet) -> dict[str, Image.Image]:
+    """The set's base entries (no _pressed twins), d-pad directions included."""
+    icons = {f"{ps.prefix}/{short}": fit_icon(load_src(root, ps.folder, stem)) for short, stem in ps.icons.items()}
+    if ps.dirs is not None:
+        for d, stem in ps.dirs.items():
+            icons[f"{ps.prefix}/dpad_{d}"] = fit_icon(load_src(root, ps.folder, stem))
+    else:
+        for d in DPAD_DIRS:
+            icons[f"{ps.prefix}/dpad_{d}"] = dpad_direction(icons[ps.prefix + "/dpad"], d, ps.core)
+    return icons
 
 
 def read_pak(path: Path) -> dict[str, Image.Image]:
@@ -528,18 +568,27 @@ def verify(path: Path) -> int:
             problems.append(f"file size {len(data)} != header + directory + {count} blocks")
 
     s = set(names)
-    for p in ("xbox/", "ps/", "steam/", "deck/", "kbm/"):
+    prefixes = PAD_PREFIXES + ("kbm/",)
+    for p in prefixes:
         print(f"{p:8s} {sum(1 for n in names if n.startswith(p)):4d} entries")
-    other = [n for n in names if not n.startswith(("xbox/", "ps/", "steam/", "deck/", "kbm/"))]
+    other = [n for n in names if not n.startswith(prefixes)]
     if other:
         problems.append(f"unexpected prefixes: {other[:5]}")
     bases = [n for n in names if not n.endswith("_pressed")]
     print(f"base {len(bases)}, _pressed {len(names) - len(bases)}")
-    for p in ("xbox/", "ps/", "steam/", "deck/", "kbm/"):
+    for ps in PAD_SETS:   # every entry the runtime can ask for
+        shorts = list(ps.icons)
+        if ps.prefix == "steam":   # sc2_fit() renames the grips and adds the Steam and quick-access buttons
+            shorts = [s for s in shorts if f"steam/{s}" not in SC2_GRIP_OLD] + [n.split("/")[1] for n in (*SC2_GRIPS, *SC2_EXTRA_LABELS)]
+        want = [f"{ps.prefix}/{short}" for short in shorts] + [f"{ps.prefix}/dpad_{d}" for d in DPAD_DIRS]
+        absent = [n for n in want if n not in s]
+        if absent:
+            problems.append(f"{ps.prefix}/ entries missing: {absent}")
+    for p in prefixes:
         missing = [n for n in bases if n.startswith(p) and n + "_pressed" not in s]
         orphan = [n for n in names if n.endswith("_pressed") and n[: -len("_pressed")] not in s]
         print(f"{p:8s} pressed twins missing: {len(missing)}, orphan pressed: {len(orphan)}")
-        if p in ("xbox/", "ps/", "steam/", "deck/") and missing:
+        if p in PAD_PREFIXES and missing:
             problems.append(f"{p} base names without _pressed twin: {missing}")
         if orphan:
             problems.append(f"orphan _pressed entries: {orphan[:5]}")
@@ -555,7 +604,7 @@ def write_preview(path: Path, icons: dict[str, Image.Image], font_path: Path) ->
     font = ImageFont.truetype(str(font_path), 10)
     head_font = ImageFont.truetype(str(font_path), 18)
     groups = []
-    for prefix in ("xbox/", "ps/", "steam/", "deck/", "kbm/"):
+    for prefix in PAD_PREFIXES + ("kbm/",):
         base = sorted((n for n in icons if n.startswith(prefix) and not n.endswith("_pressed")),
                       key=lambda n: n.encode("ascii"))
         groups.append((f"{prefix} base", base))
@@ -585,43 +634,123 @@ def write_preview(path: Path, icons: dict[str, Image.Image], font_path: Path) ->
 
 # ---------------------------------------------------------------- build
 
-def add_steam(args: argparse.Namespace) -> int:
-    """Adds (or replaces) the steam/ entries of an existing pak from the Kenney pack; every other entry is kept as it is."""
+# The Steam Controller (2026) differs from Kenney's original-controller art in three places: its small buttons are View and Menu like an Xbox
+# pad (not < and >), it has four rear grips (L4, L5, R4, R5) where the original had two, and its trackpads keep the LP and RP icons.
+# Kenney has no art for it, so the grips are the original grip shape with the label redrawn, and View and Menu are the Xbox symbols. The Steam
+# button and the quick-access ("...") button, which [padmap] can bind, get an S and three dots on the trackpad's round shape.
+SC2_VIEW_MENU = {"steam/view": "xbox/view", "steam/menu": "xbox/menu"}
+SC2_GRIPS = {"steam/l4": ("steam/lg", "L4"), "steam/l5": ("steam/lg", "L5"),
+             "steam/r4": ("steam/rg", "R4"), "steam/r5": ("steam/rg", "R5")}
+SC2_GRIP_OLD = ("steam/lg", "steam/rg")
+SC2_EXTRA_LABELS = {"steam/guide": "S", "steam/qam": None}    # the Steam button (an S) and the quick-access button (three dots) on the trackpad's round shape
+GRIP_TEXT_SCALE = 4         # the label is drawn this many times larger and scaled down, for smooth edges
+GRIP_TEXT_PX = 13           # label height in icon pixels (the original LG / RG text is about this tall)
+
+
+def solid_shape(shape: Image.Image) -> Image.Image:
+    """The alpha of `shape` with its label filled in: the label is a transparent knockout (plus a half-transparent rim) inside the white shape."""
+    alpha = shape.getchannel("A")
+    outside = alpha.point(lambda v: 255 if v < 128 else 0)
+    ImageDraw.floodfill(outside, (0, 0), 128)                       # the corner is outside the shape: mark what touches it
+    holes = outside.point(lambda v: 255 if v == 255 else 0)           # transparent and not reachable from outside: the old label
+    holes = holes.filter(ImageFilter.MaxFilter(3))                    # plus its half-transparent rim, or the old letters ghost through
+    return ImageChops.lighter(alpha, holes)
+
+
+def knock_out(shape: Image.Image, mask: Image.Image) -> Image.Image:
+    """`shape` (any label) as a white icon with `mask` (ICON x ICON, 255 = cut) knocked out of it."""
+    icon = Image.new("RGBA", (ICON, ICON), (255, 255, 255, 0))
+    icon.putalpha(ImageChops.multiply(solid_shape(shape), ImageChops.invert(mask)))
+    return icon
+
+
+def text_mask(text: str, font_path: Path) -> Image.Image:
+    big = GRIP_TEXT_SCALE
+    font = ImageFont.truetype(str(font_path), GRIP_TEXT_PX * big)
+    mask = Image.new("L", (ICON * big, ICON * big), 0)
+    ImageDraw.Draw(mask).text((ICON * big // 2, ICON * big // 2), text, font=font, fill=255, anchor="mm", stroke_width=big // 2, stroke_fill=255)
+    return mask.resize((ICON, ICON), RESAMPLE)
+
+
+def dots_mask() -> Image.Image:
+    """Three dots in a row: the quick-access ("...") button."""
+    big = GRIP_TEXT_SCALE
+    mask = Image.new("L", (ICON * big, ICON * big), 0)
+    d = ImageDraw.Draw(mask)
+    r, gap, c = 2.6 * big, 7.5 * big, ICON * big / 2
+    for k in (-1, 0, 1):
+        d.ellipse((c + k * gap - r, c - r, c + k * gap + r, c + r), fill=255)
+    return mask.resize((ICON, ICON), RESAMPLE)
+
+
+def sc2_fit(icons: dict[str, Image.Image], font_path: Path) -> None:
+    """Turns the steam/ entries into the Steam Controller (2026) set, in place; running it again changes nothing."""
+    for name, src in SC2_VIEW_MENU.items():
+        icons[name] = icons[src].copy()
+        icons[name + "_pressed"] = icons[src + "_pressed"].copy() if src + "_pressed" in icons else pressed_variant(icons[name])
+    for name, (old, text) in SC2_GRIPS.items():
+        if old not in icons:
+            if name not in icons:
+                raise SystemExit(f"no grip shape for {name}: the pak has neither {old} nor {name}")
+            continue                                    # already fitted: keep the icon
+        icons[name] = knock_out(icons[old], text_mask(text, font_path))
+    for name, text in SC2_EXTRA_LABELS.items():
+        if name not in icons:
+            icons[name] = knock_out(icons["steam/lp"], text_mask(text, font_path) if text else dots_mask())
+    for old in SC2_GRIP_OLD:
+        icons.pop(old, None)
+        icons.pop(old + "_pressed", None)
+    for name in [*SC2_GRIPS, *SC2_EXTRA_LABELS]:
+        icons[name + "_pressed"] = pressed_variant(icons[name])
+
+
+def add_sc2(args: argparse.Namespace) -> int:
+    """Fits the steam/ entries of an existing pak to the Steam Controller (2026); every other entry is kept as it is."""
+    font_path = Path(args.font)
+    if not font_path.is_file():
+        raise SystemExit(f"font not found: {font_path}")
+    out = Path(args.out)
+    icons = read_pak(out)
+    sc2_fit(icons, font_path)
+    size = write_pak(out, icons)
+    print(f"wrote {out} ({size} bytes), {len(icons)} entries; steam/: {sum(1 for n in icons if n.startswith('steam/'))}")
+    return 0
+
+
+def pick_sets(arg: str | None) -> list[PadSet]:
+    if not arg:
+        return list(PAD_SETS)
+    by_prefix = {ps.prefix: ps for ps in PAD_SETS}
+    unknown = [p for p in arg.split(",") if p.strip() not in by_prefix]
+    if unknown:
+        raise SystemExit(f"unknown set(s) {unknown}; known: {', '.join(by_prefix)}")
+    return [by_prefix[p.strip()] for p in arg.split(",")]
+
+
+def add_sets(args: argparse.Namespace) -> int:
+    """Adds (or replaces) the entries of the chosen PAD_SETS in an existing pak from the Kenney pack; every other entry is kept as it is."""
     tmp_dirs: list[Path] = []
     try:
-        root = open_kenney_for(args.add_steam, tmp_dirs, STEAM_DIR)
+        sets = pick_sets(args.sets)
+        root = open_kenney_for(args.add_sets, tmp_dirs, sets[0].folder)
         out = Path(args.out)
         icons = read_pak(out)
-        for n in [n for n in icons if n.startswith("steam/")]:
-            del icons[n]
-        for name, stem in STEAM_MAP.items():
-            icons[name] = fit_icon(load_src(root, STEAM_DIR, stem))
-        add_dpad_directions(icons)
-        for n in [n for n in icons if n.startswith("steam/")]:
-            icons[n + "_pressed"] = pressed_variant(icons[n])
+        for ps in sets:
+            for n in [n for n in icons if n.startswith(ps.prefix + "/")]:
+                del icons[n]
+            for name, im in load_pad_set(root, ps).items():
+                icons[name] = im
+                icons[name + "_pressed"] = pressed_variant(im)
+        if any(ps.prefix == "steam" for ps in sets):
+            sc2_fit(icons, Path(args.font))
         size = write_pak(out, icons)
-        print(f"wrote {out} ({size} bytes), {len(icons)} entries; steam/: {sum(1 for n in icons if n.startswith('steam/'))}")
+        print(f"wrote {out} ({size} bytes), {len(icons)} entries")
+        for ps in sets:
+            print(f"  {ps.prefix + '/':8s} {sum(1 for n in icons if n.startswith(ps.prefix + '/'))}")
         return 0
     finally:
         for d in tmp_dirs:
             shutil.rmtree(d, ignore_errors=True)
-
-
-# The Steam Deck prompt style uses the steam/ art except for its two small buttons: the Deck has View and Menu like an Xbox pad, where the
-# Steam Controller has the < and > arrows. Needs no Kenney pack: the symbols are the Xbox ones already in the pak.
-DECK_FROM_XBOX = {"deck/view": "xbox/view", "deck/menu": "xbox/menu"}
-
-
-def add_deck(args: argparse.Namespace) -> int:
-    """Adds (or replaces) the deck/ entries of an existing pak, copied from xbox/; every other entry is kept as it is."""
-    out = Path(args.out)
-    icons = read_pak(out)
-    for name, src in DECK_FROM_XBOX.items():
-        icons[name] = icons[src].copy()
-        icons[name + "_pressed"] = icons[src + "_pressed"].copy()
-    size = write_pak(out, icons)
-    print(f"wrote {out} ({size} bytes), {len(icons)} entries; deck/: {sum(1 for n in icons if n.startswith('deck/'))}")
-    return 0
 
 
 def build(args: argparse.Namespace) -> int:
@@ -633,17 +762,10 @@ def build(args: argparse.Namespace) -> int:
             raise SystemExit(f"font not found: {font_path}")
 
         icons: dict[str, Image.Image] = {}
-        for name, stem in XBOX_MAP.items():
-            icons[name] = fit_icon(load_src(root, XBOX_DIR, stem))
-        for name, stem in PS_MAP.items():
-            icons[name] = fit_icon(load_src(root, PS_DIR, stem))
-        for name, stem in STEAM_MAP.items():
-            icons[name] = fit_icon(load_src(root, STEAM_DIR, stem))
+        for ps in PAD_SETS:
+            icons.update(load_pad_set(root, ps))
         for name, stem in OTHER_KBM_MAP.items():
             icons[name] = fit_icon(load_src(root, KBM_DIR, stem))
-        add_dpad_directions(icons)
-        for name, src in DECK_FROM_XBOX.items():
-            icons[name] = icons[src].copy()
 
         cap = load_src(root, KBM_DIR, "keyboard")
         baked: list[tuple[str, str]] = []
@@ -663,13 +785,14 @@ def build(args: argparse.Namespace) -> int:
 
         for name in list(icons):
             icons[name + "_pressed"] = pressed_variant(icons[name])
+        sc2_fit(icons, font_path)
 
         out = Path(args.out)
         size = write_pak(out, icons)
 
         base = [n for n in icons if not n.endswith("_pressed")]
         print(f"wrote {out} ({size} bytes), {len(icons)} entries ({len(base)} base + {len(base)} _pressed)")
-        for p in ("xbox/", "ps/", "steam/", "deck/", "kbm/"):
+        for p in PAD_PREFIXES + ("kbm/",):
             print(f"  {p:8s} {sum(1 for n in base if n.startswith(p))} base")
         print(f"baked text keys (no Kenney image), {len(baked)}:")
         print("  " + ", ".join(f"{sdl} -> {label}" for sdl, label in baked))
@@ -690,18 +813,19 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--preview", help="also write a contact-sheet PNG of all entries here")
     ap.add_argument("--font", default=str(DEFAULT_FONT), help="TTF used for baked key labels and the preview")
     ap.add_argument("--verify", metavar="PAK", help="check an existing pak and exit")
-    ap.add_argument("--add-steam", metavar="KENNEY", help="add the steam/ icons from the Kenney pack (folder or .zip) to the pak given by --out, in place, and exit")
-    ap.add_argument("--add-deck", action="store_true", help="add the deck/ icons (Xbox View and Menu) to the pak given by --out, in place, and exit")
+    ap.add_argument("--add-sets", metavar="KENNEY", help="add (or replace) controller sets from the Kenney pack (folder or .zip) in the pak given by --out, in place, and exit")
+    ap.add_argument("--sets", help="with --add-sets: comma-separated set prefixes (" + ",".join(ps.prefix for ps in PAD_SETS) + "); default all")
+    ap.add_argument("--add-sc2", action="store_true", help="fit steam/ in the pak given by --out to the Steam Controller (2026), in place, and exit")
     ap.add_argument("--derive", metavar="PAK", help="add the derived d-pad direction entries to an existing pak in place and exit")
     args = ap.parse_args(argv)
     if args.verify:
         return verify(Path(args.verify))
     if args.derive:
         return derive(Path(args.derive))
-    if args.add_steam:
-        return add_steam(args)
-    if args.add_deck:
-        return add_deck(args)
+    if args.add_sc2:
+        return add_sc2(args)
+    if args.add_sets:
+        return add_sets(args)
     if not args.kenney:
         ap.error("--kenney is required")
     return build(args)

@@ -16,7 +16,7 @@ struct MemGuardOptions {
     void* user = nullptr;
 };
 
-uint64_t memguard_footprint();       // bytes of private commit of this process (0 if the query fails)
+uint64_t memguard_footprint();       // bytes of private commit of this process; the pagefile usage if that reads 0 (Proton); 0 if the query fails
 // Private commit includes the video memory a process has allocated (WDDM keeps a commit charge for it). The guard is about host memory, so it
 // subtracts what this function returns (the GPU's dedicated usage of this process; the Vulkan device sets it). Null: no subtraction.
 // Without it a game at 4K, with 5 GB of textures and render targets in video memory, ran into the 8 GB limit with only 3 GB of host memory.

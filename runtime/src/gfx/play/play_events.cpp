@@ -31,13 +31,12 @@ bool game_menu_over_value() {
     return gp && gp->menu_active && gp->menu_over_value && gp->menu_active() && gp->menu_over_value();
 }
 
-// The Joy-Con 2 mouse is on its surface while the game is in play (menus and the map keep their bindings and the menu pointer).
-// [input] jc2_clicks: "both" (default) also hands clicks to the bindings (a real Joy-Con 2 sends its buttons as npad R/ZR),
-// "device" sends them to the Joy-Con mouse only.
+// The Joy-Con 2 mouse is asked for (mode on, or a request) and on its surface while the game is in play (menus and the map keep their
+// bindings and the menu pointer). Its left and right buttons are then the Joy-Con's own buttons (hid_jc2_mouse.cpp jc2_pad_buttons), so
+// the bindings must not also send theirs. In auto mode without a request (the mouse merely not captured) clicks stay the bindings'.
 bool jc2_owns_clicks() {
     G& st = g();
-    static const bool device_only = config_get_str("input", "jc2_clicks", "both") == "device";
-    return device_only && st.engine && ctx_in_play(st.engine->context()) && hid::jc2_mouse_active();
+    return st.engine && ctx_in_play(st.engine->context()) && hid::jc2_mouse_wants_pointer() && hid::jc2_mouse_active();
 }
 
 void handle_event(const input::Event& e, uint64_t now) {
@@ -170,6 +169,9 @@ void handle_event(const input::Event& e, uint64_t now) {
     }
 }
 
+// Shortest gap between two rumble writes to the pads (30 per second).
+constexpr uint64_t kRumbleMinGapNs = 1000000000ull / 30;
+
 // Reads every open pad, merges them (buttons OR, the stick with the larger deflection wins) and publishes the result to the source.
 void poll_pads(uint64_t now) {
     G& st = g();
@@ -184,7 +186,12 @@ void poll_pads(uint64_t now) {
     }
     const Ctx cx = st.engine ? st.engine->context() : Ctx::Menu;
     const bool look_ctx = cx == Ctx::Play;      // the right stick is a look only in play
-    const bool rumble_changed = lo != st.rumble_lo || hi != st.rumble_hi;
+    // Rumble goes to the pads at most 30 times a second, whatever the frame rate. The game sets its vibration every frame, and while it
+    // rumbles (vacuuming, breaking, rolling) the value changes nearly every frame: at 100+ fps one write per change floods a driver that
+    // forwards each write over Bluetooth (BetterJoy's virtual pad stops reading the controller and drops stick and button input, #374).
+    // A change waits for the next slot; the newest value is the one sent.
+    const bool rumble_slot = now - st.last_rumble_ns >= kRumbleMinGapNs;
+    const bool rumble_changed = rumble_slot && (lo != st.rumble_lo || hi != st.rumble_hi);
     const bool rumble_refresh = (lo || hi) && now - st.last_rumble_ns > 100 * kMs;
     const uint32_t quit_combo = st.settings.quit.pad;
     bool quit_held = false, overlay_held = false;

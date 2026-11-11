@@ -1,0 +1,20 @@
+/* Steam game mode (Steam Deck, Ally, Legion Go in Gamescope): finger-sized controls and larger text.
+   The Rust side sets data-gamemode on <html> after the page loads (window.rs). Loaded last so it wins over compact density. */
+html[data-gamemode] {
+  --control-h: 44px;
+  --control-sm: 44px;
+  --text-xs: 14px;
+  --text-sm: 15px;
+}
+html[data-gamemode] body { font-size: 15px; }
+html[data-gamemode] .win-btn { height: 32px; }   /* compact density makes it 24px */
+html[data-gamemode] .nav-item { height: 44px; flex-shrink: 0; }
+html[data-gamemode] .btn, html[data-gamemode] .btn.sm { height: 44px; }
+html[data-gamemode] .btn.big { height: 48px; }
+html[data-gamemode] body .btn.icon-only { width: 44px; }
+html[data-gamemode] button.chip { height: 44px; }
+html[data-gamemode] .row-item { min-height: 48px; }
+html[data-gamemode] .input, html[data-gamemode] .select select { height: 44px; }
+html[data-gamemode] .seg span { height: 44px; }
+/* the switch keeps its look; only the area that takes the press grows to 44px */
+html[data-gamemode] .toggle input { inset: -10px -4px; width: auto; height: auto; }

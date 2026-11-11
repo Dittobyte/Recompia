@@ -1,0 +1,5 @@
+#!/bin/sh
+# Blocks game content and reverse-engineering notes before a push (tools/guard/check_repo_content.mjs).
+# Turn it on once per clone: git config core.hooksPath tools/hooks
+command -v node >/dev/null 2>&1 || { echo "repo content check skipped: node was not found"; exit 0; }
+exec node "$(git rev-parse --show-toplevel)/tools/guard/check_repo_content.mjs" --pre-push

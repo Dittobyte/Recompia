@@ -100,7 +100,7 @@ fn parse(f: &mut File) -> Result<Nup, String> {
     if header_size < 0x80
         || toc_offset != header_size
         || blob_offset % 16 != 0
-        || toc_offset.checked_add(toc_size).map_or(true, |e| e > blob_offset)
+        || toc_offset.checked_add(toc_size).is_none_or(|e| e > blob_offset)
         || file_size != real_size
         || toc_size > (1 << 30)
     {
@@ -192,7 +192,7 @@ fn parse(f: &mut File) -> Result<Nup, String> {
         if f.codec > 1 {
             return Err(format!("{} uses a compression ({}) this launcher does not know.", f.name, f.codec));
         }
-        if f.extent_size > 0 && (f.extent_offset < blob_offset || f.extent_offset.checked_add(f.extent_size).map_or(true, |e| e > real_size) || f.extent_offset % 16 != 0) {
+        if f.extent_size > 0 && (f.extent_offset < blob_offset || f.extent_offset.checked_add(f.extent_size).is_none_or(|e| e > real_size) || !f.extent_offset.is_multiple_of(16)) {
             return Err(format!("{} points outside the .nup file.", f.name));
         }
         if f.codec == 0 && f.extent_size != f.size {
@@ -422,7 +422,7 @@ fn extract_with(
             // record is not a base game: an update whose own RomFS holds the whole game needs nothing under it, so ask
             // for the base only when the update's own RomFS is short of what the supported version has.
             None => {
-                let whole = crate::dump::supported_romfs().map_or(false, |need| {
+                let whole = crate::dump::supported_romfs().is_some_and(|need| {
                     let (n, b) = files.values().fold((0u64, 0u64), |(n, b), &fi| (n + 1, b + nup.files[fi].size));
                     n >= need.files && b >= need.bytes
                 });

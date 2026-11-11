@@ -7,6 +7,7 @@ use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::config::Config;
 use crate::states::States;
 
 /// Files the launcher may open for the user, by name, inside the game folder.
@@ -62,7 +63,8 @@ fn report_files(dir: &Path, started: SystemTime) -> Vec<ReportFile> {
         .collect()
 }
 
-pub fn start(app: &AppHandle, game_dir: &Path, minimize: bool) -> Result<(), String> {
+pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config) -> Result<(), String> {
+    let (minimize, discord) = (cfg.minimize_on_play, cfg.discord_presence);
     {
         let st = app.play();
         if st.0.lock().unwrap().state == GameState::Running {
@@ -115,7 +117,11 @@ pub fn start(app: &AppHandle, game_dir: &Path, minimize: bool) -> Result<(), Str
         }
         // the player's save backups: a timer while the game runs (when switched on), one more copy once it has ended
         let backups = crate::savebackup::Watch::start(&dir);
+        let presence = crate::presence::Watch::start(discord);
+        let online = crate::online::Watch::start(&app2, &dir);
         let result = child.wait();
+        online.finish();
+        presence.finish();
         backups.finish();
         let (code, wait_err) = match result {
             Ok(s) => (s.code(), None),
@@ -130,7 +136,7 @@ pub fn start(app: &AppHandle, game_dir: &Path, minimize: bool) -> Result<(), Str
         };
         let files = report_files(&dir, started);
         let crash_file = files.iter().any(|f| f.fresh && f.name != "pkp.log");
-        let crashed = crash_file || code.map_or(true, |c| c != 0);
+        let crashed = crash_file || (code != Some(0));
         let message = match (&wait_err, code) {
             (Some(e), _) => format!("Lost track of pkp.exe: {}", e),
             (None, Some(0)) => "pkp.exe exited normally.".to_string(),

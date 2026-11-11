@@ -72,6 +72,12 @@ pub fn start_setup(app: AppHandle, state: SetupArg, gentle: Option<bool>) -> Res
     if !package_b && !dir.join("pkp.exe").is_file() {
         return Err(format!("pkp.exe was not found in {}. Put the launcher next to pkp.exe or set the game folder in Settings.", dump::fwd(&dir)));
     }
+    // a pkp_rt.dll from another release than the tools: the build would finish and the game still refuse to start
+    if package_b {
+        if let gamebuild::Built::Mixed { dll, sdk } = gamebuild::built_state(&dir, &tools_dir) {
+            return Err(gamebuild::mixed_message(dll, sdk));
+        }
+    }
     // the build, the shader tools and pkp.ini all write in the game folder: a blocked one fails here, in words (writecheck.rs)
     writecheck::check(&dir).map_err(|e| e.message())?;
     {
@@ -136,7 +142,7 @@ pub fn start_setup(app: AppHandle, state: SetupArg, gentle: Option<bool>) -> Res
             // a finished cache of the same romfs has nothing left to translate (re-extracting would only find that out)
             let same = shaders::read_marker(&job.game_dir).romfs == job.romfs_key();
             let done = same && shaders::is_complete(&job.game_dir);
-            if !done && !shaders::run(&job, &tools, &st.cancel, |p| emit(p))? {
+            if !done && !shaders::run(&job, &tools, &st.cancel, &mut emit)? {
                 return Ok(false);
             }
             // the shaders the game builds while it runs: one hidden run collects those of the opening; later ones are

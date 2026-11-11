@@ -34,7 +34,7 @@
   <a href="SECURITY.md">Security</a> ·
   <a href="LEGAL.md">Legal</a> ·
   <a href="https://github.com/featureJosh/pokopia-recomp/issues">Issues</a> ·
-  <a href="https://discord.gg/gN5g4MtWHr">Discord</a>
+  <a href="https://discord.recompia.com">Discord</a>
 </p>
 
 <!-- i18n-bar:start -->
@@ -97,7 +97,7 @@
 - **On-screen button icons match what you're holding:** keyboard, Xbox, PlayStation, Steam Controller or Switch.
 - **Typing your name** works with a controller, mouse or keyboard.
 - **Quit without Alt+F4:** hold Select and Start (View and Menu on an Xbox pad), or use **Quit game** in F1.
-- **Open the F1 menu from a controller:** off by default; set `[overlay] pad` in `controls.ini` (for example `left_stick+right_stick`). It cannot be the quit combination.
+- **Open the F1 menu from a controller:** click both sticks (L3 + R3); change or turn it off with `[overlay] pad` in `controls.ini` (`none` = off). It cannot be the quit combination.
 
 ### Steam Deck and handhelds
 - Steam Deck, Legion Go S and other handhelds are recognised: controller icons stay on screen and the picture size suits the screen.
@@ -175,7 +175,7 @@ Copy the `save` folder somewhere first if you want a backup. A save that a newer
 
 Link Play puts several players on one island. Cross-play works with pokopia-native players on game version **2.0.1**. Players on game 1.0.5 cannot join.
 
-**What changed.** Link Play now speaks pokopia-native's co-op protocol. It does not work with earlier Link Play builds of this port, so everyone updates to this release. (The launcher keeps the old protocol under **Advanced**, for a session where everyone still has an old build.)
+**What changed.** Link Play now speaks pokopia-native's co-op protocol. It does not work with earlier Link Play builds of this port, so everyone updates to this release.
 
 **Each player needs their own save.** A copy of someone else's save cannot join its original.
 
@@ -183,23 +183,17 @@ Link Play puts several players on one island. Cross-play works with pokopia-nati
 
 | Choice | Use it for |
 |---|---|
-| Alone | No Link Play. |
-| Automatic (LAN) | The default. Same Wi-Fi or network: the host is found by itself. |
-| Visit by address | Join one host by its address, for example `192.0.2.10`. The host's Link Play page shows it. |
-| Internet | Play through a relay with a room code. |
+| Off | No Link Play. |
+| Same network | The default. Same Wi-Fi or network: the host is found by itself. If not, type the host's address, for example `192.0.2.10` (under **This PC** on the host's page), in **Join directly**. |
+| Internet | **Host** or **Visit** over the internet with a room code, through a relay or a forwarded port. |
 
 Changes apply the next time the game starts.
 
 **In the game**, open the PC in your first house, then **Link Play** (it unlocks after Environment Level 2 in the Withered Wasteland) and pick **Local connection**. (**Online connection** is Nintendo's own service and does not work here.) The host picks **Invite Others to Visit**, the others **Visit a Friend**.
 
-**Same network.** Everyone picks **Automatic (LAN)**. Steam Deck and other Proton or Linux devices find hosts and are found too, on whatever network they are on. If the host does not show up, the visitor picks **Visit by address** and types the host's LAN address. Cafe, hotel and guest Wi-Fi often keeps devices apart: there, play over the internet instead.
+**Same network.** Everyone picks **Same network**. Steam Deck and other Proton or Linux devices find hosts and are found too, on whatever network they are on. Cafe, hotel and guest Wi-Fi often keeps devices apart: there, play over the internet instead.
 
-**Over the internet.** Everyone picks **Internet** and goes through a relay:
-- The host picks **I host**. The page shows a room code. Give the visitors the relay address and the code. **Copy** and **New code** are on the page.
-- A visitor picks **I visit** and types the relay address and the code.
-- To run a relay yourself, press **Run a relay here** on the host's Link Play page (it works while the launcher stays open), or run `PokopiaLauncher --host` on a server. Any pokopia-native co-op relay works too.
-- Without a relay, leave the relay address empty on the host and forward TCP and UDP **47600** on the router. Visitors use **Visit by address** with the host's public address.
-- The relay checks the room code but does not encrypt the game's traffic.
+**Over the internet.** The host's router has to forward one port; there is no public relay. The easy way: the host picks **Internet** -> **Host**, turns on **Run a relay on this PC**, forwards TCP and UDP **47610** to their PC, presses **New code** and sends the address under **Share with visitors** and the code. The visitor picks **Internet** -> **Visit**, types both and turns on **Through a relay**. **[Step by step, with the other way and what to check when it does not connect](docs/multiplayer/README.md#step-by-step-over-the-internet).** Any pokopia-native co-op relay works too, and `PokopiaLauncher --host` runs one on a server. The relay checks the room code but does not encrypt the game's traffic.
 
 **Ports and firewall.** The first time you host, Windows Firewall asks about `pkp.exe`: allow **Private networks**. Your network must be Private too (Settings, Network & internet, your connection, Network profile type: **Private**).
 
@@ -226,6 +220,7 @@ Link Play: joining and walking around together work. See [docs/multiplayer](docs
   - Start in **Borderless** on a 4K screen and the game draws at 4K. That is heavy. Lower **Render scale**.
   - Start **Windowed** (1280x720 by default) and press Alt+Enter, and the picture stays 720p, scaled up. Set **Window mode** before you press **Play**.
   - Set **Frame rate limit** to what your screen can show.
+- **On a Linux handheld the game freezes for a few seconds, then every run is slow (about 10 fps) until you restart the device.** The graphics driver was reset by the system and stays slow. Restarting the game does not clear it: reboot the device. If it happens often, tell us (see Reporting problems) and include `pkp.log` and the system log lines that mention amdgpu.
 - **Link Play: the visitor cannot find the host.** Pick **Visit by address** and type the host's address (the host's Link Play page shows it). Check that the host started the game and picked **Invite Others to Visit**, that Windows Firewall allows `pkp.exe` on Private networks, and that the network is Private. Cafe, hotel and guest Wi-Fi that keeps devices apart blocks LAN play for everyone: use **Internet** with a relay and a room code. Over the internet, check the relay address and the room code. Changes on the Link Play page apply the next time the game starts.
 - **Link Play: the connection is refused.** The players do not match. Everyone needs game 2.0.1, the same release (or pokopia-native for cross-play), and the same mods and the same **Interact everywhere** and **Story co-op** switches.
 - **Link Play: "Communication error" (9005) when you visit.** You are both playing copies of the same save, so both have the same player ID. Each player needs their own save.
@@ -251,7 +246,7 @@ Never attach game files, the `build` or `shader_cache` folders, or saves to an i
 
 ## Community
 
-Questions, bug help, testing and chat: join the [Recompia Discord](https://discord.gg/gN5g4MtWHr). The launcher also has a **Join Discord** button under Settings > About > Community. Bugs that need a fix are still reported on [GitHub](https://github.com/featureJosh/pokopia-recomp/issues/new/choose).
+Questions, bug help, testing and chat: join the [Recompia Discord](https://discord.recompia.com). The launcher also has a **Join Discord** button under Settings > About > Community. Bugs that need a fix are still reported on [GitHub](https://github.com/featureJosh/pokopia-recomp/issues/new/choose).
 
 ## Reporting problems
 

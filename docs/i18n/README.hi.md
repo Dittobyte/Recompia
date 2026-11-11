@@ -40,7 +40,7 @@
   <a href="../../SECURITY.md">सुरक्षा</a> ·
   <a href="../../LEGAL.md">कानूनी</a> ·
   <a href="https://github.com/featureJosh/pokopia-recomp/issues">समस्याएँ</a> ·
-  <a href="https://discord.gg/gN5g4MtWHr">Discord</a>
+  <a href="https://discord.recompia.com">Discord</a>
 </p>
 
 > [!IMPORTANT]
@@ -92,7 +92,7 @@
 - **स्क्रीन पर बटन आइकन वही दिखते हैं जो आपके हाथ में है:** कीबोर्ड, Xbox, PlayStation या Switch।
 - **अपना नाम टाइप करना** कंट्रोलर, माउस या कीबोर्ड से चलता है।
 - **Alt+F4 के बिना बाहर निकलें:** Select और Start दबाए रखें (Xbox पैड पर View और Menu), या F1 में **Quit game** इस्तेमाल करें।
-- **कंट्रोलर से F1 मेन्यू खोलें:** डिफ़ॉल्ट रूप से बंद; `controls.ini` में `[overlay] pad` सेट करें (जैसे `left_stick+right_stick`)। यह क्विट कॉम्बिनेशन नहीं हो सकता।
+- **कंट्रोलर से F1 मेन्यू खोलें:** दोनों स्टिक एक साथ दबाएँ (L3 + R3); `controls.ini` में `[overlay] pad` से बदलें या बंद करें (`none` = बंद)। यह क्विट कॉम्बिनेशन नहीं हो सकता।
 
 ### Steam Deck और हैंडहेल्ड
 - Steam Deck, Legion Go S और दूसरे हैंडहेल्ड पहचाने जाते हैं: कंट्रोलर आइकन स्क्रीन पर रहते हैं और तस्वीर का आकार स्क्रीन के मुताबिक़ होता है।
@@ -246,7 +246,7 @@ Link Play अभी परीक्षण में है: जुड़ना �
 
 ## समुदाय
 
-सवाल, बग से जुड़ी मदद, टेस्टिंग और चैट: [Recompia Discord](https://discord.gg/gN5g4MtWHr) से जुड़ें। लॉन्चर में **Settings > About > Community** के नीचे भी **Join Discord** बटन है। जिन बग को ठीक करना है, उन्हें अब भी [GitHub](https://github.com/featureJosh/pokopia-recomp/issues/new/choose) पर रिपोर्ट करें।
+सवाल, बग से जुड़ी मदद, टेस्टिंग और चैट: [Recompia Discord](https://discord.recompia.com) से जुड़ें। लॉन्चर में **Settings > About > Community** के नीचे भी **Join Discord** बटन है। जिन बग को ठीक करना है, उन्हें अब भी [GitHub](https://github.com/featureJosh/pokopia-recomp/issues/new/choose) पर रिपोर्ट करें।
 
 ## समस्याएँ रिपोर्ट करना
 

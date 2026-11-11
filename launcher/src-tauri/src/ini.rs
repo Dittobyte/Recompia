@@ -179,7 +179,7 @@ impl Ini {
         if found_section {
             self.lines.insert(last_in_section.unwrap() + 1, new_line);
         } else {
-            if self.lines.last().map_or(false, |l| !l.trim().is_empty()) {
+            if self.lines.last().is_some_and(|l| !l.trim().is_empty()) {
                 self.lines.push(String::new());
             }
             self.lines.push(format!("[{}]", section));

@@ -1,4 +1,4 @@
-// From pokopia-native (MIT) windows/src/coop/coop_mpnet.c @035bd9c, modified (marked "pokopia-recomp extension: relay UDP")
+// From pokopia-native (MIT) windows/src/coop/coop_mpnet.c @9cb7f07, modified (marked "pokopia-recomp extension: relay UDP")
 // coop mpnet (MIT, our own code): the real transport, a star around the host (the LDN access point).
 // - Control: one TCP link per station and host, framed messages (u32 length, u8 type, body): HELLO / WELCOME (the coop protocol; the host's build and
 //   mods fingerprint), SCAN_REQ / SCAN_RESP (the host's NetworkInfo and identity), JOIN / ACCEPT / REFUSE (the host checks the network, passphrase,
@@ -461,6 +461,8 @@ int cmp_host_open(coop_node *n) {
     if (n->husock == CSOCK_BAD) n->udp_port = 0;   // stations stay on their control links
     n->hosting = 1;
     n->disc.adv_port = n->bound_port;
+    if (n->cfg.scope == COOP_SCOPE_INTERNET && n->cfg.role == COOP_ROLE_AUTO && (!n->cfg.bind_loopback || n->cfg.nat_gw || n->cfg.nat_location[0]))
+        cnat_want(n, n->bound_port);   // the router asked to forward it (a loopback-bound node only with a test router)
     n->disc.adv_want = n->cfg.role == COOP_ROLE_AUTO && n->cfg.discovery;
     if (n->cfg.scope == COOP_SCOPE_INTERNET)
         coop_logf(n, "mp: hosting on %s:%u (TCP control), UDP datagrams on %u; links from any address, kept only when they prove the room code; game build %s, "
@@ -476,6 +478,7 @@ int cmp_host_open(coop_node *n) {
 void cmp_host_close(coop_node *n) {
     if (!n->hosting) return;
     n->hosting = 0; n->disc.adv_want = 0;
+    cnat_want(n, 0);
     if (n->rc.state != CONN_FREE && !n->rc.closing) { n->rc.closing = 1; coop_logf(n, "mp: the relay room closes"); }   // the relay forgets the room
     n->rc_open = 0;
     zap(n, n->lsock); zap(n, n->husock);

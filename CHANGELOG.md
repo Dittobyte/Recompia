@@ -1,8 +1,258 @@
 # Changelog
 
-Parent project: [pokopia-native](https://github.com/xFractals/pokopia-native); each of its releases is reviewed and what applies is brought over
-(last reviewed: pokopia-native 1.3.3, `035bd9c`). This fork builds on [the original Pokopia Recomp](https://github.com/drakolordx7/pokopia-recomp) 0.1.1. You still need your own copy
-of the game (version 2.0.1a): the download contains no game files.
+## Unreleased
+
+### Your own launcher background
+- The launcher can use a picture from your PC as its background (Testing channel)
+  - Before: the launcher always showed its built-in pictures
+  - Now: open **Layout** in the sidebar, then **Appearance > Choose picture...**; pick a PNG, JPEG or WebP, set **Dim** so the text stays easy to read, and **Reset to default** brings the built-in picture back; the picture stays on this PC and is never uploaded
+  - Still not: no animated pictures, and no different picture for each page
+
+**Update:** press **Update**, then **Set up again** once. It rebuilds the game code for two new hooks, Story co-op and the shoulder camera. Your saves and shaders are kept; no shader is translated again. A later build that adds no new hooks should not ask again.
+
+### Testers on AMD handhelds, please read
+This Testing build adds logging and a few device checks, and changes no frame-rate settings. We need your logs to learn what helps on the Steam Deck, ROG Ally, Legion Go and similar devices. Play for about twenty minutes the way you normally do, then open **Settings > Testing** and press **Copy handheld report**: it copies one short block with your device, memory, graphics driver, frame summaries and any problems, with user names, folders and addresses removed. Paste it into a bug report and tell us the device, the system (SteamOS, Bazzite and so on), the power mode, your frame cap and what you were doing. If the picture drops to about 10 fps and stays there, or the game freezes, say so and restart the device. This is a Testing build: some rough edges are expected, and your reports are how Stable gets better.
+
+### Why textures are not prepared in the background
+- `pkp.log` now says why the background texture preparation is rarely used
+  - Before: the `nvn.texprep` line only said "used 0, no job N"
+  - Now: the same line also counts the reasons a texture upload got no job: too small, too large, not block-compressed, GPU off, never considered, idle, stale, or a transcode still running
+  - Still not: nothing else changes; the texture preparation behaves exactly as before (the 480 unknown-proc lines at startup stay as they are for now)
+
+### Memory limit under Proton
+- The settings reference now says the memory limit defaults to 16 GB for Pokopia (it said 8 GB, which is the default for other games)
+- The game's memory limit ([memory] limit_gb) now works under Proton
+  - Before: under Proton the reading the limit compares (private commit) can be 0, so the limit never triggered even when the game used many gigabytes; `pkp.log` showed `footprint 0.00 GB` next to a real pagefile usage
+  - Now: when the private commit reads 0, the limit compares the pagefile usage (resident anonymous memory plus swap), so `footprint` shows the real figure and the limit can trigger before the device runs out of memory; the first time it happens `pkp.log` says so
+  - Still not: the limit is 16 GB by default, so on a normal run nothing changes except the log; if the game is stopped at the limit, a report is written and the numbers in it are the same as before
+
+### Regressions and known problems
+- The Lenovo Legion Go, Go 2, ROG Xbox Ally and MSI Claw A8 now start in handheld mode (picture size, the game's lighter handheld graphics settings, controller prompts, short waits under Proton). This has not been confirmed on those devices yet; if it looks worse than before, set `[am] operation_mode = docked` or `[host] handheld = off` in `pkp.ini`
+- Everyone needs **Set up again** once for this build (two new game hooks). Tell us how long it took and on which device
+- The Steam Controller (2026) is still not detected under Proton; use another pad there
+
+### What to test
+- On any AMD handheld (Steam Deck, ROG Ally, Legion Go, Legion Go S, Xbox Ally, Claw A8), under Proton or Windows: play 10 minutes, then send the lines of `pkp.log` that contain `host: handheld`, `pool_copy`, `footprint` and `gamepad`. Say which BIOS GPU-memory setting you use if you changed it. They show which handheld rule matched, why pool copy is on or off with the graphics memory size, and the two memory readings
+- On a Legion Go, Go 2, ROG Xbox Ally or MSI Claw A8: check that `pkp.log` says `host: handheld: yes`, and tell us whether the picture size, the controller prompts and the frame rate feel right compared with the previous build
+- If the frame rate falls partway through a session and stays low: send the `pkp.log` lines that contain `frames have been slow` and the `hitch:` lines around them (each now ends with the share of time spent waiting), and say how long into the session it began
+- Launcher background (Layout > Appearance > Choose picture...): pick a PNG, JPEG or WebP, move the Dim slider, press Reset to default; tell us if the text is still easy to read
+- Shoulder camera (Settings > Gameplay: Shoulder camera: side and height): tell us what you set and what looked wrong
+- If Set up stops on a Steam Deck or another Linux handheld: send `shader_cache/stage/harness_error.txt` and `setup.log`
+- If you own a Steam Controller (2026): follow the 15-minute check in `docs/steam-controller-check.md` (which grip is which, whether the small View and Menu buttons are the right way round, the trackpad clicks) and send the table with the exported logs
+
+### Controller log
+- `pkp.log` now lists what a connected controller offers: trackpads (and their fingers), rumble, lights, battery, extra buttons (grips, trackpad clicks, touch sensors) and its USB ids; the motion sensors are on the line before it. It is a note for bug reports; nothing about how controllers behave changes
+
+### Memory limit
+- `pkp.log` now shows both memory readings (private commit and pagefile usage) in its `footprint` line and in the 75% warning, and says once when the private-commit reading is 0
+  - Before: only the footprint was shown, so on Linux (Proton) a log reading `footprint 0.00 GB` could not tell whether the game used no memory or the reading was blind
+  - Now: the log names both readings; the limit itself is checked exactly as before
+  - Still not: nothing else changes here; the limit itself under Proton is covered by "Memory limit under Proton" above
+
+### Launcher in Steam game mode
+- On a Steam Deck, ROG Ally or Legion Go in game mode, the launcher now fills the screen and uses finger-sized controls
+  - Before: on a 1080p handheld screen the launcher opened as a small floating window, and its buttons, switches and text were small
+  - Now: when Steam game mode is detected, the window starts maximized, every button, menu item, switch and text field is at least 44 pixels tall, and the text is a little larger
+  - Still not: this has not been tried on a real handheld yet, and the launcher does not yet have a larger-text setting of its own
+- **Joy-Con 2 mouse mode** is back: press the middle mouse button in play to point and click, and placing and breaking now land on the block under the pointer (left click is the Joy-Con's R, right click its ZR, as in Pikantine). Press it again to go back to camera aim. The **Mouse Mode Key** row is back in **Settings > Mouse**. Update only: no shader rebuild, no Set up again
+- New **Show on Discord while playing** in the launcher's Settings: shows "Playing Recompia" and how long you have played on your Discord profile while the game runs. Off by default; Discord must be open. Update only: no shader rebuild, no Set up again
+
+### Launcher layout
+- Added a **Layout** button in the launcher's sidebar, beside Colours and Hide sidebar. It opens a panel where you choose how the launcher is arranged: the sidebar on the left, right, top or bottom, or icons only; the order of the sidebar items, and which of them to hide (Home and Settings always stay); comfortable or compact spacing; and whether the news cards and the chips under the Play button (profile, Link Play and Discord) show on Home. Changes show at once, **Reset to default** puts everything back, and your choice is kept on your PC
+  - Before: the launcher had one fixed arrangement
+  - Now: the arrangement is yours, and the pad, keyboard and touch screen all work in every position. Notices about a problem, such as a crash or a failed update, are never hidden
+  - Still not: you cannot drag parts around freely yet, and the sections of Home other than the news cards and those chips cannot be moved or hidden
+- New **Show on Discord while playing** in the launcher's Settings: shows "Playing Recompia" and how long you have played on your Discord profile while the game runs. Off by default; Discord must be open. Update only: no shader rebuild, no Set up again
+
+### Bug reports from Linux handhelds
+- `pkp.log` now starts with a `host facts:` line on Linux (Steam Deck, Legion Go, ROG Ally and other handhelds under Proton): kernel, board and BIOS version, CPU, power governor, the graphics memory split (VRAM, GTT, TTM limit), RAM, swap, zram and whether it runs in Gamescope
+  - Before: reports did not say how the memory was split or how the power was set, so the performance questions could not be answered from the log
+  - Now: the line holds those facts, read only; it never includes serial numbers, your user name, your computer's name or folder paths, and a value the device does not have is left out
+  - Still not: it changes nothing about how the game runs; it only helps reports. Not shown on Windows
+
+### Graphics driver resets
+- `pkp.log` now notices a slowdown that starts partway through a run, not only at the start
+  - Before: it only looked at the first minutes of a run and at one kind of wait, so a handheld that played the title screen fine and slowed to about 10 fps once the world loaded was never noticed
+  - Now: when three summary windows in a row (about 30 seconds) run under 20 fps with the game thread mostly waiting, `pkp.log` says when it began and how much of the time was waiting; the 10-second `hitch:` line also shows the share of waiting in each window, which helps tune the check from real logs
+  - Still not: it is a note for bug reports, not a fix. After a graphics driver reset on a Linux handheld only a reboot of the device clears it; the README's common problems say so too
+
+### Screens narrower than 16:9
+- Added **4:3 Fix**, a very experimental option in Settings > Testing (Testing channel only, off by default) for 4:3, 16:10 and 3:2 screens: full-screen backgrounds, fades and dimming fill the whole picture instead of stopping at a 16:9 strip in the middle. Menus, text and buttons stay where they were. If you have a 4:3 or 16:10 screen, please try it and send `pkp.log` with what looked wrong. It needs a restart of the game to take effect
+- `pkp.log` also states how many megapixels a frame costs at the picture's shape
+
+### Link Play invites
+- Added **Copy invite** and **Paste invite** to the launcher's Link Play page: the host copies one message (address, room code and mode) and the friends paste it, instead of typing both. A Tailscale address is recognised and set up as internet play, and the host's page now lists the PC's Tailscale address even without a relay. Typing a Tailscale address into Same network now says what to do instead of just refusing it
+- Added **Test connection**, **Check my setup** and **Friends on my Tailscale** to the Link Play page: they say in plain words whether an address answers, what may block friends from joining (firewall, a Public network, client isolation), and which of your Tailscale devices are hosting, with a Join button. They only look and never change anything
+
+### Pool copy diagnostics
+- `pkp.log` now states why pool copy is on or off: whether the host is Wine, the graphics card type and its largest device-local memory heap in MiB, and the 8 GiB limit
+
+### More handhelds recognised
+- The Lenovo Legion Go, Go 2, the ASUS ROG Xbox Ally and the MSI Claw A8 (the ROG Ally X was already recognised) are now treated as handhelds, like the Steam Deck, Legion Go S and ROG Ally
+  - Before: only the Deck, Legion Go S and ROG Ally were recognised; on the others the game was told it was docked and the picture size and short waits were chosen for a desktop PC
+  - Now: on these devices the game is told it is in handheld mode and picks its own lighter handheld graphics settings, a window smaller than 1080p is no longer rendered at 1080p, controller prompts stay for the trackpad and touch screen, and (under Proton) short waits sleep instead of spinning. `pkp.log` shows which board rule matched in the `host: handheld` line
+  - Still not: AYANEO, GPD and OneXPlayer, whose board names are not reliably known (OneXPlayer's also cover Intel models); set `[host] handheld = on` in `pkp.ini` for those. If the handheld graphics settings do not suit your device, set `[am] operation_mode = docked` (that alone), or `[host] handheld = off` (all of it)
+
+### Steam Controller on Linux
+- Settings > Controls now explains, on Linux only, how to get a Steam Controller or other pad working: add the game to Steam and keep Steam Input on for it, and what that means for the grips and trackpads
+
+### Gameplay mods
+- Settings > Gameplay and `pkp.log` now show which gameplay mods and experimental features are on, so you can see at a glance what a start will use
+- Fixed the Pokédex tabs showing "Time" as their title after the Settings screen had been opened (#494)
+- The Discord links in the launcher, the READMEs and the website now use the new invite, discord.recompia.com. Update only: no shader rebuild, no Set up again
+
+### Online presence (opt-in)
+- New **Share that I am online** switch, off by default, easy to find in three places: the **Online** chip on Home, the **Online** group at the top of Settings > Game, and a new **Online** tab in the game's own Settings screen (all three are the same switch, `[pkp] online_presence` in `pkp.ini`)
+  - Before: the launcher sent nothing about you to any Recompia server
+  - Now: while it is on and the game runs, the launcher tells the Recompia online server you are playing: an optional online name (empty: anonymous), your version, Windows or Linux, and how many Pokémon have a home in your save. Your save, profile nickname and user ID are never sent. Switching it off in the game takes you off the list within a few seconds. The first time you press Play, the launcher asks once whether to switch it on; the answer is no unless you pick yes. **Reset my online ID** (Settings > Game) starts a new ID. No shader rebuild; the game's Online tab comes with this build's **Set up again**
+  - Still not: recompia.com has no page that shows who is online yet, and the online name can only be typed in the launcher
+
+### The Testing tab
+- Added a **Testing** tab to Settings, shown only on the Testing channel: send logs, read them, and switch the features still being tried on or off
+  - **Export and report** makes one zip of `pkp.log`, `pkp.log.prev`, the crash files, `setup.log` and `pkp.ini`, opens its folder (`testing-logs` next to `pkp.exe`) and the bug report form. Drag the zip into the form: the launcher has no GitHub login, so nothing is uploaded for you
+  - Names in paths, your account and server settings and IP addresses are removed before anything is written. Long logs keep their end, so the zip stays under GitHub's 25 MB limit
+  - **View logs** shows the end of each file in the launcher, with a filter and a Copy button
+  - **Experimental features** has **Mouse in the game's menus** and the **Taller view** on 16:10 screens, both off by default. The gameplay options (Camera aim, Running jump, Sort, Search, Quit Game) are off by default in this Testing build; switch them on here
+- The touch screen **Menu button** is automatic: on when the machine has a touch screen, so a handheld keeps its way into the menu
+
+### Link Play
+- Updated the co-op module to pokopia-native 1.4.0. It still plays with pokopia-native 1.3.0 to 1.4.0 and with earlier builds of this game: the way games talk to each other did not change
+- Added **automatic port forwarding** when you host over the internet without a relay
+  - Before: your router had to forward port 47600 (TCP and UDP) by hand
+  - Now: while you host, the game asks your router to forward it (UPnP, NAT-PMP or PCP) and gives it back when you stop. **Ask the router to open the port** on the Link Play page's Host view (`[net] port_forward`) turns it off
+  - Still not: a router with UPnP switched off, or an internet provider that shares one address among many homes, can't be helped by this; `pkp.log` says which, in a `nat:` line. A relay you run on this PC still needs its own port forwarded. Quitting the game while hosting leaves the forwarded port until its one-hour lease runs out
+- `pkp.log` no longer contains your whole room code, only its first group, so a log is safe to attach to a bug report. The launcher still shows the whole code
+
+### Game
+- NVIDIA graphics cards no longer risk a crash (device lost) in six of the game's compute shaders when a loop count is not the game's: the count is held to the size of the table the loop walks (on other cards, to 16384). From pokopia-native 1.4.0; `[nvn] loop_guard = off` turns it off
+  - The lighting shader now has the guard in all four of its variants, not one. Two of the unguarded ones ran in a game that fell from 95 to 3 fps after 8 minutes on an RTX 3060 (#309)
+- **Story co-op** (experimental, `[pkp] link_story_coop`): the host's own story no longer stops while friends are visiting. Before, any Link Play session turned the host's story talks into "Bring <host> here to say hi!" and paused its requests. From pokopia-native 1.4.0
+
+### Launcher
+- Added **Copy handheld report** to Settings > Testing (Testing channel only)
+  - Before: a tester on an AMD handheld had to send the whole `pkp.log`, which holds names and paths, and say by hand what mattered
+  - Now: one press copies a short block with only the useful lines of `pkp.log` (handheld detection, graphics card and driver, memory, the frame summaries and any graphics reset or crash), with user names, home folders, addresses and room codes removed, ready to paste into a bug report. Add your device, system, power mode and what you were doing
+  - Still not: it does not send anything and does not replace **Export and report** when a full log is asked for
+- Added **arrow-key** navigation to the launcher, for a handheld whose d-pad reaches it as keys
+  - Before: Steam's default layout for a non-Steam shortcut sends the d-pad as arrow keys, and the launcher ignored them
+  - Now: the arrow keys move between controls, Enter presses, Escape goes back (closes a question, or returns Home), the same as the pad
+  - Text boxes, sliders and drop-downs keep the arrows they need
+- New **Show on Discord while playing** in the launcher's Settings: shows "Playing Recompia" and how long you have played on your Discord profile while the game runs. Off by default; Discord must be open. Update only: no shader rebuild, no Set up again
+
+### Gameplay
+- Fixed **camera aim** staying off after you used the Joy-Con 2 mouse mode once (#367)
+  - Before: turning mouse mode off left the game stuck half in it, so camera aim never came back until a restart
+  - Now: pressing the mouse mode key again fully leaves mouse mode and camera aim works again right away
+- Fixed the Joy-Con 2 mouse mode hitting the wrong block (#367)
+  - Before: clicking broke or placed a block off to the side of the one under the pointer
+  - Now: your character turns to the block under the pointer before swinging, so the click lands on it
+
+### Controls
+- Fixed the **Mouse Mode Key** row in **Settings > Mouse** (#367)
+  - Before: pressing a key on the row did nothing, and after one change the row got stuck at the end of its bar
+  - Now: press left or right on the row (or click it), the row says "Press the new key", then press any key, mouse button or wheel notch. Esc cancels. It works every time, and F1 can't be picked by mistake
+- Added **Controller Button** and **Presses** rows to the game's own Settings > **Controller** tab: remap any controller button without the F1 page
+  - Before: giving a rear grip, a trackpad click or another controller button a Switch button was only possible in Settings (F1) > Controller, or in `controls.ini`
+  - Now: on Settings > Controller, press left or right on **Controller Button** to pick a button (for example Right grip R4), then on **Presses** pick what it presses on the Switch pad (Default, Nothing, A, B ...). Save as with any other row; Cancel keeps the old layout. A button the file maps to several buttons at once shows **Custom** and is left as it is
+  - Still not: it shows one button at a time; the F1 page still lists them all
+- Added two more bindable controller buttons: the **Steam button** and the **extra button** (the Steam Controller (2026)'s and the Steam Deck's quick-access "...", an Xbox Share, a PlayStation 5 microphone button) (Settings F1 > Controller > Pad buttons, or `guide` and `misc1` in `[padmap]` of `controls.ini`)
+  - Before: they pressed nothing and could not be given a Switch button
+  - Now: each has a row and can press any Switch button; with the Steam icons on, a prompt for a button you gave them shows an **S** or three dots. They press nothing until you pick one
+  - Still not: with Steam running, Steam may keep these two buttons for itself (start the game outside Steam to use them); the Steam Controller (2026)'s trigger clicks are not here, because the controller library in this build does not report them
+- Changed the **Steam Controller** button icons to fit the new Steam Controller (2026)
+  - Before: the icons were the original 2015 controller's: its small buttons were the `<` and `>` arrows and it had two rear grips, so R4 and R5 (or L4 and L5) both showed "RG" (or "LG")
+  - Now: View and Menu show the same symbols as on a Steam Deck, and each rear grip has its own icon: **L4**, **L5**, **R4** and **R5**
+  - Still not: it needs the new `prompt_icons.pak` that comes with the build; the Steam button, the quick-access (...) button and the trigger clicks have no prompt icon yet
+
+## 0.10.3 (build N: Newt Hotfix a3)
+
+**Update:** press **Update**, then **Set up again** once. It rebuilds the game code for the shoulder camera's new hook, a few minutes. Your shaders and saves are kept; no shader is translated again.
+
+The Newt hotfix fixes a start-up crash on some AMD graphics, loading screens fast-forwarding, camera aim picking the wrong block and the launcher's Quality preset, and adds an over-the-shoulder camera, six button icon themes and a Gameplay tab in the game's own Settings.
+
+### Highlights
+- Fixed the game closing at start with 0xC0000409 on some AMD graphics (#487)
+- Fixed loading screens and the boot screen fast-forwarding above 60 fps
+- Added an **over-the-shoulder camera**
+
+### Gameplay mods
+- Every gameplay mod now has its switch in the launcher's **Settings > Gameplay**, built from the game's own list of mods, so a new mod shows up there by itself
+  - **Search in the crafting screen** is now optional: off by default, switch it on in Settings > Gameplay. If you already set it yourself, your choice is kept
+  - **Camera aim** has a new **Extra reach in blocks** setting under it (Off, 1 to 4). Extra reach is now off by default, so abilities and tools use the game's own range; pick a number to reach farther, as 0.10.x did with 2
+  - **Sort each time the bag opens** stays under the Sort button, off by default
+  - **Quit Game on the title screen** stays on, without a launcher switch (`title_quit` in pkp.ini still turns it off)
+- Settings: a **Gameplay** tab in the game's own Settings screen, with the same switches as the launcher's Settings > Gameplay (and how much speed a running jump keeps); a change is saved to `pkp.ini` and applies at the next start
+
+### Launcher
+- Fixed **Quality preset** in the launcher leaving Shadow quality and Anti-aliasing as they were
+  - Before: picking High, Ultra or Desktop PC in Settings > Graphics set only the texture settings (and the render resolution and frame limit for the device presets), so the game kept the old shadows and anti-aliasing
+  - Now: the preset sets them too, as it does in the game: High gives High (2x) shadows and SMAA High, Ultra gives Very High (3x) and SMAA Ultra, Desktop PC gives Very High (3x) and SMAA High; the other presets give the game's own shadows and no anti-aliasing
+
+### Game
+- Added an **over-the-shoulder camera**: move the view to the side and up so your character no longer blocks it
+  - Two distances in blocks in the game's Settings > **Gameplay** tab: **Shoulder camera: side** (right is positive, left negative, -2 to 2) and **Shoulder camera: height** (-1 to 2), saved as `camera_shoulder_side` / `camera_shoulder_height` in `pkp.ini`; both are 0 by default, which is the game's own camera. A change takes effect as soon as you leave the Settings screen, no restart. The view stops short of walls and eases back out, and camera aim still hits what the crosshair points at. Needs **Set up again** once (new game hook)
+- Fixed camera aim's selection jumping between the block you aim at and the way you walk, with Rock Smash, Cut and the other swing tools, when the aimed block went in and out of reach while moving
+  - Now: without a block in reach the selection stays in front of you in the camera's direction, at the game's own distance
+- Camera aim reaches up and down as far as it reaches sideways: a block above or below you under the crosshair is selected within the same range (1 block plus the extra reach), also past the two rows up and one row down the game itself allows
+- Fixed camera aim sometimes selecting a block next to the one under the crosshair, at some camera angles and heights
+  - Before: for a block right next to you the game still picked the cell one straight step ahead, so a block diagonal to you (or at an angle that rounded the other way) wasn't the one selected
+  - Now: the selection is the block the crosshair's ray hits, next to you or farther with extra reach
+- Fixed the game closing at start ("pkp.exe exited with code -1073740791 (0xC0000409)") on some AMD graphics (#487)
+  - Before: every compute shader asked the driver to run 32 wide, even one with a workgroup too big for that on AMD; Vulkan doesn't allow the request then, and AMD's driver could close the game while preparing it
+  - Now: a compute shader whose workgroup doesn't fit at 32 wide runs at the driver's own width; the others still run 32 wide
+- Fixed the boot screen and some loading screens fast-forwarding above 60 fps
+  - Before: while the game loaded, the frame limit was dropped, so the loading animations ran as fast as the PC could draw (300 fps or more on a fast PC) and the game's 60 fps hold for loading and events was skipped
+  - Now: loading screens keep the frame limit and the 60 fps hold, so they play at normal speed. A world load takes under a second longer. To bring the old behaviour back, turn on **Fast loading screens** in the launcher (Settings > Game > Experimental), or set `[display] unpaced_loading = 1` in `pkp.ini`
+- Added six **Button Icons** themes: **Nintendo Switch**, **Nintendo Switch 2**, **Wii U**, **Steam Frame**, **Valve Index** and **Touch**, and the **Steam Deck** theme now uses real Steam Deck art
+  - Before: the prompts could show the game's own icons, Xbox, PlayStation, Steam Controller, Steam Deck (the Steam Controller's art with Xbox View and Menu symbols) or keyboard and mouse
+  - Now: pick any of them in the game's Settings (Button Icons), on the F1 Controller tab, in the launcher's Controls tab or with `[prompts] style` in `controls.ini` (`switch1`, `switch2`, `wiiu`, `steamframe`, `index`, `touch`). All are the white Kenney icons and follow your button remapping. Steam Deck shows the Deck's own L1/R1, L4/L5/R4/R5 back buttons and trackpads. Valve Index shows A, B, the triggers and the trackpad (its left stick stands for the d-pad); Touch shows gestures (tap, two-finger tap, swipes, pinch)
+  - Also: the launcher's Controls tab (under Button icons) and the F1 Controller tab now show a preview of the chosen theme: each Switch button with the icon it gets. F1 follows your current remapping and key bindings; the launcher shows the default ones
+  - Still not: Automatic never picks the new themes on its own (a Switch pad still shows the game's own icons); buttons a controller doesn't have keep the game's icon
+
+## 0.10.2 (build N: Numbat Hotfix a2)
+
+**Update:** press **Update**, then **Set up again** once. It rebuilds the game code for Clock Notation's new hook: a few minutes coming from 0.10.1, longer if you skipped 0.10.0's Set up. Your shaders and saves are kept; no shader is translated again.
+
+The Numbat hotfix brings back the colourful logo, translates the launcher into nine languages, fixes an AMD start-up crash and BetterJoy input loss, and adds Time and Events tabs to the game's Settings.
+
+### Launcher
+- Set up now says why the shader translator stopped on Steam Deck and other Linux PCs (#366)
+  - Before: under Proton the translator's error text never reached setup.log, so a failed "Translating shaders" step showed only an exit status and an empty "Last output"
+  - Now: the translator writes its error to `shader_cache/stage/harness_error.txt` and Set up copies it into setup.log; if the translator never started at all, the log says Proton or Wine failed before it. Set up also checks that the translator's main files are present and not empty before it starts
+- The colourful **Recompia** logo and the green **R** icon are back in the launcher, the README, the window and taskbar icon and the Steam shortcut (the plain placeholder logo and icons from 0.10.1 are gone)
+- The launcher is now translated into Spanish, English, Japanese, French, Italian, German, Korean, Simplified Chinese and Traditional Chinese. It follows the system language by default (English when it cannot tell), and Settings > About > Language changes it
+- Fixed Set up finishing at once while the game still refused to start with "pkp.exe and pkp_rt.dll come from different releases", after an update that replaced only some files
+  - Before: the launcher compared pkp.exe only with the build tools in the tools folder. A new pkp_rt.dll next to old tools (files copied by hand, or a zip extracted without its tools folder) looked current, so Set up did nothing and the game refused the exe
+  - Now: pkp.exe and pkp_rt.dll both carry the runtime API they were built for, and the launcher reads it before Play and Set up. An exe from another release than the dll is relinked by Set up; a dll from another release than the tools is named on the main page, with what to do (extract the whole release over the folder)
+
+### Game
+- Fixed the game closing right at start ("pkp.exe exited with code 4") on some PCs with an AMD graphics card
+  - Before: when an older AMD driver was still installed next to the current one (common with a Ryzen processor's own graphics), the card was listed twice and the game could pick the old driver's copy, which crashed inside the driver on the first frames
+  - Now: the copy with the older driver is skipped and the log says so; reinstalling the graphics driver removes the leftover
+- Added a **Time** tab and an **Events** tab to the game's own Settings screen, for moving the game's clock without restarting (#385)
+  - Before: the game's date and time came from the PC, and the launcher's event preset or `clock_offset` only applied at the next start
+  - Now: **Time** has Time Travel (Off follows the real time) and Year, Month, Day, Hour and Minute rows; the clock changes when you leave the screen. **Events** lists the events of `pokopia_events.tsv` (one line each: start date, end date and name, separated by tabs); pressing one sets the clock to noon on its first day, marks it **Chosen** (one at a time) and fills the Time tab. Nothing is written to your save or to Settings
+  - Still not: tab icons of their own (both tabs use the Game tab's), and a launcher button that fetches the event list
+- Added **Clock Notation** to the Time tab: Game, 12 hour or 24 hour for the time of day the game shows
+  - Before: the game's language chose the notation (English showed 12 hours with AM/PM whatever the PC's region), and nothing in the settings changed it
+  - Now: pick 12 hour or 24 hour (`[tweaks] clock_format` in `controls.ini`: `auto`, `12h` or `24h`); Game keeps the language's own. A screen that is already open shows the new notation after you close it and open it again
+  - Still not: a launcher row for it
+- Button prompts: the face buttons are plain white, like the rest of the prompt icons
+  - Before: Xbox, PlayStation, Steam Controller and Steam Deck prompts drew A/B/X/Y and cross/circle/square/triangle as coloured buttons
+  - Now: they use Kenney's monotone white buttons, matching the bumpers, triggers, d-pad and keyboard icons. Switch prompts are unchanged
+- Fixed the inventory **Sort** prompt showing **L** on some screens, where L also turns the page to the tab on the left
+  - Before: where Y and R both had an action, the Sort prompt took L; pressing it sorted the panel and switched the tab at the same time
+  - Now: Sort is Y in the bag and R in container screens; where both are taken the prompt is click only (left click or the menu pointer), and L only turns the page
+- The F1 menu opens from a controller by clicking both sticks (L3 + R3) (#364)
+  - Before: no controller shortcut was set, and the README's example (L + R) is the game's Dive chord, so holding R and L to dive opened the menu instead
+  - Now: `[overlay] pad` defaults to `left_stick+right_stick`. A `controls.ini` from an earlier release keeps the value it already has (`none` = off); set the key to `left_stick+right_stick` there, or delete the line, to get the shortcut
+- Fixed a controller dropping stick and button input during vacuuming, breaking and Rollout above 30 fps when it goes through BetterJoy (#374)
+  - Before: the game sent the controller a new rumble value on almost every frame while it rumbled, about 100 times a second at 100 fps. BetterJoy passes each one to the controller over Bluetooth and stopped reading the stick and buttons while it caught up
+  - Now: rumble goes to the controller at most 30 times a second at any frame rate, the rate that already worked at a 30 fps cap
+- The "different releases" message names the runtime API of pkp.exe and of pkp_rt.dll and points to the launcher's main page, since Set up alone cannot always help
+
+### Docs
+- The README and the Linux readme are now also in Brazilian Portuguese and European Portuguese, and the README's F1 controller example uses L3 + R3 instead of the Dive chord (L + R)
 
 ## 0.10.1 (build N: Narwhal Hotfix a1)
 

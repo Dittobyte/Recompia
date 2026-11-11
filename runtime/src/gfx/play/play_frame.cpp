@@ -244,6 +244,11 @@ int update_hook(::Ctx*, uint64_t, void*) {
         geo.render_h = dl.render_h;
         geo.display_aspect = dl.aspect > 0 ? dl.aspect : 0;
         geo.keep_aspect = st.settings.display.keep_aspect;
+        if (st.overlay) {   // the game's overlay layer covers the picture (letterbox bars left out)
+            const mm::Rect r = mm::picture_rect(geo);
+            const double ww = std::max(1, geo.win_w), wh = std::max(1, geo.win_h);
+            st.overlay->set_picture_rect(static_cast<float>(r.x / ww), static_cast<float>(r.y / wh), static_cast<float>(r.w / ww), static_cast<float>(r.h / wh));
+        }
         if (const Act a = gp && gp->menu_frame ? gp->menu_frame(menu_up, geo) : Act::None; a != Act::None) st.engine->pulse(a, now);
         if (st.overlay && st.pointer_draw) st.overlay->set_pointer(menu_up && ptr.enabled() && ptr.cursor_visible(menu_up), ptr.x(), ptr.y(), true);
         // In play with the Joy-Con 2 mouse on its surface the game draws its own cursor: the OS cursor is hidden (unless the overlay is up).
@@ -254,7 +259,7 @@ int update_hook(::Ctx*, uint64_t, void*) {
             hid::HostMouse hm;
             bool inside = false;
             mm::window_to_picture(geo, st.mouse_x, st.mouse_y, &hm.u, &hm.v, &inside);
-            hm.buttons = overlay_visible ? 0u : st.jc2_buttons;
+            hm.buttons = !overlay_visible && jc2_owns_clicks() ? st.jc2_buttons : 0u;   // npad buttons only while they are the device's
             hm.wheel_x = st.jc2_wheel_x;
             hm.wheel_y = st.jc2_wheel_y;
             hm.focused = (platform::focused() || tt::enabled()) && !platform::minimized() && !overlay_visible;

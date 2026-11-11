@@ -98,6 +98,7 @@ const SCENARIOS = {
   updating: { update: NEXT, updating: true },
   'setup-running': { readiness: { kind: 'resume', detail: 'Setup has not finished. Press Continue setup: it picks up where it stopped.' }, setup: sstatus({ complete: false, started: true }), autoSetup: true },
   rebuild: { readiness: { kind: 'rebuild', detail: 'This update changes the game code, so the game has to be built again (about 7 minutes). Your shaders and saves are kept.' }, setup: sstatus({ complete: false, rebuild: true }) },
+  'mixed-release': { readiness: { kind: 'mixed_release', detail: 'pkp_rt.dll next to the launcher is from another release than the build tools in the tools folder (API 2 and an API before 2), so Set up would build a pkp.exe that does not run with it. Only part of an update is in place: extract the whole release zip over this folder, every file, then press Set up again.' }, setup: sstatus({ complete: false }) },
   running: { game: { ...idle, state: 'running', message: 'pkp.exe started (process 18244)' } },
   crash: { game: { state: 'exited', code: -1073741819, crashed: true, message: 'pkp.exe exited with code -1073741819 (0xC0000005).', files: [{ name: 'pkp_crash.txt', fresh: true }, { name: 'pkp.log', fresh: true }] } },
   'no-controls': { noControls: true },
@@ -130,6 +131,7 @@ let dumpDir = sc.dump ? 'D:/Dumps/Pokopia' : '';
 let relay = null;
 let mockSteam = { found: true, running: false, accounts: 1, game_added: 0, launcher_added: 0 };
 let mockChannel = 'stable';
+let mockOnline = { online_asked: false, online_name: '', online_salt: 'mock-salt' };   // the switch itself is pkp.online_presence
 let mockRepair = null;
 // the builds the launcher offers, as list_builds returns them, for a launcher that is 0.8.1-beta.6
 const BACK = ['The game files may have to be built again for the older version, so Set up again can be asked (about 15 to 20 minutes).', 'Files that only the newer version has stay in the folder; they are not removed.'];
@@ -322,8 +324,15 @@ function handle(cmd, args) {
     case 'open_setup_log': case 'open_game_file': case 'open_game_dir': case 'open_save_dir': case 'open_release_url':
       console.info('[mock] open', cmd, args);
       return null;
-    case 'get_config': return { dump_dir: dumpDir, game_dir: '', minimize_on_play: false, gentle_build: false, loose_shaders: looseShaders, channel: mockChannel };
-    case 'save_config': looseShaders = !!args.config.loose_shaders; mockChannel = args.config.channel || 'stable'; return null;
+    case 'testing_logs_list': return [{ name: 'pkp.log', bytes: 1_300_000, modified: 1760000000 }, { name: 'setup.log', bytes: 42_000, modified: 1760000000 }, { name: 'pkp.ini', bytes: 2_100, modified: 1760000000 }];
+    case 'testing_log_read': return { name: args.name, text: Array.from({ length: 400 }, (_, i) => `[${String(i).padStart(4, '0')}] ${i % 37 === 0 ? 'ERROR vk: device lost (mock)' : 'info: frame ok'}`).join('\n'), truncated: true, bytes: 1_300_000 };
+    case 'testing_logs_export': return { path: 'C:\\Games\\testing-logs\\PokopiaTesting-logs-0.9.1-beta.1-20261109-230000.zip', dir: 'C:\\Games\\testing-logs', files: ['report.txt', 'pkp.log'], bytes: 1_345_000 };
+    case 'testing_logs_open_dir': console.info('[mock] open testing-logs'); return null;
+    case 'get_config': return { dump_dir: dumpDir, game_dir: '', minimize_on_play: false, discord_presence: false, gentle_build: false, loose_shaders: looseShaders, channel: mockChannel, ...mockOnline };
+    case 'save_config':
+      looseShaders = !!args.config.loose_shaders; mockChannel = args.config.channel || 'stable';
+      mockOnline = { online_asked: !!args.config.online_asked, online_name: args.config.online_name ?? '', online_salt: args.config.online_salt ?? '' };
+      return null;
     case 'get_overview': return { game_dir: GAME_DIR, default_game_dir: GAME_DIR, exe_exists: sc.exe_exists, builds_exe: true };
     case 'pick_folder': return 'D:/Dumps/Pokopia';
     case 'pick_nup': return 'D:/Downloads/pokopia-2.0.1a.nup';
@@ -342,6 +351,7 @@ function handle(cmd, args) {
       }).then(() => `${GAME_DIR}/nup_dump`);
     case 'cancel_nup': nupStop = true; return null;
     case 'read_settings': return structuredClone(settings);
+    case 'prompt_icon_pack': throw 'assets/prompts/prompt_icons.pak not found in the game folder';   // the preview row says so
     case 'write_settings':
       for (const e of args.edits) settings[e.file][`${e.section}.${e.key}`] = e.value;
       return null;
@@ -392,6 +402,22 @@ function handle(cmd, args) {
       if (relay) relay = { ...relay, clients: Math.floor(Date.now() / 8000) % 4 };
       return relay;
     case 'lan_report': return lanReport;
+    case 'link_probe': {   // ?probe=refused|timed_out|bad_address picks the answer; an address ending in .99 is a host that is not there
+      const want = params.get('probe');
+      if (want === 'refused' || want === 'timed_out') return { kind: want };
+      if (want === 'bad_address') return { kind: 'bad_address', message: 'Type an address like 192.0.2.10 or 192.0.2.10:47600' };
+      return /\.99(:\d+)?$/.test(args.addr) ? { kind: 'timed_out' } : { kind: 'answered', ms: 14 };
+    }
+    case 'setup_facts': return params.get('firewall') === 'strict'
+      ? { firewalld: { state: 'running', zones: ['FedoraServer'], ports: [] } }
+      : params.get('firewall') === 'none' ? { firewalld: { state: 'absent', zones: [], ports: [] } }
+      : { firewalld: { state: 'running', zones: ['FedoraWorkstation'], ports: ['1025-65535/tcp', '1025-65535/udp'] } };
+    case 'tailscale_peers': return params.get('tailscale') === 'none'
+      ? { found: false, error: 'Tailscale is not installed on this PC.', self: [], peers: [] }
+      : { found: true, self: ['100.64.0.5'], peers: [
+        { name: 'deck', dns_name: 'deck.tail1234.ts.net', ips: ['100.64.0.9'], online: true, hosting: true },
+        { name: 'laptop', dns_name: 'laptop.tail1234.ts.net', ips: ['100.64.0.12'], online: true, hosting: false },
+        { name: 'old-pc', dns_name: '', ips: ['100.64.0.20'], online: false, hosting: null }] };
     case 'public_ip': return params.get('public') === 'none' ? null : '198.51.100.23';
     case 'room_code_new': return Array.from({ length: 4 }, () => Array.from({ length: 4 }, () => '0123456789ABCDEFGHJKMNPQRSTVWXYZ'[Math.floor(Math.random() * 32)]).join('')).join('-');
     case 'room_code_check': {

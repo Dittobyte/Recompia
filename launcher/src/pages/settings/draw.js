@@ -1,7 +1,9 @@
 // Puts the section on screen. A redraw must never pull a control from under the player: draw() waits while a text field has focus or
 // the pointer is down, and otherwise replaces only the rows whose markup changed (and keeps focus on the same control).
 import { sectionHtml } from './rows.js';
-import { env } from './state.js';
+import { segmented } from '../../ui.js';
+import { sectionsFor } from '../../settings-schema.js';
+import { channelOf, env, rememberSection } from './state.js';
 
 const rowsIn = (node) => [...node.querySelectorAll('[data-row]')];
 const shape = (node) => [...rowsIn(node).map((r) => r.dataset.row), node.querySelector('[data-banner]')?.dataset.banner].join('|');
@@ -25,6 +27,16 @@ export function createDrawer(el, st) {
 
   const typing = () => document.activeElement?.matches?.('input.input') && el.contains(document.activeElement);
 
+  /** Joining or leaving Testing adds or removes the Testing tab; a player standing on it when it goes lands on Display. */
+  function syncPills() {
+    const ids = sectionsFor(channelOf(st)).map((x) => x.id).join();
+    if (!ids.split(',').includes(st.section)) { st.section = 'display'; rememberSection('display'); }
+    const pills = el.querySelector('.set-pills');
+    if (pills.dataset.ids === ids) return;   // only a changed list is redrawn: a redraw would take the focus off the pill being used
+    pills.dataset.ids = ids;
+    pills.innerHTML = segmented('section', sectionsFor(channelOf(st)).map((x) => ({ value: x.id, label: x.label })), st.section, { label: 'Settings section' });
+  }
+
   /** Brings the section up to date. force: everything, now, even under the cursor (a failed write, a new section). */
   function draw(force = false) {
     if (!force && (pointerDown || typing())) {
@@ -32,6 +44,7 @@ export function createDrawer(el, st) {
       return;
     }
     redraw = false;
+    syncPills();
     const host = body();
     const next = document.createElement('div');
     next.innerHTML = sectionHtml(st, env(st));

@@ -122,6 +122,7 @@ enum class PadSrc : uint8_t {
     DpadUp, DpadDown, DpadLeft, DpadRight,
     RightPaddle1, LeftPaddle1, RightPaddle2, LeftPaddle2,   // rear grips: Steam Controller R4, L4, R5, L5 (Xbox Elite, DualSense Edge and Joy-Con paddles too)
     Touchpad, TouchpadRight,                                // trackpad clicks: the touchpad button (a PlayStation touchpad, the Steam Controller's left trackpad), the Steam Controller's right trackpad
+    Guide, Misc1,                                           // the Steam / Xbox / PlayStation button (SDL GUIDE); SDL's first extra button (the Steam Controller's and Deck's quick-access "...", an Xbox Share, a PS5 mic, a Switch Pro capture button)
     kCount
 };
 constexpr int kPadSrcCount = static_cast<int>(PadSrc::kCount);
@@ -137,7 +138,7 @@ std::string pad_combo_text(uint32_t bits);
 struct PadSettings {
     uint64_t remap[kPadSrcCount] = {kPadDefault, kPadDefault, kPadDefault, kPadDefault, kPadDefault, kPadDefault, kPadDefault, kPadDefault,
                                     kPadDefault, kPadDefault, kPadDefault, kPadDefault, kPadDefault, kPadDefault, kPadDefault, kPadDefault,
-                                    kPadDefault, kPadDefault, kPadDefault, kPadDefault, kPadDefault, kPadDefault};
+                                    kPadDefault, kPadDefault, kPadDefault, kPadDefault, kPadDefault, kPadDefault, kPadDefault, kPadDefault};
     bool label_abxy = false;       // false (default): Switch layout, by position (right = Switch A, bottom = B); true: Xbox layout, by label (A = A)
     double stick_deadzone = 0.10;  // left stick, radial, 0..0.5, applied before the game's own dead zone
     double right_deadzone = 0.10;  // right stick (looking), same rule
@@ -221,11 +222,17 @@ struct AudioSettings {
 
 // ---- button prompts ----------------------------------------------------------------------------------------------------------------
 // Which button icons the game's prompts show: the game's own Switch icons, or those of another pad or the keyboard. Auto follows the
-// last input device used.
-enum class PromptStyle : uint8_t { Switch = 0, Xbox, PlayStation, Steam, SteamDeck, Keyboard, Auto };
-constexpr int kPromptStyleCount = 7;
-const char* prompt_style_name(PromptStyle s);          // "switch" "xbox" "playstation" "steam" "steamdeck" "keyboard" "auto"
-bool parse_prompt_style(const std::string& s, PromptStyle* out);   // case-insensitive; also accepts ps, ps4, ps5, dualsense, steamcontroller, deck, steam_deck, kbm, keyboard_mouse, mouse
+// last input device used. Every pad style is a set of the icon pack (prompt_resolve.cpp, kPadSets). Settings files store the name, so a
+// new style may go anywhere before Keyboard.
+enum class PromptStyle : uint8_t {
+    Switch = 0, Xbox, PlayStation, Steam, SteamDeck, NintendoSwitch, Switch2, WiiU, SteamFrame, ValveIndex, Touch, Keyboard, Auto
+};
+constexpr int kPromptStyleCount = 13;
+// "switch" "xbox" "playstation" "steam" "steamdeck" "switch1" "switch2" "wiiu" "steamframe" "index" "touch" "keyboard" "auto"
+const char* prompt_style_name(PromptStyle s);
+// Case-insensitive; also accepts ps, ps4, ps5, dualsense, steamcontroller, deck, steam_deck, nintendo_switch, ns1, ns2, nintendo_switch_2,
+// wii_u, steam_frame, frame, valve_index, touchscreen, kbm, keyboard_mouse, mouse.
+bool parse_prompt_style(const std::string& s, PromptStyle* out);
 struct PromptSettings {
     PromptStyle style = PromptStyle::Auto;     // follows the last used device: keyboard icons until a pad is used (or when none is connected)
 };
@@ -256,7 +263,7 @@ struct QuitSettings {
 // A pad combination that opens or closes the F1 overlay menu, like the F1 key. Based on pokopia-native (MIT) windows/src/nxrt/front/menu.c @e5d9ac6
 // (Minus + Plus there; here it is off by default, since Minus + Plus is this project's quit combination). Same rules as QuitSettings::pad.
 struct OverlaySettings {
-    uint32_t pad = 0;   // [overlay] pad: bits of PadSrc, 0 = off; one equal to [quit] pad is ignored with a warning
+    uint32_t pad = pad_src_bit(PadSrc::LeftStick) | pad_src_bit(PadSrc::RightStick);   // [overlay] pad: bits of PadSrc, 0 = off (L3 + R3: L + R is the game's Dive chord, #364); one equal to [quit] pad is ignored with a warning
 };
 
 struct Settings {
@@ -272,6 +279,7 @@ struct Settings {
     OverlaySettings overlay;
     std::string language;          // [tweaks] language: a language name (AmericanEnglish, French ...) or "" = auto (the Windows language). Read by the
                                    // settings service at start-up (services/common.cpp); kept here so a save writes it back. Applies at the next start.
+    std::string clock_format = "auto";   // [tweaks] clock_format: "auto" (the game's language decides), "12h" or "24h". The game's clock text hook reads it.
     Output out[kActCount];         // the [switch] table; defaulted from ActInfo::default_out
     std::vector<Binding> bindings;
     // [meta] defaults_rev: the factory-defaults revision the file was written with (0 when the file has no [meta]). When a file with
@@ -357,7 +365,7 @@ const char* key_wheel_cycles();
 //   [tweaks]   language (auto or a language name such as French; next start)
 //   [fps]      show (1/0) key (a keyboard key, F2) corner (top_left top_right bottom_left bottom_right) detail (0..2) in_screenshots (1/0)
 //   [quit]     pad (pad buttons held together, e.g. back+start; none = off) key (a keyboard key; none = off)   (open the "Close the game?" prompt)
-//   [overlay]  pad (pad buttons held together; none = off, the default; not the [quit] pad)   (open and close the F1 menu)
+//   [overlay]  pad (pad buttons held together, left_stick+right_stick by default; none = off; not the [quit] pad)   (open and close the F1 menu)
 //   [padmap]   <south east west north left_shoulder right_shoulder left_trigger right_trigger start back left_stick right_stick dpad_up dpad_down
 //              dpad_left dpad_right> = default | none | <Switch buttons joined by '+', e.g. A or ZL+L>   (the pad button presses those Switch buttons)
 //   [switch]   <action> = <output>      e.g.  btn_zr = ZR    dpad_up = UP    (missing actions keep the default)

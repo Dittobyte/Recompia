@@ -9,6 +9,8 @@
 //   mode join:<ip>, internet true, code    Internet visit without a relay.
 //   protocol linkplay                      the old relay Link Play. Any Link Play choice writes protocol = native; the toggles do not (as before).
 // `[net] server` belongs to the old protocol and is never written here.
+import { t } from './i18n.js';
+
 export const HOST_PORT = 47600;
 export const RELAY_PORT = 47610;
 
@@ -39,6 +41,12 @@ export function localAddr(s) {
   return x === 127 || x === 10 || (x === 172 && y >= 16 && y <= 31) || (x === 192 && y === 168) || (x === 169 && y === 254);
 }
 
+/** 100.64.0.0/10: Tailscale's range (and carrier-grade NAT's). The game counts it as internet, so it needs internet play and the host's room code. */
+export function tailscaleAddr(s) {
+  const a = parseAddr(s);
+  return !!a && a.ip[0] === 100 && a.ip[1] >= 64 && a.ip[1] <= 127;
+}
+
 /** 127.x: this PC itself. */
 export const loopbackAddr = (s) => parseAddr(s)?.ip[0] === 127;
 
@@ -49,9 +57,10 @@ export const loopbackAddr = (s) => parseAddr(s)?.ip[0] === 127;
 export function addrProblem(s, { port = HOST_PORT, lan = false, remote = false } = {}) {
   const v = String(s ?? '').trim();
   if (!v) return '';
-  if (!validAddr(v)) return `Type an address like 192.0.2.10 or 192.0.2.10:${port}`;
-  if (remote && loopbackAddr(v)) return 'That is your own PC. Type the address the host shares with you.';
-  return lan && !localAddr(v) ? 'Not on your network. Use Internet for this address.' : '';
+  if (!validAddr(v)) return t('Type an address like 192.0.2.10 or 192.0.2.10:{port}', { port });
+  if (remote && loopbackAddr(v)) return t('That is your own PC. Type the address the host shares with you.');
+  if (lan && tailscaleAddr(v)) return 'That is a Tailscale address. Paste the host\'s invite below, or use Internet, then Visit, with their room code.';
+  return lan && !localAddr(v) ? t('Not on your network. Use Internet for this address.') : '';
 }
 
 /** The keys this page cares about, read the way the runtime reads them. */
@@ -65,6 +74,7 @@ export function readIni(pkp) {
     code: ini('net.room_code'),
     interact: truthy(ini('pkp.link_interact_everywhere')),
     story: truthy(ini('pkp.link_story_coop')),
+    portForward: truthy(ini('net.port_forward', 'true')),   // the runtime's default: on
   };
 }
 
@@ -103,6 +113,7 @@ export function uiFrom(pkp, mem = {}) {
     visitCode: internet && role === 'visit' ? n.code : (through ? mem.visitCode : mem.joinCode) || '',
     interact: n.interact || n.story,
     story: n.story,
+    portForward: n.portForward,
   };
 }
 
@@ -120,6 +131,9 @@ export const visitEdits = (addr, code, through) => choice(net('mode', through ? 
 export const codeEdits = (code) => choice(net('room_code', code));
 
 export const protocolEdits = () => choice();
+
+/** A host over the internet asks the router to forward its port (UPnP, NAT-PMP or PCP) while it hosts. */
+export const portForwardEdits = (on) => [net('port_forward', on ? 'true' : 'false')];
 
 export const interactEdits = (on) => [pkpKey('link_interact_everywhere', on ? 'true' : 'false')];
 
@@ -196,10 +210,10 @@ export function internetShare(ui, { publicIp, relayOn }) {
   return { addr: publicIp ? `${publicIp}:${port}` : '', through: !!relay, port, own: true };
 }
 
-/** Where to go in the game. */
+/** Where to go in the game (the game's own menu names, translated like the rest of the launcher). */
 export function pathParts(ui) {
-  const invite = 'Invite Others to Visit';
-  const visit = 'Visit a Friend';
+  const invite = t('Invite Others to Visit');
+  const visit = t('Visit a Friend');
   const last = ui.view === 'internet' ? (ui.role === 'host' ? invite : visit) : ui.lanJoin.trim() ? visit : `${invite} / ${visit}`;
-  return ['Link Play', 'Local connection', last];
+  return ['Link Play', t('Local connection'), last];
 }
