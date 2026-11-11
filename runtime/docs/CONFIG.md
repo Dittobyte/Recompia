@@ -385,8 +385,8 @@ Pokopia's own keys, in the `[pkp]` section of the game ini (`pkp.ini`; `nxrt.ini
 | `pkp` | `craft_search` | `1` | `1` `0` | `NXRT_PKP_CRAFT_SEARCH` | A Search button in the crafting screen's key guide. Next start. |
 | `pkp` | `title_quit` | `1` | `1` `0` | `NXRT_PKP_TITLE_QUIT` | A Quit Game key guide on the title screen. Next start. |
 | `pkp` | `options_menu` | `1` | `1` `0` | `NXRT_PKP_OPTIONS_MENU` | The PC settings as tabs and rows of the game's own Settings screen. Next start. |
-| `pkp` | `pokemon_cap_50` | `1` | `1` `0` | `NXRT_PKP_POKEMON_CAP_50` | Enable the configurable resident Pokemon limit (default 31). Next start. |
-| `pkp` | `pokemon_cap_limit` | `31` | `25` to `50` (clamped into it) | `NXRT_PKP_POKEMON_CAP_LIMIT` | Maximum simultaneous resident Pokemon; object limit is five higher. Next start. |
+| `pkp` | `pokemon_cap_50` | `1` | `1` `0` | `NXRT_PKP_POKEMON_CAP_50` | Enable the experimental resident Pokemon limit (default 31). Next start. |
+| `pkp` | `pokemon_cap_limit` | `31` | `25` to `100` (clamped into it) | `NXRT_PKP_POKEMON_CAP_LIMIT` | Requested living Pokemon limit; object and active-actor budgets are bounded by the game's 64-slot pool. Next start. |
 
 <!-- end of the generated game ini keys -->
 
