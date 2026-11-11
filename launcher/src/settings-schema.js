@@ -286,7 +286,9 @@ const GAMEPLAY = {
   pokemon_cap_50: {
     label: 'Extended Pokemon residents',
     after: [{ id: 'pokemon_cap_limit', label: 'Resident Pokemon limit', type: 'slider', step: 1,
-      when: isOn('pokemon_cap_50'), ...fromSchema(pkp('pkp', 'pokemon_cap_limit')) }],
+      when: isOn('pokemon_cap_50'), ...fromSchema(pkp('pkp', 'pokemon_cap_limit')) },
+      { id: 'pokemon_cap_pool_note', type: 'note', when: isOn('pokemon_cap_50'),
+        note: () => ({ text: 'Experimental: the game has a 64-slot actor pool. Values above 64 do not expand that pool and cannot guarantee 100 active Pokemon. Takes effect next launch.' }) }],
   },
 };
 
