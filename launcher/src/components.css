@@ -149,6 +149,7 @@ body.pad-nav .slider input:focus::-webkit-slider-thumb { outline: 3px solid var(
   transition: background var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
 .task-pill[hidden] { display: none; }
+#mode-btn[hidden] { display: none; }   /* the light / dark button exists only for a theme that has both (main.js MODE_THEMES) */
 .task-pill:hover { background: var(--surface-2); }
 .task-pill:active { transform: scale(var(--press)); }
 .task-pill .icon { width: var(--icon-sm); height: var(--icon-sm); color: var(--color-accent); }

@@ -3,13 +3,13 @@
 import {
   ArrowLeft, Check, ChevronDown, ChevronRight, CircleAlert, CircleCheck, CircleX, Copy, Download, ExternalLink, Eye, EyeOff, FileArchive, FileText,
   Folder, FolderOpen, Gamepad2, Globe, HardDrive, House, Info, Keyboard, LayoutDashboard, Link, LoaderCircle, Minus, Mouse, Newspaper, Palette, Pause,
-  Pencil, Play, Plus, RefreshCw, RotateCcw, Save, Settings, Square, Trash2, TriangleAlert, Upload, UserCheck, Users, Wrench, X,
+  Moon, Pencil, Play, Plus, RefreshCw, RotateCcw, Save, Settings, Square, Sun, Trash2, TriangleAlert, Upload, UserCheck, Users, Wrench, X,
 } from 'lucide';
 
 const ICONS = {
   ArrowLeft, Check, ChevronDown, ChevronRight, CircleAlert, CircleCheck, CircleX, Copy, Download, ExternalLink, Eye, EyeOff, FileArchive, FileText,
   Folder, FolderOpen, Gamepad2, Globe, HardDrive, House, Info, Keyboard, LayoutDashboard, Link, LoaderCircle, Minus, Mouse, Newspaper, Palette, Pause,
-  Pencil, Play, Plus, RefreshCw, RotateCcw, Save, Settings, Square, Trash2, TriangleAlert, Upload, UserCheck, Users, Wrench, X,
+  Moon, Pencil, Play, Plus, RefreshCw, RotateCcw, Save, Settings, Square, Sun, Trash2, TriangleAlert, Upload, UserCheck, Users, Wrench, X,
 };
 
 import { fromBackend } from './backend-text.js';

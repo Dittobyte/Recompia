@@ -766,4 +766,6 @@ export default {
   'What is and is not sent': 'Qué se envía y qué no',
   'Read': 'Leer',
   'Full explanation': 'Explicación completa',
+  'Dark mode': 'Modo oscuro',
+  'Light mode': 'Modo claro',
 };

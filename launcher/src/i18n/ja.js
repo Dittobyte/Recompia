@@ -766,4 +766,6 @@ export default {
   'What is and is not sent': '送信される内容とされない内容',
   'Read': '読む',
   'Full explanation': '詳しい説明',
+  'Dark mode': 'ダークモード',
+  'Light mode': 'ライトモード',
 };

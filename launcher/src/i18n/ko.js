@@ -766,4 +766,6 @@ export default {
   'What is and is not sent': '보내는 것과 보내지 않는 것',
   'Read': '읽기',
   'Full explanation': '자세한 설명',
+  'Dark mode': '다크 모드',
+  'Light mode': '라이트 모드',
 };

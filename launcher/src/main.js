@@ -61,10 +61,27 @@ const THEME_NAME = { sunrise: 'Sunrise', dusk: 'Dusk', koi: "Koi's Camp", meadow
 function readTheme() {
   try { return THEMES.includes(localStorage.getItem('theme')) ? localStorage.getItem('theme') : DEFAULT_THEME; } catch { return DEFAULT_THEME; }
 }
+// Koi's Camp comes light or dark (theme.css data-mode): the sun / moon button beside Colours, shown only with Koi's Camp, switches it.
+// Kept in localStorage like the theme; dark is the default.
+const MODE_THEMES = ['koi'];
+function readMode() {
+  try { return localStorage.getItem('theme-mode') === 'light' ? 'light' : 'dark'; } catch { return 'dark'; }
+}
 function applyTheme(theme) {
-  document.documentElement.dataset.theme = theme;
+  const root = document.documentElement;
+  root.dataset.theme = theme;
+  const moded = MODE_THEMES.includes(theme);
+  if (moded) root.dataset.mode = readMode(); else delete root.dataset.mode;
   const b = document.getElementById('theme-btn');
   if (b) b.querySelector('.nav-label').textContent = b.querySelector('.nav-tip').textContent = t('Colours: {name}', { name: THEME_NAME[theme] });
+  const m = document.getElementById('mode-btn');
+  if (m) {
+    m.hidden = !moded;
+    const light = readMode() === 'light';
+    const label = light ? t('Dark mode') : t('Light mode');   // the button names, and shows, the mode it switches to
+    m.setAttribute('aria-label', label);
+    m.innerHTML = `${icon(light ? 'moon' : 'sun')}<span class="nav-label">${esc(label)}</span><span class="nav-tip" aria-hidden="true">${esc(label)}</span>`;
+  }
 }
 applyTheme(readTheme());
 applyLayout(loadLayout());
@@ -89,6 +106,7 @@ function drawNav() {
     ${items.join('')}
     <div class="nav-spacer" data-tauri-drag-region></div>
     <button class="nav-item" id="theme-btn" aria-label="${esc(t('Change colours'))}">${icon('palette')}<span class="nav-label"></span><span class="nav-tip" aria-hidden="true"></span></button>
+    <button class="nav-item" id="mode-btn" hidden></button>
     <button class="nav-item" id="layout-btn" aria-label="Change layout">${icon('layout-dashboard')}<span class="nav-label">Layout</span><span class="nav-tip" aria-hidden="true">Layout</span></button>
     <button class="nav-item" id="ui-hide-btn" aria-label="${esc(t('Hide sidebar'))}">${icon('eye-off')}<span class="nav-label">${esc(t('Hide sidebar'))}</span><span class="nav-tip" aria-hidden="true">${esc(t('Hide sidebar'))}</span></button>
     <button class="task-pill" id="task-pill" hidden>
@@ -102,6 +120,10 @@ function drawNav() {
       const next = THEMES[(THEMES.indexOf(readTheme()) + 1) % THEMES.length];
       try { localStorage.setItem('theme', next); } catch { /* the choice lasts until the launcher closes */ }
       applyTheme(next);
+    }
+    if (e.target.closest('#mode-btn')) {
+      try { localStorage.setItem('theme-mode', readMode() === 'light' ? 'dark' : 'light'); } catch { /* the choice lasts until the launcher closes */ }
+      applyTheme(readTheme());
     }
     if (e.target.closest('#layout-btn')) {
       import('./layout-panel.js').then((m) => m.openLayoutPanel()).catch((err) => console.error(err));

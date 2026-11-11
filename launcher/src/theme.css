@@ -225,6 +225,56 @@
 /* the framing follows Layout: with the sidebar on the right, the picture's right edge sits at the sidebar */
 :root[data-theme="koi"][data-nav="right"]:not([data-bg="custom"]) { --art-frame-position: right calc(var(--sidebar-w) + var(--gutter) * 2) bottom var(--art-frame-room); }
 
+/* Koi's Camp, light (data-mode="light", main.js: the sun / moon button beside Colours, shown only with Koi's Camp): the same picture
+   and framing behind pale glass with dark teal text; every text colour keeps 4.5:1 on the strong glass and on the solid fallbacks */
+:root[data-theme="koi"][data-mode="light"] {
+  color-scheme: light;
+  --color-bg: #e6f2ed;
+  --color-menu: #f5fbf8;
+  --color-solid: #eef7f3;
+  --color-solid-raised: #ffffff;
+  --color-text: #0d2622;
+  --color-text-2: rgba(13, 38, 34, 0.8);
+  --color-text-3: rgba(13, 38, 34, 0.64);
+  --color-selection: rgba(31, 122, 85, 0.22);
+  --color-accent: #1d7a55;
+  --color-accent-hover: #228a61;
+  --color-accent-press: #186848;
+  --color-on-accent: #ffffff;
+  --color-ok: #1d6fa8;
+  --color-warn: #8a5200;
+  --color-danger: #b42a22;
+  --color-info: #1d5fa8;
+  --color-focus: #0d2622;
+  --tint-accent: rgba(29, 122, 85, 0.14);
+  --tint-warn: rgba(138, 82, 0, 0.12);
+  --tint-danger: rgba(180, 42, 34, 0.12);
+  --tint-info: rgba(29, 95, 168, 0.12);
+  --surface-1: rgba(13, 50, 42, 0.05);
+  --surface-2: rgba(13, 50, 42, 0.08);
+  --surface-3: rgba(13, 50, 42, 0.13);
+  --surface-sunken: rgba(13, 50, 42, 0.08);
+  --line: rgba(13, 50, 42, 0.12);
+  --line-strong: rgba(13, 50, 42, 0.22);
+  --control-off: rgba(13, 50, 42, 0.22);
+  --knob: #ffffff;
+  --glass-surface: rgba(255, 255, 255, 0.3);
+  --glass-tint: rgba(244, 251, 248, 0.74);
+  --glass-tint-strong: rgba(244, 251, 248, 0.88);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --scrim-soft: #e4e4e4;                             /* the blurred picture behind the other pages, barely dimmed */
+  --scrim-hero:
+    linear-gradient(90deg, rgba(244, 251, 248, 0.42) 0%, rgba(244, 251, 248, 0.16) 24%, rgba(244, 251, 248, 0) 40%),
+    radial-gradient(ellipse 300px 170px at var(--hero-x) 13%, rgba(244, 251, 248, 0.5) 0%, rgba(244, 251, 248, 0.3) 50%, rgba(244, 251, 248, 0) 100%),
+    linear-gradient(0deg, rgba(244, 251, 248, 0.7) 0%, rgba(244, 251, 248, 0.18) 30%, rgba(244, 251, 248, 0) 44%);
+  --backdrop: rgba(13, 38, 34, 0.32);
+  --shadow-sm: 0 1px 2px rgba(13, 38, 34, 0.16);
+  --shadow-md: 0 8px 24px -8px rgba(13, 38, 34, 0.26);
+  --shadow-lg: 0 24px 60px -16px rgba(13, 38, 34, 0.32), 0 4px 12px -4px rgba(13, 38, 34, 0.18);
+  --shadow-accent: 0 10px 28px -10px rgba(29, 122, 85, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  --shadow-text: 0 1px 12px rgba(244, 251, 248, 0.7);
+}
+
 /* Meadow (theme id meadow): a bright daytime picture (an original scene, art/meadow.svg) behind the same dark glass; teal-green neutrals, the default mint accent */
 :root[data-theme="meadow"] {
   --art-url: url("./art/meadow-sharp.webp");

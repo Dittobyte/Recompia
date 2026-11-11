@@ -766,4 +766,6 @@ export default {
   'What is and is not sent': '傳送與不傳送的內容',
   'Read': '閱讀',
   'Full explanation': '完整說明',
+  'Dark mode': '深色模式',
+  'Light mode': '淺色模式',
 };

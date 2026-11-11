@@ -766,4 +766,6 @@ export default {
   'What is and is not sent': '发送和不发送的内容',
   'Read': '阅读',
   'Full explanation': '完整说明',
+  'Dark mode': '深色模式',
+  'Light mode': '浅色模式',
 };
