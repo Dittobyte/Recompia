@@ -26,15 +26,18 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-14          # arm64, the port's target
+    # arm64: macos-14 was x64 and its image was retired on 2 November 2026; macos-15 is the arm64 standard image.
+    runs-on: macos-15
     timeout-minutes: 60
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
     steps:
       - uses: actions/checkout@v4
 
       - name: Packages
         run: |
-          brew update
-          brew install cmake ninja molten-vk
+          brew install molten-vk          # cmake and ninja come with the image
+          echo "NXRT_MOLTENVK_DIR=$(brew --prefix molten-vk)/lib" >> "$GITHUB_ENV"
 
       - name: Configure
         run: cd runtime && cmake --preset macos-arm64
@@ -49,7 +52,7 @@ jobs:
           test -s /tmp/demo.png
 
       - name: Address-space self test
-        run: ./runtime/build/macos-arm64/nxrt_memprobe
+        run: ./runtime/build/macos-arm64/nxrt_gfx_demo --selftest
 
       - name: Launcher (front end + Rust)
         run: |
@@ -63,5 +66,5 @@ jobs:
           name: pkp-macos-arm64
           path: |
             runtime/build/macos-arm64/nxrt_gfx_demo
-            runtime/build/macos-arm64/nxrt_memprobe
+            /tmp/demo.png
           if-no-files-found: error
