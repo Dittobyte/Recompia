@@ -66,13 +66,11 @@ AutoDecision g_auto;
 bool auto_copy() {
     if (host_is_wine()) return true;
 #if defined(__APPLE__)
-    // The shadow cache exists for the case where a pool cannot be imported from the guest's pages. MoltenVK 1.4 does
-    // implement VK_EXT_external_memory_host -- the device logs "host-memory import available" -- and importing is both
-    // correct and far cheaper than mirroring 25-40 MB a frame (measured on the M3: pool_copy_copied_kb +43704 in a 54 ms
-    // frame). The copy-back is also what broke the UI for ~30 frames every ~500 presents, so with the extension there is
-    // no reason to pay for it. Older MoltenVK has no extension and keeps the shadows.
-    if (!active()) return true;   // before the device exists: the safe path (the decision is not latched)
-    return !device().features().external_memory_host;
+    // On by default, whatever the device supports. MoltenVK 1.4 does implement VK_EXT_external_memory_host (the log says
+    // "host-memory import available") and importing is far cheaper than mirroring 25-40 MB a frame, but with the direct path
+    // the compute-written data never reaches the textures: the world renders black and the character white. The copy is what
+    // makes those writes land, so it stays until that path is fixed. [nvn] pool_copy = off still selects the direct path.
+    return true;
 #endif
     if (!active()) return false;     // an early stats call must not latch auto off
     gfx::Device& d = device();
@@ -120,8 +118,8 @@ void log_cfg(const Cfg& c, bool on) {
         const char* why = !c.automatic ? ""
                         : host_is_wine() ? ", Wine"
 #if defined(__APPLE__)
-                        : on ? ", MoltenVK without VK_EXT_external_memory_host"
-                             : ", host-memory import (VK_EXT_external_memory_host) available";
+                        : on ? ", the compute writes reach the textures through the shadow"
+                             : ", host-memory import, the direct path (no shadow)";
 #else
                         : on ? ", integrated GPU with at most 8 GiB of device-local memory" : ", not Wine or a small integrated GPU";
 #endif

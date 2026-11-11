@@ -631,6 +631,20 @@ def link(runner, lib, game, env):
         vulkan = os.path.join(SDK, 'libvulkan.1.dylib')
         if os.path.isfile(vulkan):
             replace_file(vulkan, os.path.join(game, 'libvulkan.1.dylib'))
+        # What the game reads next to its executable: the keyboard and mouse prompt icons (pkp_kbm.cpp, without them the
+        # prompts keep the game's own Switch sprites) and the shared font.
+        icons = os.path.join(SDK, 'kbm_icons')
+        if os.path.isdir(icons):
+            dst = os.path.join(game, 'assets', 'kbm_icons')
+            os.makedirs(dst, exist_ok=True)
+            for f in os.listdir(icons):
+                if f.endswith('.png'):
+                    replace_file(os.path.join(icons, f), os.path.join(dst, f))
+        font = os.path.join(SDK, 'fonts', 'DejaVuSans.ttf')
+        if os.path.isfile(font):
+            dst = os.path.join(game, 'fonts')
+            os.makedirs(dst, exist_ok=True)
+            replace_file(font, os.path.join(dst, 'DejaVuSans.ttf'))
     progress('link', 1, 1, '%s built' % exe)
     return dst
 

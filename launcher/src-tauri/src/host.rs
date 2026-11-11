@@ -31,7 +31,10 @@ pub fn game_exe(dir: &Path) -> PathBuf {
 /// the corpus the game dumped (`[nvn] dump_missing`) into `<game>/shader_corpus`, writing `<game>/shader_cache/spirv`.
 /// Returns the harness's last line, or None when there is nothing to translate or no harness to run.
 pub fn macos_translate_shaders(game_dir: &Path) -> Result<Option<String>, String> {
-    let corpus = game_dir.join("shader_corpus");
+    // The game writes the blocks it has no translation for to [nvn] dump_missing, which Set up sets to shader_cache/missing
+    // (shaders::MISSING_REL). This used to read shader_corpus, a folder only the development ini ever used, so the blocks the
+    // game dumped were never translated and every one of them stayed an unlinked program (black geometry, missing prompts).
+    let corpus = game_dir.join(crate::shaders::MISSING_REL);
     if !corpus.join("manifest.tsv").is_file() {
         return Ok(None);
     }
@@ -93,7 +96,14 @@ pub fn macos_translate_shaders(game_dir: &Path) -> Result<Option<String>, String
         return Err(format!("the shader translator failed: {}", last));
     }
     let merged = merge_translation(&scratch, &cache);
+    // The scratch's results.tsv says which blocks failed: keep the folder for the next run only if some did.
+    let failed = std::fs::read_to_string(scratch.join("results.tsv"))
+        .map(|t| t.lines().skip(1).filter(|l| l.split('\t').nth(4).is_some_and(|s| s != "ok")).count())
+        .unwrap_or(1);
     let _ = std::fs::remove_dir_all(&scratch);
+    if failed == 0 {
+        let _ = std::fs::remove_dir_all(&corpus);
+    }
     merged.map(|n| Some(if n > 0 { format!("{}: {} new shaders merged into the cache", last, n) } else { last }))
 }
 
@@ -974,6 +984,15 @@ pub fn sync_runtime_files(src: &Path, game_dir: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "needs PKP_GAME_DIR and PKP_SPIRV_HARNESS; translates the game folder's dumped blocks into its cache"]
+    fn macos_translation_merges_the_dumped_blocks() {
+        let dir = std::path::PathBuf::from(std::env::var("PKP_GAME_DIR").expect("PKP_GAME_DIR"));
+        let line = macos_translate_shaders(&dir).expect("the dumped blocks translate");
+        println!("{:?}", line);
+        assert!(!dir.join("shader_cache").join("missing").join("manifest.tsv").exists(), "the dumped corpus is cleared once translated");
+    }
 
     #[test]
     #[ignore = "downloads about 27 MB from python-build-standalone and PyPI"]

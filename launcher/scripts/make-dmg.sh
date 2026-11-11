@@ -34,6 +34,13 @@ cp "$repo/game-build/src/pkp_stub.cpp" "$repo/game-build/src/pkp_rt_api.h" "$res
 moltenvk=$(brew --prefix molten-vk 2>/dev/null || echo /opt/homebrew/opt/molten-vk)
 cp "$moltenvk/lib/libMoltenVK.dylib" "$res/tools/build/sdk/libvulkan.1.dylib"
 cp "$moltenvk/LICENSE" "$res/tools/build/sdk/LICENSE-MoltenVK.txt"
+# What the game reads next to pkp: the prompt icons (generated here when the work folder does not have them) and the font.
+if [ ! -d "$repo/work/assets/kenney_input_prompts" ]; then
+    python3 "$repo/tools/kbm_icons.py" >/dev/null
+fi
+mkdir -p "$res/tools/build/sdk/kbm_icons" "$res/tools/build/sdk/fonts"
+cp "$repo/work/assets/kenney_input_prompts/Keyboard & Mouse/Default/"*.png "$res/tools/build/sdk/kbm_icons/"
+cp "$repo/runtime/assets/fonts/DejaVuSans.ttf" "$res/tools/build/sdk/fonts/"
 cp "$repo/runtime/cmake/guest_segment.py" "$res/tools/build/sdk/"
 cp "$repo/work/build/rtb/libpkp_rt.dylib" "$res/tools/build/sdk/"
 # No Python in the bundle: Set up fetches python-build-standalone and the lz4 and capstone wheels into tools/macos, as the
