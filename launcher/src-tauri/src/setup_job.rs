@@ -64,14 +64,11 @@ pub fn setup_status(app: AppHandle, state: SetupArg) -> SetupStatus {
 pub fn start_setup(app: AppHandle, state: SetupArg, gentle: Option<bool>) -> Result<(), String> {
     ensure_idle(&app, &[Need::Update, Need::Storage])?;
     let cfg = load_config(&app);
-    // macOS: the player's dump is the source of everything. Set up writes pkp.ini from it, builds pkp with the package's
-    // builder (pkp_build.py against libpkp_rt.dylib) and translates the shader corpus (host.rs macos_set_up).
+    // macOS: the player's dump is the source of everything. The same flow as the other platforms' Set up, from
+    // host.rs macos_set_up_install: pkp.ini from the chosen dump, the tools, the game build, then the shader corpus.
     if host::native_game() {
-        let report = dump::scan(&cfg.dump_dir);
-        let chosen = report.chosen.ok_or_else(|| "Choose usable game files first.".to_string())?;
         let dir = game_dir_of(&cfg);
         fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {}", dir.display(), e))?;
-        settings::ensure_play_paths(&dir, &chosen.exefs, &chosen.romfs, &chosen.romfs_base, &report.aoc_dir)?;
         writecheck::check(&dir).map_err(|e| e.message())?;
         {
             let mut p = state.progress.lock().unwrap();
@@ -82,18 +79,12 @@ pub fn start_setup(app: AppHandle, state: SetupArg, gentle: Option<bool>) -> Res
         }
         let st = state.inner().clone();
         st.cancel.store(false, Ordering::SeqCst);
-        let gentle = gentle.unwrap_or(cfg.gentle_build);
-        let cpus = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(3);
-        let (_, build_jobs) = preflight::jobs_for(cpus, gentle);
         let slog = Arc::new(setuplog::SetupLog::open(&dir));
         let log: shaders::LogFn = {
             let l = slog.clone();
             Arc::new(move |t: &str| l.line(t))
         };
         log(&format!("=== Set up started: launcher {}, macOS", env!("CARGO_PKG_VERSION")));
-        let tools_dir = exe_dir().join("tools");
-        let package_b = gamebuild::is_package_b(&tools_dir);
-        let exefs = PathBuf::from(&chosen.exefs);
         std::thread::spawn(move || {
             let mut last = (String::new(), 0u64, String::new());
             let mut emit = |p: shaders::Progress| {
@@ -103,35 +94,11 @@ pub fn start_setup(app: AppHandle, state: SetupArg, gentle: Option<bool>) -> Res
                 *st.progress.lock().unwrap() = p.clone();
                 let _ = app.emit("setup-status", p);
             };
-            let result = (|| -> Result<Option<usize>, String> {
-                // the package builds the game from the player's dump; a tree that carries no tools uses a CMake build
-                if package_b {
-                    // Linux and macOS fetch their native tools once (Python with lz4 and capstone; macOS compiles with Apple clang)
-                    let ready = host::prepare_tools(&tools_dir, &st.cancel, &mut |done, total, message| {
-                        emit(shaders::Progress { state: RunState::Running, phase: "tools".into(), done, total, message })
-                    })?;
-                    if !ready {
-                        return Ok(None);
-                    }
-                }
-                if package_b && !gamebuild::is_built(&dir, &tools_dir) {
-                    let tools = gamebuild::find_tools(&tools_dir, &dir)?;
-                    let job = gamebuild::Job { game_dir: dir.clone(), exefs, jobs: build_jobs, idle: gentle, log: Some(log.clone()) };
-                    let built = gamebuild::run(&job, &tools, &st.cancel, |t| {
-                        emit(shaders::Progress { state: RunState::Running, phase: t.phase, done: t.done, total: t.total, message: t.message })
-                    })?;
-                    if !built {
-                        return Ok(None);
-                    }
-                }
-                host::macos_set_up(&dir, &st.cancel, &mut |phase, done, total, message| {
-                    emit(shaders::Progress { state: RunState::Running, phase: phase.to_string(), done, total, message: message.to_string() })
-                })
-                .map(Some)
-            })();
+            let result = host::macos_set_up_install(&cfg, &st.cancel, &mut |phase, done, total, message| {
+                emit(shaders::Progress { state: RunState::Running, phase: phase.to_string(), done, total, message: message.to_string() })
+            });
             let end = match result {
-                Ok(Some(n)) => shaders::Progress { state: RunState::Done, phase: "finish".into(), message: format!("Setup finished: {} shaders translated.", n), ..Default::default() },
-                Ok(None) => shaders::Progress { state: RunState::Cancelled, message: "Setup paused. Set up again continues where it stopped.".into(), ..Default::default() },
+                Ok(n) => shaders::Progress { state: RunState::Done, phase: "finish".into(), message: format!("Setup finished: {} shaders translated.", n), ..Default::default() },
                 Err(e) => shaders::Progress { state: RunState::Error, message: e, ..Default::default() },
             };
             slog.line(&format!("=== Set up ended: {}{}", end.state, if end.message.is_empty() { String::new() } else { format!(": {}", end.message) }));
