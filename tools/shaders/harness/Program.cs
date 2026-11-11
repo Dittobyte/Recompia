@@ -437,11 +437,26 @@ namespace SpirvHarness
                 // A translator bug could loop forever; run on a task so a stuck block is reported, not waited on.
                 Task<(Result, byte[])> t = Task.Run(() =>
                 {
-                    Result x = Translate(Blobs.Read(job.CodePath), Blobs.Read(job.CtrlPath), out byte[] s, false, job.GlslcPath);
-                    return (x, s);
+                    try
+                    {
+                        Result x = Translate(Blobs.Read(job.CodePath), Blobs.Read(job.CtrlPath), out byte[] s, false, job.GlslcPath);
+                        return (x, s);
+                    }
+                    catch (Exception e)
+                    {
+                        // One unreadable or broken block must not end a 99,000-block run: its row says so and the run goes on.
+                        return (new Result { Status = "error", Error = $"{e.GetType().Name}: {e.Message} [{job.CodePath} / {job.CtrlPath}]" }, null);
+                    }
                 });
-                if (t.Wait(Timeout)) (r, spv) = t.Result;
-                else r = new Result { Status = "timeout", Error = $"no result after {Timeout.TotalSeconds} s" };
+                try
+                {
+                    if (t.Wait(Timeout)) (r, spv) = t.Result;
+                    else r = new Result { Status = "timeout", Error = $"no result after {Timeout.TotalSeconds} s" };
+                }
+                catch (AggregateException e)
+                {
+                    r = new Result { Status = "error", Error = e.InnerException?.Message ?? e.Message };
+                }
                 r.Hash = job.Hash;
                 r.Group = job.Group;
                 r.Stages = job.Stages;

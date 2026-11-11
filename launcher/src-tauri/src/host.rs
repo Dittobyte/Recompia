@@ -342,7 +342,10 @@ pub fn macos_set_up(
         match child.try_wait() {
             Ok(Some(st)) => {
                 if !st.success() {
-                    return Err(format!("the shader translator failed ({})", st));
+                    // The harness appends what went wrong to harness_error.txt in --out: name it, not just the exit status.
+                    let detail = std::fs::read_to_string(spirv.join("harness_error.txt")).unwrap_or_default();
+                    let first = detail.lines().next().unwrap_or("");
+                    return Err(format!("the shader translator failed ({}): {}", st, first));
                 }
                 break;
             }
