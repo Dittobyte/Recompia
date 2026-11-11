@@ -100,7 +100,7 @@ This Testing build adds logging and a few device checks, and changes no frame-ra
 - Fixed the Pokédex tabs showing "Time" as their title after the Settings screen had been opened (#494)
 
 ### Koi's Camp is the launcher's default look
-- The launcher now starts with the **Koi's Camp** colours and picture (hand drawn by Koi), with the hand-drawn Recompia logo on Home and in the sidebar (the other colour themes keep the current logo)
+- The launcher now starts with the **Koi's Camp** colours and picture (hand drawn by Koi), with the new hand-drawn Recompia logo on Home and in the sidebar, and its leafy "r" where the sidebar shows only an icon (the other colour themes keep the current logo)
   - Before: a new install started with Sunrise, and on Home the Koi's Camp picture was cropped to fill the window, so the sidebar, the logo and the release cards covered some of its characters
   - Now: on Home the whole Koi's Camp picture sits in the space beside the sidebar and above the release cards, its edges fading into a blurred copy, so no character is hidden at any window size; a colour theme you already picked is kept (the **Colours** button in the sidebar changes it)
   - Still not: your own background picture (Layout > Appearance) still fills the whole window
