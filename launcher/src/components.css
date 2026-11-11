@@ -472,6 +472,7 @@ dialog.modal {
   border-radius: var(--radius-lg);
   animation: modal-in var(--dur) var(--ease);
 }
+dialog.modal.wide { width: min(600px, calc(100vw - var(--space-8))); }   /* a dialog with more to read (online-notice.js) */
 dialog.modal::backdrop { background: var(--backdrop); animation: backdrop-in var(--dur) var(--ease); }
 .modal-body { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-6) var(--space-6) var(--space-5); }
 .modal-body p { color: var(--color-text-2); }

@@ -1,12 +1,15 @@
-// Online presence: "Reset my online ID". Emptying online_salt in launcher.json is the whole reset; online.rs makes a new salt, so a new
+// Online presence: "Reset my online ID", and the notice of what it does and does not do (online-notice.js). Emptying online_salt in launcher.json is the whole reset; online.rs makes a new salt, so a new
 // ID, the next time the game starts with the setting on.
 import { api } from '../../api.js';
 import { t } from '../../i18n.js';
 import { confirm, errText, toast } from '../../ui.js';
+import { ONLINE_DOC_URL, showOnlineNotice } from '../online-notice.js';
 
 export function createOnlineActions(h) {
   return {
     actions: {
+      'online-notice': () => showOnlineNotice(),
+      'online-doc': () => api.openReleaseUrl({ url: ONLINE_DOC_URL }).catch((e) => toast(errText(e), 'error')),
       async 'online-reset'() {
         const yes = await confirm({
           title: t('Reset your online ID?'),

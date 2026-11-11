@@ -221,7 +221,7 @@ constexpr Row kGameplay[] = {
 // The launcher's online presence (launcher/src-tauri/src/online.rs, which reads the key every few seconds while the game runs): its own
 // tab so it is easy to find. The online name and the reset stay in the launcher.
 constexpr Row kOnline[] = {
-    key_row("Share that I am online", "While the game runs, the launcher tells the Recompia online server that you are playing: your online name from the launcher (empty: anonymous), the version, Windows or Linux, and how many Pokemon have a home in your save. Never your save or your user ID. Off unless you switch it on.", Key::OnlinePresence),
+    key_row("Share that I am online", "While you play, tells the Recompia online server you are playing: online name (empty: anonymous), version, Windows or Linux, Pokemon with a home. Never your save, user ID or position. No tracking. Off unless you switch it on.", Key::OnlinePresence),
 };
 // clang-format on
 

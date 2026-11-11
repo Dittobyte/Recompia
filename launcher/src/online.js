@@ -2,7 +2,7 @@
 // game's own Settings screen has it on its Online tab). The Home chip, Settings > Game and the one-time question all write it here.
 import { api } from './api.js';
 import { t } from './i18n.js';
-import { confirm } from './ui.js';
+import { askTurnOn } from './pages/online-notice.js';
 
 export const ONLINE_KEY = 'pkp.online_presence';
 const truthy = (v) => ['1', 'true', 'yes', 'on'].includes(String(v ?? '').trim().toLowerCase());
@@ -27,11 +27,7 @@ export async function askOnlineOnce() {
     await api.saveConfig({ config: { ...cfg, online_asked: true } });
     const data = await api.readSettings();
     if (onlineOn(data.pkp)) return;
-    const yes = await confirm({
-      title: t('Share that you are online?'),
-      body: t('While you play, the launcher can tell the Recompia online server that you are playing: an online name you choose (or anonymous), your version, Windows or Linux, and how many Pokemon have a home in your save. Your save and your user ID are never sent. You can change this any time on Home, in Settings > Game or in the game\'s own Settings.'),
-      ok: t('Yes, share it'), cancel: t('No, thanks'), focusCancel: true,
-    });
+    const yes = await askTurnOn();
     if (yes) await setOnline(true);
   } catch (e) {
     console.warn('online question', e);

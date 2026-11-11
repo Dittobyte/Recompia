@@ -602,7 +602,11 @@ export const SECTIONS = [
         // same). The switch is pkp.ini [pkp] online_presence, the same key as the Home chip and the game's own Settings (Online tab).
         title: t('Online'),
         rows: [
-          { id: 'online_presence', label: t('Share that I am online'), type: 'toggle', ...fromSchema(pkp('pkp', 'online_presence')) },
+          { id: 'online_presence', label: t('Share that I am online'), type: 'toggle', guard: 'online', ...fromSchema(pkp('pkp', 'online_presence')) },
+          {
+            id: 'online_about', label: t('What is and is not sent'), type: 'info',
+            actions: [{ act: 'online-notice', label: t('Read'), icon: 'info' }, { act: 'online-doc', label: t('Full explanation'), icon: 'external-link' }],
+          },
           {
             id: 'online_name', label: t('Online name'), type: 'text', at: config('online_name'), def: '', placeholder: () => t('anonymous'),
             enabled: (src) => truthy(rawOf(src, pkp('pkp', 'online_presence')) ?? '0'),

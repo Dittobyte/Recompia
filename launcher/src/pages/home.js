@@ -9,6 +9,7 @@ import { store } from '../store.js';
 import { canCancelUpdate, canUpdate, gamePhase, primaryAction } from '../action.js';
 import { readIni, viewOf } from '../linkplay-model.js';
 import { onlineOn, setOnline } from '../online.js';
+import { askTurnOn } from './online-notice.js';
 import { formatDate, highlights, parseReleaseName } from '../markdown.js';
 
 const REPORT_LABEL = {
@@ -180,6 +181,7 @@ export function render(el, ctx) {
   let online = false;
   async function toggleOnline() {
     try {
+      if (!online && !(await askTurnOn())) return;   // switching on: what it does and does not do, first
       await setOnline(!online);
       online = !online;
       drawOnline(online);

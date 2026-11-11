@@ -2,6 +2,7 @@
 // are checked against the schema's bounds first; selects that need a question (DLSS download, joining Testing) ask it before committing.
 import { api } from '../../api.js';
 import { askTesting } from '../testing-notice.js';
+import { askTurnOn } from '../online-notice.js';
 import { chooseBuild } from '../builds.js';
 import { customStart, fitNumber, readField, FIELDS } from '../../settings-schema.js';
 
@@ -42,6 +43,7 @@ export function createControls(h, dlss, framegen) {
       return h.commit(f, Math.round((picked.getTime() - Date.now()) / 60000));
     }
     if (f.type === 'toggle' && f.guard === 'framegen' && t.checked && !st.framegen) return framegen.pick(f);   // AMD's DLL first
+    if (f.type === 'toggle' && f.guard === 'online' && t.checked) return askTurnOn().then((yes) => (yes ? h.commit(f, true) : h.draw(true)));   // the notice first
     if (f.type === 'toggle') return h.commit(f, t.checked);
     if (f.type === 'slider') return h.commit(f, Number(t.value));
     return h.commit(f, t.value);
