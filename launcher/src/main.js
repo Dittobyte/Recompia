@@ -6,7 +6,7 @@ import './background.css';
 import './components.css';
 import './gamemode.css';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import markUrl from './art/mark.svg';
+import markUrl from './art/mark.png';
 import markTestingUrl from './art/mark-testing.png';
 import logoUrl from './art/logo.png';
 import { api } from './api.js';
