@@ -16,6 +16,7 @@ mod framegen_cmds;
 mod fsutil;
 mod gamebuild;
 mod guard;
+mod home_count;
 mod host;
 mod ini;
 mod lan;
