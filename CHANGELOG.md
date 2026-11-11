@@ -36,7 +36,7 @@ This Testing build adds logging and a few device checks, and changes no frame-ra
 - On a Legion Go, Go 2, ROG Xbox Ally or MSI Claw A8: check that `pkp.log` says `host: handheld: yes`, and tell us whether the picture size, the controller prompts and the frame rate feel right compared with the previous build
 - If the frame rate falls partway through a session and stays low: send the `pkp.log` lines that contain `frames have been slow` and the `hitch:` lines around them (each now ends with the share of time spent waiting), and say how long into the session it began
 - Launcher background (Layout > Appearance > Choose picture...): pick a PNG, JPEG or WebP, move the Dim slider, press Reset to default; tell us if the text is still easy to read
-- Shoulder camera (Settings > Gameplay: Shoulder camera: side and height) and frame generation (Settings > Display): tell us what you set and what looked wrong
+- Shoulder camera (Settings > Gameplay: Shoulder camera: side and height): tell us what you set and what looked wrong
 - If Set up stops on a Steam Deck or another Linux handheld: send `shader_cache/stage/harness_error.txt` and `setup.log`
 - If you own a Steam Controller (2026): follow the 15-minute check in `docs/steam-controller-check.md` (which grip is which, whether the small View and Menu buttons are the right way round, the trackpad clicks) and send the table with the exported logs
 
@@ -54,6 +54,7 @@ This Testing build adds logging and a few device checks, and changes no frame-ra
   - Before: on a 1080p handheld screen the launcher opened as a small floating window, and its buttons, switches and text were small
   - Now: when Steam game mode is detected, the window starts maximized, every button, menu item, switch and text field is at least 44 pixels tall, and the text is a little larger
   - Still not: this has not been tried on a real handheld yet, and the launcher does not yet have a larger-text setting of its own
+- **Joy-Con 2 mouse mode** is back: press the middle mouse button in play to point and click, and placing and breaking now land on the block under the pointer (left click is the Joy-Con's R, right click its ZR, as in Pikantine). Press it again to go back to camera aim. The **Mouse Mode Key** row is back in **Settings > Mouse**. Update only: no shader rebuild, no Set up again
 - New **Show on Discord while playing** in the launcher's Settings: shows "Playing Recompia" and how long you have played on your Discord profile while the game runs. Off by default; Discord must be open. Update only: no shader rebuild, no Set up again
 
 ### Launcher layout
@@ -98,6 +99,7 @@ This Testing build adds logging and a few device checks, and changes no frame-ra
 ### Gameplay mods
 - Settings > Gameplay and `pkp.log` now show which gameplay mods and experimental features are on, so you can see at a glance what a start will use
 - Fixed the Pokédex tabs showing "Time" as their title after the Settings screen had been opened (#494)
+- The Discord links in the launcher, the READMEs and the website now use the new invite, discord.recompia.com. Update only: no shader rebuild, no Set up again
 
 ### Online presence (opt-in)
 - New **Share that I am online** switch, off by default, easy to find in three places: the **Online** chip on Home, the **Online** group at the top of Settings > Game, and a new **Online** tab in the game's own Settings screen (all three are the same switch, `[pkp] online_presence` in `pkp.ini`)
@@ -166,17 +168,12 @@ This Testing build adds logging and a few device checks, and changes no frame-ra
 
 **Update:** press **Update**, then **Set up again** once. It rebuilds the game code for the shoulder camera's new hook, a few minutes. Your shaders and saves are kept; no shader is translated again.
 
-The Newt hotfix fixes a start-up crash on some AMD graphics, loading screens fast-forwarding, camera aim picking the wrong block and the launcher's Quality preset, and adds an over-the-shoulder camera, AMD FSR 3.1 frame generation, six button icon themes and a Gameplay tab in the game's own Settings.
+The Newt hotfix fixes a start-up crash on some AMD graphics, loading screens fast-forwarding, camera aim picking the wrong block and the launcher's Quality preset, and adds an over-the-shoulder camera, six button icon themes and a Gameplay tab in the game's own Settings.
 
 ### Highlights
 - Fixed the game closing at start with 0xC0000409 on some AMD graphics (#487)
 - Fixed loading screens and the boot screen fast-forwarding above 60 fps
-- Added an **over-the-shoulder camera** and **AMD FSR 3.1 frame generation**
-
-### Display
-- New **Frame generation** (AMD FSR 3.1): an extra frame between the game's own, made from the 3D picture only, so the HUD is not touched. Off by default: switch it on in Settings > Display (the launcher offers to download AMD's `amd_fidelityfx_framegeneration_vk.dll`), in the game's own Settings, or on the F1 Display page. It takes effect the next time the game starts
-  - The frame-rate counter then reads `FPS 60 | FG 120`: the frames the game renders, and the frames on the screen
-  - Needs the render resolution to be Match window, or to have the window's shape. Update only: no shader rebuild
+- Added an **over-the-shoulder camera**
 
 ### Gameplay mods
 - Every gameplay mod now has its switch in the launcher's **Settings > Gameplay**, built from the game's own list of mods, so a new mod shows up there by itself
