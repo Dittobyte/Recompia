@@ -29,10 +29,12 @@ for (const id of EXPERIMENTAL) {
   assert.ok(shown('testing', onTesting).includes(id), `${id} on testing`);
   assert.ok(!shown('testing', onStable).includes(id), `${id} not on stable`);
 }
-for (const id of ['camera_aim', 'jump_momentum', 'inventory_sort', 'craft_search', 'title_quit']) {
+// title_quit is a hidden mod (no launcher row): it is not in Gameplay, and not in the Testing tab either
+for (const id of ['camera_aim', 'jump_momentum', 'inventory_sort', 'craft_search']) {
   assert.ok(shown('game', onTesting).includes(id) && shown('game', onStable).includes(id), `${id} in Gameplay`);
   assert.ok(!ids.includes(id), `${id} not in the Testing tab`);
 }
+assert.ok(!shown('game', onTesting).includes('title_quit') && !ids.includes('title_quit'), 'title_quit has no launcher row');
 
 // the model
 assert.match(REPORT_URL, /^https:\/\/github\.com\/.+\/issues\/new\?template=bug_report\.yml$/);

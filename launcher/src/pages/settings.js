@@ -21,15 +21,17 @@ import { createRepairActions } from './settings/repair-actions.js';
 import { createUpdateActions } from './settings/updates.js';
 import { createGameActions } from './settings/game.js';
 import { createTestingActions } from './settings/testing.js';
+import { loadPromptIcons } from './settings/prompt-icons.js';
 
 export async function render(el, ctx) {
-  const [dump, cfg, dlss, overview] = await Promise.all([
+  const [dump, cfg, dlss, overview, promptIcons] = await Promise.all([
     api.readSettings(),
     api.getConfig(),
     api.dlssStatus().catch(() => null),
     api.getOverview().catch(() => null),
+    loadPromptIcons(),
   ]);
-  const st = createState({ dump, cfg, dlss, overview }, ctx);
+  const st = createState({ dump, cfg, dlss, overview, promptIcons }, ctx);
   if (!sectionsFor(channelOf(st)).some((x) => x.id === st.section)) st.section = 'display';   // the Testing tab is for Testing only
 
   el.innerHTML = `<div class="page set">

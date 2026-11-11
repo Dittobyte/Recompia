@@ -8,7 +8,6 @@ export const MOD_LABELS = {
   camera_aim: 'Camera aim',
   inventory_sort: 'Sort',
   craft_search: 'Search',
-  title_quit: 'Quit Game',
   menu_in_game: "Mouse in the game's menus",
   taller_fov: 'Taller view on 16:10 screens',
   fix_4x3: '4:3 Fix',
@@ -20,7 +19,7 @@ const listOf = (keys, values) => keys.filter((k) => isOn(values[k])).map(label);
 
 /**
  * @param {Record<string, unknown>} values  readAll() output (field id -> value)
- * @param {string[]} gameplayKeys  the schema's gameplay keys
+ * @param {string[]} gameplayKeys  the keys of the mods whose switch the launcher shows (gameplaySwitchKeys)
  * @param {string[]} experimentalKeys  the Testing tab's experimental toggles
  * @returns {{ gameplay: string[], experimental: string[], lines: string[], text: string }} lists of labels, one sentence per category
  */
