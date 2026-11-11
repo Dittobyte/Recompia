@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Set up again after a small update
+- A new game hook rebuilds less of the game code (Testing channel)
+  - Before: any change to the hook list, even a note in it, built all four parts of the game code again
+  - Now: only the part that holds the hooks is built again; the other three are kept. A change to the notes or the order of the list builds nothing
+  - Still not: that part is the largest one, so a new hook still takes most of the time until the next step of this work lands
+  - The first update with this change needs **Set up again** once and builds everything, because the build records have a new layout. Your saves and shaders are kept; no shader is translated again
+
 ### Your own launcher background
 - The launcher can use a picture from your PC as its background (Testing channel)
   - Before: the launcher always showed its built-in pictures
