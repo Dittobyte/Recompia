@@ -94,6 +94,11 @@ This Testing build adds logging and a few device checks, and changes no frame-ra
 - Settings > Controls now explains, on Linux only, how to get a Steam Controller or other pad working: add the game to Steam and keep Steam Input on for it, and what that means for the grips and trackpads
 
 ### Gameplay mods
+- Every gameplay mod now has its switch in the launcher's **Settings > Gameplay**, built from the game's own list of mods, so a new mod shows up there by itself
+  - **Search in the crafting screen** is now optional: off by default, switch it on in Settings > Gameplay. If you already set it yourself, your choice is kept
+  - **Camera aim** has a new **Extra reach in blocks** setting under it (Off, 1 to 4). Extra reach is now off by default, so abilities and tools use the game's own range; pick a number to reach farther, as 0.10.x did with 2
+  - **Sort each time the bag opens** stays under the Sort button, off by default
+  - **Quit Game on the title screen** stays on, without a launcher switch (`title_quit` in pkp.ini still turns it off)
 - Settings > Gameplay and `pkp.log` now show which gameplay mods and experimental features are on, so you can see at a glance what a start will use
 
 ### The Testing tab
@@ -155,9 +160,22 @@ This Testing build adds logging and a few device checks, and changes no frame-ra
   - Now: View and Menu show the same symbols as on a Steam Deck, and each rear grip has its own icon: **L4**, **L5**, **R4** and **R5**
   - Still not: it needs the new `prompt_icons.pak` that comes with the build; the Steam button, the quick-access (...) button and the trigger clicks have no prompt icon yet
 
+### Game
+- Fixed the game closing at start ("pkp.exe exited with code -1073740791 (0xC0000409)") on some AMD graphics (#487)
+  - Before: every compute shader asked the driver to run 32 wide, even one with a workgroup too big for that on AMD; Vulkan doesn't allow the request then, and AMD's driver could close the game while preparing it
+  - Now: a compute shader whose workgroup doesn't fit at 32 wide runs at the driver's own width; the others still run 32 wide
+- Fixed the boot screen and some loading screens fast-forwarding above 60 fps
+  - Before: while the game loaded, the frame limit was dropped, so the loading animations ran as fast as the PC could draw (300 fps or more on a fast PC) and the game's 60 fps hold for loading and events was skipped
+  - Now: loading screens keep the frame limit and the 60 fps hold, so they play at normal speed. A world load takes under a second longer. To bring the old behaviour back, turn on **Fast loading screens** in the launcher (Settings > Game > Experimental), or set `[display] unpaced_loading = 1` in `pkp.ini`
+- Added six **Button Icons** themes: **Nintendo Switch**, **Nintendo Switch 2**, **Wii U**, **Steam Frame**, **Valve Index** and **Touch**, and the **Steam Deck** theme now uses real Steam Deck art
+  - Before: the prompts could show the game's own icons, Xbox, PlayStation, Steam Controller, Steam Deck (the Steam Controller's art with Xbox View and Menu symbols) or keyboard and mouse
+  - Now: pick any of them in the game's Settings (Button Icons), on the F1 Controller tab, in the launcher's Controls tab or with `[prompts] style` in `controls.ini` (`switch1`, `switch2`, `wiiu`, `steamframe`, `index`, `touch`). All are the white Kenney icons and follow your button remapping. Steam Deck shows the Deck's own L1/R1, L4/L5/R4/R5 back buttons and trackpads. Valve Index shows A, B, the triggers and the trackpad (its left stick stands for the d-pad); Touch shows gestures (tap, two-finger tap, swipes, pinch)
+  - Also: the launcher's Controls tab (under Button icons) and the F1 Controller tab now show a preview of the chosen theme: each Switch button with the icon it gets. F1 follows your current remapping and key bindings; the launcher shows the default ones
+  - Still not: Automatic never picks the new themes on its own (a Switch pad still shows the game's own icons); buttons a controller doesn't have keep the game's icon
+
 ## 0.10.2 (build N: Numbat Hotfix a2)
 
-**Update:** press **Update**, then **Set up again** once (it relinks pkp.exe in seconds; your saves and shaders are kept). Clock Notation needs it: it adds a hook site.
+**Update:** press **Update**, then **Set up again** once. It rebuilds the game code for Clock Notation's new hook: a few minutes coming from 0.10.1, longer if you skipped 0.10.0's Set up. Your shaders and saves are kept; no shader is translated again.
 
 The Numbat hotfix brings back the colourful logo, translates the launcher into nine languages, fixes an AMD start-up crash and BetterJoy input loss, and adds Time and Events tabs to the game's Settings.
 

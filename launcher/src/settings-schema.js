@@ -23,6 +23,7 @@
 // Rows that are not fields: info (label, value, actions), keycap (label, key), note (a line of text), and { expand } for rows made from env.
 
 import { num, t } from './i18n.js';
+import { previewItem } from './prompt-pack-model.js';
 import controlsSchema from '../../runtime/docs/controls_schema.json' with { type: 'json' };
 import gameIniSchema from '../../runtime/docs/pkp_ini_schema.json' with { type: 'json' };
 import { modsNotice } from './mods-notice-model.js';
@@ -62,6 +63,25 @@ export function fromSchema(at) {
   const k = schemaKey(at);
   if (!k) throw new Error(`settings-schema: [${at.section}] ${at.key} is not in the runtime's ${at.file} schema`);
   return { at, def: k.default, ...(k.min !== undefined && { min: k.min }), ...(k.max !== undefined && { max: k.max }) };
+}
+
+// ---- button icons -------------------------------------------------------------------------------------------------------------------
+
+/** The other spellings of [prompts] style the runtime reads (parse_prompt_style). */
+const PROMPT_ALIASES = {
+  ps: 'playstation', ps4: 'playstation', ps5: 'playstation', dualsense: 'playstation', steamcontroller: 'steam', steam_controller: 'steam',
+  deck: 'steamdeck', steam_deck: 'steamdeck', nintendo_switch: 'switch1', ns1: 'switch1', switch_2: 'switch2', nintendo_switch_2: 'switch2',
+  nintendo_switch2: 'switch2', ns2: 'switch2', wii_u: 'wiiu', steam_frame: 'steamframe', frame: 'steamframe', valve_index: 'index',
+  valveindex: 'index', touchscreen: 'touch', kbm: 'keyboard', keyboard_mouse: 'keyboard', mouse: 'keyboard',
+};
+
+/** The Button icons preview of a style: { text } for the game's own icons and Automatic, else { items: [{ button, icon }] } with the icon
+ *  of each Switch button as the runtime shows it with the factory pad mapping and keys (the schema's choice_details, from prompt_preview). */
+export function promptPreview(style) {
+  const w = PROMPT_ALIASES[word(style)] ?? word(style);
+  if (w === 'switch') return { text: t("The game's own Switch icons") };
+  if (w === 'auto') return { text: t('The icons of the device you used last') };
+  return { items: (schemaKey(controls('prompts', 'style'))?.choice_details?.[w] ?? []).map(previewItem) };
 }
 
 // ---- shader files -------------------------------------------------------------------------------------------------------------------
@@ -270,35 +290,49 @@ const HEIGHT = fromSchema(controls('display', 'height'));
 const WINDOW_SIZE = {
   at: [WIDTH.at, HEIGHT.at], def: `${WIDTH.def}x${HEIGHT.def}`, min: Math.max(WIDTH.min, HEIGHT.min), max: Math.min(WIDTH.max, HEIGHT.max),
 };
-const AIM_REACH = fromSchema(pkp('pkp', 'camera_aim_reach'));
-
 // ---- gameplay mods ------------------------------------------------------------------------------------------------------------------
-// The runtime marks its gameplay mods ([pkp] keys in the schema's "gameplay" group: on by default, the player opts out). Every one is a
-// toggle of Settings > Gameplay, in the runtime's order; the launcher only names it here (label, and rows that follow it). A gameplay
-// key without an entry here throws, so a new mod cannot ship without its switch (scripts/test-settings-schema.mjs runs this).
+// The runtime marks its gameplay mods: [pkp] keys in the schema's "gameplay" group (runtime/games/pkp/core/pkp_settings_table.h). A mod's
+// switch is a bool, on by default unless the schema says opt_in; a key with a "parent" is a setting of that mod, shown under its switch
+// while the switch is on; "hidden" keys get no row. Every row of Settings > Gameplay comes from that list, in the runtime's order; the
+// launcher only names them here (label, the options of a number, notes that follow a row). A gameplay key without an entry here throws,
+// so a new mod cannot ship without its row (scripts/test-settings-schema.mjs runs this).
 const isOn = (id) => (v) => v[id] === true || v[id] === '1';
 const GAMEPLAY = {
   jump_momentum: { label: t('Running jump keeps speed') },
   camera_aim: {
     label: t('Camera aim'),
-    after: [{ id: 'camera_aim_note', type: 'note', when: isOn('camera_aim'), note: () => ({ text: t("Abilities and tools aim where the camera looks instead of where your character faces, and your character turns to the target when the ability starts. They reach {reach} blocks farther than the cell next to you (camera_aim_reach in pkp.ini; 0 = the game's own range).", { reach: AIM_REACH.def }) }) }],
+    after: [{ id: 'camera_aim_note', type: 'note', when: isOn('camera_aim'), note: () => ({ text: t('Abilities and tools aim where the camera looks instead of where your character faces, and your character turns to the target when the ability starts.') }) }],
   },
-  inventory_sort: {
-    label: t('Sort button in the bag and containers'),
-    after: [{ id: 'inventory_autosort', label: t('Sort each time the bag opens'), type: 'toggle', when: isOn('inventory_sort'), ...fromSchema(pkp('pkp', 'inventory_autosort')) }],
-  },
+  camera_aim_reach: { label: t('Extra reach in blocks'), options: (k) => Array.from({ length: k.max - k.min + 1 }, (_, n) => n + k.min).map((n) => ({ value: String(n), label: n === 0 ? t('Off') : num(n) })) },
+  inventory_sort: { label: t('Sort button in the bag and containers') },
+  inventory_autosort: { label: t('Sort each time the bag opens') },
   craft_search: { label: t('Search in the crafting screen') },
-  title_quit: { label: t('Quit Game on the title screen') },
 };
 
-export const gameplayKeys = () => SCHEMAS.pkp.sections.find((s) => s.name === 'pkp').keys.filter((k) => k.group === 'gameplay').map((k) => k.key);
+const gameplaySchema = () => SCHEMAS.pkp.sections.find((s) => s.name === 'pkp').keys.filter((k) => k.group === 'gameplay');
+/** Every gameplay key of the runtime: switches and their settings, shown or hidden. */
+export const gameplayKeys = () => gameplaySchema().map((k) => k.key);
+/** A mod's switch (not the setting of another switch). */
+export const isGameplaySwitch = (k) => k.group === 'gameplay' && !k.parent;
+
+function gameplayRow(k) {
+  const g = GAMEPLAY[k.key];
+  if (!g) throw new Error(`settings-schema: gameplay mod [pkp] ${k.key} has no row in GAMEPLAY`);
+  const at = fromSchema(pkp('pkp', k.key));
+  const row = { id: k.key, label: g.label, ...at };
+  if (k.type === 'bool') row.type = 'toggle';
+  else if (g.options) Object.assign(row, { type: 'select', options: g.options(k) });
+  else throw new Error(`settings-schema: gameplay setting [pkp] ${k.key} (${k.type}) needs options in GAMEPLAY`);
+  if (k.parent) row.when = isOn(k.parent);
+  return [row, ...(g.after ?? [])];
+}
 
 function gameplayRows() {
-  return gameplayKeys().flatMap((key) => {
-    const g = GAMEPLAY[key];
-    if (!g) throw new Error(`settings-schema: gameplay mod [pkp] ${key} has no row in GAMEPLAY`);
-    return [{ id: key, label: g.label, type: 'toggle', ...fromSchema(pkp('pkp', key)) }, ...(g.after ?? [])];
-  });
+  const keys = gameplaySchema().filter((k) => !k.hidden);
+  return keys.filter(isGameplaySwitch).flatMap((sw) => [
+    ...gameplayRow(sw),
+    ...keys.filter((k) => k.parent === sw.key).flatMap(gameplayRow),
+  ]);
 }
 
 export const DLSS_DOWNLOAD = {
@@ -446,12 +480,16 @@ export const SECTIONS = [
         rows: [
           {
             id: 'prompt_style', label: t('Button icons'), type: 'select', ...fromSchema(controls('prompts', 'style')),
-            aliases: { ps: 'playstation', ps4: 'playstation', ps5: 'playstation', dualsense: 'playstation', steamcontroller: 'steam', steam_controller: 'steam', deck: 'steamdeck', steam_deck: 'steamdeck', kbm: 'keyboard', keyboard_mouse: 'keyboard', mouse: 'keyboard' },
+            aliases: PROMPT_ALIASES,
             options: [
               { value: 'auto', label: t('Automatic') }, { value: 'switch', label: t('Switch') }, { value: 'xbox', label: t('Xbox') },
-              { value: 'playstation', label: t('PlayStation') }, { value: 'steam', label: t('Steam Controller') }, { value: 'steamdeck', label: t('Steam Deck') }, { value: 'keyboard', label: t('Keyboard and mouse') },
+              { value: 'playstation', label: t('PlayStation') }, { value: 'steam', label: t('Steam Controller') }, { value: 'steamdeck', label: t('Steam Deck') },
+              { value: 'switch1', label: t('Nintendo Switch') }, { value: 'switch2', label: t('Nintendo Switch 2') }, { value: 'wiiu', label: t('Wii U') },
+              { value: 'steamframe', label: t('Steam Frame') }, { value: 'index', label: t('Valve Index') }, { value: 'touch', label: t('Touch') },
+              { value: 'keyboard', label: t('Keyboard and mouse') },
             ],
           },
+          { id: 'prompt_preview', label: t('Preview'), type: 'glyphs', glyphs: (v) => promptPreview(v.prompt_style) },
           { id: 'f1_bindings', label: t('Change bindings in game'), type: 'keycap', key: 'F1' },
           {
             id: 'steam_input_note', type: 'note', when: (_v, env) => env.linux,
@@ -560,9 +598,17 @@ export const SECTIONS = [
       {
         title: t('Gameplay'),
         rows: [
-          { id: 'gameplay_note', type: 'note', note: () => ({ text: t('New ways of playing, on by default (switch them off here). They take effect the next time the game starts, and they need the game built with this version (Set up again once after an update).') }) },
+          { id: 'gameplay_note', type: 'note', note: () => ({ text: t('New ways of playing: switch each one on or off here. They take effect the next time the game starts, and they need the game built with this version (Set up again once after an update).') }) },
           ...gameplayRows(),
           { id: 'mods_notice', type: 'note', note: (_e, v) => ({ text: modsNotice(v, gameplayKeys(), [...EXPERIMENTAL_ROWS, ...EXPERIMENTAL_OFF_ROWS].map((r) => r.id)).text }) },
+        ],
+      },
+      {
+        title: t('Experimental'),
+        rows: [
+          // pkp.ini [display] unpaced_loading, read by runtime/src/gfx/nvn/nvn_replay.cpp; that section has no generated schema yet
+          { id: 'unpaced_loading', label: t('Fast loading screens'), type: 'toggle', at: pkp('display', 'unpaced_loading'), def: '0' },
+          { id: 'unpaced_loading_note', type: 'note', note: () => ({ text: t('Lets loading screens run past your frame limit, so loading ends a little sooner. Their animations then play too fast above 60 fps. Takes effect the next time the game starts.') }) },
         ],
       },
       {
