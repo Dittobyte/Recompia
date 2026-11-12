@@ -540,7 +540,7 @@ pub fn translate_missing(game_dir: &Path, tools_dir: &Path) -> Result<usize, Str
         let mut f: Vec<String> = r.split('\t').map(String::from).collect();
         for k in [11, 12] {
             if let Some(v) = f.get_mut(k) {
-                *v = crate::host::win_path(&runtime.join(&*v)).to_string_lossy().replace('\\', "/");
+                *v = runtime.join(&*v).to_string_lossy().replace('\\', "/");
             }
         }
         text.push_str(&f.join("\t"));
@@ -578,12 +578,12 @@ pub fn warm_up(game_dir: &Path, tools_dir: &Path, cancel: &AtomicBool) -> Result
     if let Some(install) = tools_dir.parent() {
         crate::host::sync_runtime_files(install, game_dir)?;
     }
-    let mut cmd = crate::host::windows_program(&game_dir.join("pkp.exe"))?;
-    cmd.current_dir(game_dir).arg("--headless").args(["--max-seconds", &WARMUP_SECONDS.to_string()]).arg("--log").arg(crate::host::win_path(&scratch.join("warmup.log")));
+    let mut cmd = std::process::Command::new(game_dir.join("pkp.exe"));
+    cmd.current_dir(game_dir).arg("--headless").args(["--max-seconds", &WARMUP_SECONDS.to_string()]).arg("--log").arg(scratch.join("warmup.log"));
     // environment variables win over pkp.ini
-    cmd.env("NXRT_FS_SAVE_DIR", crate::host::win_path(&scratch.join("save"))).env("NXRT_NVN_DUMP_MISSING", MISSING_REL).env("NXRT_AUDIO_SINK", "null");
+    cmd.env("NXRT_FS_SAVE_DIR", scratch.join("save")).env("NXRT_NVN_DUMP_MISSING", MISSING_REL).env("NXRT_AUDIO_SINK", "null");
     // it ends with exit code 124 when the time is up: any end is fine, a crash only means fewer blocks were collected. One
-    // still running 4 minutes later (a first Proton start also makes its prefix) is stopped.
+    // still running 4 minutes later (a first start also translates the first blocks) is stopped.
     if let Ok(false) = run_tool(cmd, cancel, false, None, Some(Duration::from_secs(WARMUP_SECONDS as u64 + 240)), |_| {}) {
         return Ok(None);
     }

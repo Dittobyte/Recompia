@@ -92,11 +92,9 @@ pub struct Facts {
     pub ram_total: Option<u64>,
     pub cpu_brand: Option<String>,
     pub microcode: Option<u32>,
-    /// Linux: what runs the Windows programs (host.rs runner: Ok(its name), Err(what to install)). None on Windows.
-    pub runner: Option<Result<String, String>>,
     /// the translated shaders will be packed (Remaining::compact): what the disk message says stays
     pub compact: bool,
-    /// macOS: the game is a native build — no Vulkan driver check, no Proton, no /proc (host.rs native_game)
+    /// Linux and macOS: the game is a native build — no Vulkan driver check, no /proc (host.rs native_game)
     pub native: bool,
 }
 
@@ -240,12 +238,6 @@ pub fn evaluate(f: &Facts) -> Report {
         }
     }
 
-    match &f.runner {
-        Some(Ok(name)) => push("proton", Level::Ok, "Proton", format!("The shader translator and the game run with {}.", name)),
-        Some(Err(e)) => push("proton", Level::Fail, "No Proton found", e.clone()),
-        None => {}
-    }
-
     match f.ram_total {
         Some(r) if r < RAM_WARN_BYTES => push(
             "ram",
@@ -328,10 +320,6 @@ pub fn probe(game_dir: &Path, r: &Remaining) -> Facts {
         ram_total: if native { None } else { sys::ram_total() },
         cpu_brand: brand,
         microcode,
-        #[cfg(windows)]
-        runner: None,
-        #[cfg(not(windows))]
-        runner: if native { None } else { Some(crate::host::runner().map(|r| r.label)) },
         native,
     }
 }

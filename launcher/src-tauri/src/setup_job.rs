@@ -64,7 +64,7 @@ pub fn setup_status(app: AppHandle, state: SetupArg) -> SetupStatus {
 pub fn start_setup(app: AppHandle, state: SetupArg, gentle: Option<bool>) -> Result<(), String> {
     ensure_idle(&app, &[Need::Update, Need::Storage])?;
     let cfg = load_config(&app);
-    // macOS: the player's dump is the source of everything. The same flow as the other platforms' Set up, from
+    // Linux and macOS: the player's dump is the source of everything. The same flow as the Windows Set up, from
     // host.rs native_set_up_install: pkp.ini from the chosen dump, the tools, the game build, then the shader corpus.
     if host::native_game() {
         let dir = game_dir_of(&cfg);
@@ -84,7 +84,7 @@ pub fn start_setup(app: AppHandle, state: SetupArg, gentle: Option<bool>) -> Res
             let l = slog.clone();
             Arc::new(move |t: &str| l.line(t))
         };
-        log(&format!("=== Set up started: launcher {}, macOS", env!("CARGO_PKG_VERSION")));
+        log(&format!("=== Set up started: launcher {}, {}", env!("CARGO_PKG_VERSION"), host::os_name()));
         std::thread::spawn(move || {
             let mut last = (String::new(), 0u64, String::new());
             let mut emit = |p: shaders::Progress| {
@@ -165,16 +165,6 @@ pub fn start_setup(app: AppHandle, state: SetupArg, gentle: Option<bool>) -> Res
             let _ = app.emit("setup-status", p);
         };
         let result = (|| {
-            // Linux: the native Python and Zig that the build and the shader extractor run with, fetched once
-            let tools_ready = host::prepare_tools(&tools_dir, &st.cancel, &mut |done, total, message| {
-                emit(shaders::Progress { state: RunState::Running, phase: "tools".into(), done, total, message })
-            })?;
-            if !tools_ready {
-                return Ok(false);
-            }
-            // Linux: the translator and the hidden run need Proton; say so now, not after the build
-            #[cfg(not(windows))]
-            log(&format!("Windows programs run with: {}", host::runner()?.label));
             // no build yet, or one from an older release (stale tools stamp): build pkp.exe (again)
             if package_b && !gamebuild::is_built(&build_job.game_dir, &tools_dir) {
                 let tools = gamebuild::find_tools(&tools_dir, &build_job.game_dir)?;

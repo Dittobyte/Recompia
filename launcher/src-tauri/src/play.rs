@@ -179,7 +179,7 @@ fn game_command(exe: &Path, dir: &Path, clock: Option<crate::events::ClockOverri
     }
     #[cfg(target_os = "macos")]
     crate::host::sync_macos_runtime(dir)?;   // libpkp_rt.dylib and MoltenVK: a launcher update brings newer ones
-    let mut cmd = crate::host::windows_program(exe)?;
+    let mut cmd = std::process::Command::new(exe);
     cmd.current_dir(dir).args(["--log", "pkp.log"]);
     // macOS: the folder is not the release's installed layout (no exefs/main next to the binary), so name the settings file;
     // the game reads exefs and romfs from it.

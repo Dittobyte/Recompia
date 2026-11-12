@@ -7,6 +7,7 @@
 - The runtime reaches the system directly instead of through the Windows API: `runtime/src/os/` holds a POSIX layer for files, memory mappings, sockets, threads, timers, paths and processes, and SDL3 plays the audio and opens the window. `pkp` is linked from the player's own dump with the bundled Zig, as on Windows
 - `libpkp_rt.so` needs glibc 2.35 or newer (Ubuntu 22.04+, Debian 12+, Fedora 36+, SteamOS 3) and nothing else: SDL3 is linked in, and every other backend library is opened at run time, so a missing one switches that backend off instead of failing the start
 - Steam Deck: add the AppImage as a non-Steam game. An AppImage leaves the graphics stack to the host on purpose, so it needs `libEGL`, `libGL`, `libGLESv2` and `libvulkan`, which every desktop and SteamOS ship
+- Still not: **FSR 3 and DLSS**. Both are Windows-only SDKs and the native build turns them off, where the Proton build had them; FSR 1 and NIS are plain compute shaders and still run. Also Link Play against a peer, and a real gamepad
 
 ### macOS
 - The game runs natively on Apple silicon: `libpkp_rt.dylib`, a `pkp` linked from the player's own dump, Metal through MoltenVK, CoreAudio for sound and SDL3 for the window

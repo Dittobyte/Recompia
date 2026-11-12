@@ -1,17 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! What the launcher does differently on Linux (SteamOS, the Steam Deck, Bazzite, ...). The game stays a Windows program.
+//! What the launcher does differently on each system: the game is a native program everywhere now (pkp.exe on Windows, pkp on Linux
+//! and macOS), so every host decision below has one branch for Windows and one for the POSIX builds.
 //!
-//! On Windows the release's Windows tools run and pkp.exe starts directly. On Linux the launcher is a native program (Tauri
-//! draws it with WebKitGTK, so it needs no WebView2), the tools that only prepare files run as Linux programs from
-//! `tools/linux`: Python 3.13 with lz4 and capstone (pkp_build.py, the lifter, extract_corpus.py) and Zig 0.17.0, the version
-//! the release bundles for Windows, which cross-compiles the same pkp.exe. `prepare_tools` fetches them once, each pinned by
-//! size and SHA-256. The two Windows programs, the shader translator and pkp.exe, run through `runner`: Steam's Proton inside
-//! the Steam Linux Runtime, as Steam starts a game (PKP_PROTON picks another Proton folder), else umu-run, else Wine. There
-//! the Linux root is drive Z:, so paths handed to them go through `win_path`.
-//! Steam's Proton is found as tinfoil-chewer/pokopia-recomp-linux (GPL-3.0) linux/pkp_linux.py `find_proton` finds it.
-//! Its one crate-local import is download.rs, which has none, so the examples can build the two next to gamebuild.rs and shaders.rs.
+//! Windows: the release's Windows tools run and pkp.exe starts directly. Linux and macOS: the launcher is a native program (Tauri
+//! draws it with WebKitGTK, or with WKWebView on macOS), and the tools that only prepare files run as native programs from `tools/`:
+//! Python 3.13 with lz4 and capstone (pkp_build.py, the lifter, extract_corpus.py), and Zig 0.17.0 on Linux, which links `pkp`
+//! against the runtime library. `prepare_tools` fetches them once, each pinned by size and SHA-256; macOS compiles with Apple clang
+//! and needs no Zig. Nothing runs through Proton or Wine any more: the shader translator, the harness and the game are host programs.
+//! Its crate-local imports are download.rs (which has none) and the modules the native Set up walks (paths, settings, gamebuild, dump,
+//! config, shaders); the two examples declare the same module set the binary does, so they compile the same code.
 
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::atomic::AtomicBool;
@@ -71,7 +69,7 @@ pub fn has_decoder_dlls() -> bool {
     cfg!(windows)
 }
 
-/// macOS: the hidden run Windows does at Set up (shaders::warm_up). The romfs corpus cannot hold the blocks the game builds
+/// Linux and macOS: the hidden run Windows does at Set up (shaders::warm_up). The romfs corpus cannot hold the blocks the game builds
 /// while it runs, so one headless run collects them and the translator merges them: without it the first real start draws
 /// with unlinked programs (models that never appear). A scratch save folder, so the player's own save is never touched.
 pub fn native_warm_up(game_dir: &Path, cancel: &std::sync::atomic::AtomicBool) -> Result<Option<String>, String> {
@@ -121,7 +119,7 @@ pub fn native_warm_up(game_dir: &Path, cancel: &std::sync::atomic::AtomicBool) -
     native_translate_shaders(game_dir)
 }
 
-/// macOS: the shader cache is built by the C# harness in `tools/shaders`, not by the release's Windows tools. Runs it over
+/// Linux and macOS: the shader cache is built by the C# harness in `tools/shaders`, not by the release's Windows tools. Runs it over
 /// the corpus the game dumped (`[nvn] dump_missing`, shaders::MISSING_REL), writing `<game>/shader_cache/spirv`.
 /// Returns the harness's last line, or None when there is nothing to translate or no harness to run.
 pub fn native_translate_shaders(game_dir: &Path) -> Result<Option<String>, String> {
@@ -243,7 +241,7 @@ fn merge_translation(scratch: &Path, cache: &Path) -> Result<usize, String> {
     Ok(n)
 }
 
-/// The tools the macOS setup runs: the repository's Python (with lz4) and the C# shader harness.
+/// The tools the Linux and macOS setup runs: the repository's Python (with lz4) and the C# shader harness.
 pub struct SetupTools {
     pub python: PathBuf,
     pub extract: PathBuf,
@@ -299,11 +297,8 @@ pub fn native_setup_tools(game_dir: &Path) -> Result<SetupTools, String> {
     Ok(SetupTools { python, extract, harness })
 }
 
-/// The whole macOS setup, what Set up does on Windows and Linux with their own tools: extract the game's shader corpus
-/// from its RomFS (extract_corpus.py) and translate every block (spirv_harness), then mark the cache complete. The game
-/// itself is the CMake build next to the launcher, so there is no build step.
-/// Everything Set up does on macOS, for the window and for `--setup`: write pkp.ini from the chosen dump, fetch the build
-/// tools, build pkp from the dump (release model b), then extract and translate the shader corpus. Progress is
+/// Everything Set up does on Linux and macOS, for the window and for `--setup`: write pkp.ini from the chosen dump, fetch the
+/// build tools, build pkp from the dump (release model b), then extract and translate the shader corpus. Progress is
 /// (phase, done, total, message), as the shader job's own.
 pub fn native_set_up_install(
     cfg: &crate::config::Config,
@@ -342,6 +337,8 @@ pub fn native_set_up_install(
     native_set_up(&dir, cancel, progress)
 }
 
+/// Linux and macOS: extract the game's shader corpus from its RomFS (extract_corpus.py) and translate every block
+/// (spirv_harness), then mark the cache complete. The game build is `native_set_up_install`'s step, before this one.
 pub fn native_set_up(
     game_dir: &Path,
     cancel: &std::sync::atomic::AtomicBool,
@@ -525,11 +522,6 @@ pub fn memory_pressure_level() -> Option<i32> {
     (rc == 0).then_some(level)
 }
 
-#[cfg(not(target_os = "macos"))]
-pub fn memory_pressure_level() -> Option<i32> {
-    None
-}
-
 /// True when the game must be stopped to keep the machine alive. Critical pressure, or under 6 % free: the game needs
 /// ~9 GB and a 16 GB host has to compress/swap the rest, so a warning-level stop would kill it every time it loads the
 /// world (the disk has room for swap; the kernel's critical level is the real danger sign).
@@ -546,9 +538,15 @@ pub fn memory_is_short() -> bool {
     false
 }
 
-#[cfg(not(target_os = "macos"))]
-pub fn free_memory_ratio() -> Option<f64> {
-    None
+/// What to call this system in messages and logs.
+pub fn os_name() -> &'static str {
+    if cfg!(windows) {
+        "Windows"
+    } else if cfg!(target_os = "macos") {
+        "macOS"
+    } else {
+        "Linux"
+    }
 }
 
 /// What to call the game in messages.
@@ -581,7 +579,7 @@ pub fn zig(tools_dir: &Path) -> PathBuf {
     }
 }
 
-/// A command for a program of this system (Python, tar, Proton, xdg-open). In an AppImage, whose runtime points
+/// A command for a program of this system (Python, tar, xdg-open). In an AppImage, whose runtime points
 /// variables such as GTK_PATH, GIO_EXTRA_MODULES or XDG_DATA_DIRS into the AppImage for the launcher's own libraries, the
 /// program gets the environment without those entries (and without APPDIR, APPIMAGE, ARGV0, OWD); elsewhere nothing
 /// changes. After tinfoil-chewer/pokopia-recomp-linux (GPL-3.0) launcher/src-tauri/src/linux.rs `host_env`.
@@ -620,39 +618,7 @@ fn appimage_env_fixes(appdir: &str, vars: impl Iterator<Item = (String, String)>
     out
 }
 
-/// A command that runs the Windows program `exe`: itself on Windows, through `runner` on Linux.
-pub fn windows_program(exe: &Path) -> Result<Command, String> {
-    #[cfg(any(windows, target_os = "macos"))]
-    {
-        Ok(Command::new(exe))
-    }
-    #[cfg(all(not(windows), not(target_os = "macos")))]
-    {
-        let r = runner()?;
-        let mut cmd = command(&r.argv[0]);
-        cmd.args(&r.argv[1..]).arg(exe);
-        for (k, v) in &r.env {
-            cmd.env(k, v);
-        }
-        Ok(cmd)
-    }
-}
-
-/// `p` as a Windows program sees it: unchanged on Windows, `Z:\...` under Proton and Wine (Z: is the Linux root there).
-pub fn win_path(p: &Path) -> OsString {
-    #[cfg(windows)]
-    {
-        p.as_os_str().to_os_string()
-    }
-    #[cfg(not(windows))]
-    {
-        let abs = if p.is_absolute() { p.to_path_buf() } else { std::env::current_dir().map(|d| d.join(p)).unwrap_or_else(|_| p.to_path_buf()) };
-        OsString::from(format!("Z:{}", abs.to_string_lossy().replace('/', "\\")))
-    }
-}
-
-/// Stops a tool and what it started: on Linux the compilers, or Proton's wine processes (`lower_priority` made it the
-/// leader of its own process group).
+/// Stops a tool and what it started: on Linux the compilers, which `lower_priority` made the leaders of their own process group.
 pub fn kill(child: &mut Child) {
     #[cfg(not(windows))]
     unsafe {
@@ -703,166 +669,6 @@ pub fn open(target: &std::ffi::OsStr) -> Result<(), String> {
     // reaped, so no exited opener lingers as a zombie while the launcher runs
     std::thread::spawn(move || child.wait());
     Ok(())
-}
-
-/// How the Windows programs run on Linux: `argv` before the program's path, extra environment, and a name for the setup
-/// log and the checks before Set up.
-#[cfg(not(windows))]
-pub struct Runner {
-    pub argv: Vec<OsString>,
-    pub env: Vec<(&'static str, OsString)>,
-    pub label: String,
-}
-
-/// `$XDG_DATA_HOME/pokopia-recomp` (~/.local/share/pokopia-recomp): the Proton and Wine prefixes, kept out of the game folder.
-#[cfg(not(windows))]
-fn data_dir() -> PathBuf {
-    std::env::var_os("XDG_DATA_HOME")
-        .filter(|v| !v.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home().join(".local").join("share"))
-        .join("pokopia-recomp")
-}
-
-#[cfg(not(windows))]
-fn home() -> PathBuf {
-    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"))
-}
-
-#[cfg(not(windows))]
-fn which(exe: &str) -> Option<PathBuf> {
-    std::env::var_os("PATH").and_then(|p| std::env::split_paths(&p).map(|d| d.join(exe)).find(|f| f.is_file()))
-}
-
-/// The GPU driver's shader caches, set up as Steam sets them up for a game it starts: a folder of the game's own that the
-/// driver never trims. The shared default (~/.cache/nvidia, ~/.cache/mesa_shader_cache) is trimmed to a size limit by every
-/// program using it, and pipelines trimmed away are compiled again at the draw (20-40 ms each). A variable already set wins.
-#[cfg(not(windows))]
-fn shader_cache_env() -> Vec<(&'static str, OsString)> {
-    let dir = data_dir().join("shadercache");
-    let (nvidia, mesa) = (dir.join("nvidia"), dir.join("mesa"));
-    let _ = std::fs::create_dir_all(&nvidia);
-    let _ = std::fs::create_dir_all(&mesa);
-    [
-        ("__GL_SHADER_DISK_CACHE_PATH", nvidia.into_os_string()),
-        ("__GL_SHADER_DISK_CACHE_SKIP_CLEANUP", "1".into()),
-        ("MESA_SHADER_CACHE_DIR", mesa.into_os_string()),
-        ("MESA_SHADER_CACHE_MAX_SIZE", "10G".into()),
-    ]
-    .into_iter()
-    .filter(|(k, _)| std::env::var_os(k).is_none())
-    .collect()
-}
-
-/// Steam's Proton, else umu-run, else Wine, each with `shader_cache_env`. Err names what to install.
-#[cfg(not(windows))]
-pub fn runner() -> Result<Runner, String> {
-    let mut r = find_runner()?;
-    r.env.extend(shader_cache_env());
-    Ok(r)
-}
-
-#[cfg(not(windows))]
-fn find_runner() -> Result<Runner, String> {
-    if let Some(r) = steam_proton() {
-        return Ok(r);
-    }
-    let prefix = |name: &str| {
-        let p = data_dir().join(name);
-        let _ = std::fs::create_dir_all(&p);
-        p.into_os_string()
-    };
-    if let Some(umu) = which("umu-run") {
-        // umu picks (and fetches) its own Proton unless PROTONPATH says which
-        return Ok(Runner { argv: vec![umu.into()], env: vec![("WINEPREFIX", prefix("umu")), ("GAMEID", "0".into())], label: "umu-run".into() });
-    }
-    if let Some(wine) = which("wine") {
-        // mscoree stays on: Wine needs it to load the shader translator's .NET assemblies
-        let env = vec![("WINEPREFIX", prefix("wine")), ("WINEDEBUG", "-all".into()), ("WINEDLLOVERRIDES", "mshtml=".into())];
-        return Ok(Runner { argv: vec![wine.into()], env, label: "Wine".into() });
-    }
-    Err("Nothing to run the game's Windows programs with was found. Install Steam and its Proton (in Steam: Library, Tools, Proton Experimental), umu-launcher, or Wine.".into())
-}
-
-/// The values of `"key" "value"` lines in a Valve KeyValues file (libraryfolders.vdf, toolmanifest.vdf, appmanifest_*.acf).
-#[cfg(not(windows))]
-fn vdf_values(text: &str, key: &str) -> Vec<String> {
-    let quoted = format!("\"{}\"", key);
-    text.lines()
-        .filter_map(|l| l.trim().strip_prefix(quoted.as_str()))
-        .filter_map(|rest| rest.trim().strip_prefix('"').and_then(|v| v.strip_suffix('"')))
-        .map(|v| v.replace("\\\\", "\\"))
-        .collect()
-}
-
-/// (Steam root, its library folders) from libraryfolders.vdf. None without Steam.
-#[cfg(not(windows))]
-fn steam_libraries() -> Option<(PathBuf, Vec<PathBuf>)> {
-    for r in [".local/share/Steam", ".steam/steam", ".steam/root", ".var/app/com.valvesoftware.Steam/.local/share/Steam"] {
-        let Ok(root) = std::fs::canonicalize(home().join(r)) else { continue };
-        let Ok(text) = std::fs::read_to_string(root.join("steamapps").join("libraryfolders.vdf")) else { continue };
-        let mut libs: Vec<PathBuf> = Vec::new();
-        for lib in std::iter::once(root.clone()).chain(vdf_values(&text, "path").into_iter().map(PathBuf::from)) {
-            let Ok(lib) = std::fs::canonicalize(lib) else { continue };
-            if lib.join("steamapps").is_dir() && !libs.contains(&lib) {
-                libs.push(lib);
-            }
-        }
-        return Some((root, libs));
-    }
-    None
-}
-
-/// PKP_PROTON (a folder with `proton`), else Proton Experimental, else the newest "Proton N.N" Steam installed.
-#[cfg(not(windows))]
-fn pick_proton(libs: &[PathBuf]) -> Option<PathBuf> {
-    if let Some(p) = std::env::var_os("PKP_PROTON").map(PathBuf::from) {
-        return p.join("proton").is_file().then_some(p);
-    }
-    let rank = |name: &str| -> (u8, Vec<u32>) {
-        if name.contains("Experimental") {
-            return (2, vec![]);
-        }
-        let nums: Vec<u32> = name.split(|c: char| !c.is_ascii_digit()).filter_map(|x| x.parse().ok()).collect();
-        (if nums.is_empty() { 0 } else { 1 }, nums)
-    };
-    let mut found: Vec<(String, PathBuf)> = Vec::new();
-    for lib in libs {
-        let Ok(rd) = std::fs::read_dir(lib.join("steamapps").join("common")) else { continue };
-        for e in rd.flatten() {
-            let name = e.file_name().to_string_lossy().to_string();
-            if name.starts_with("Proton") && e.path().join("proton").is_file() {
-                found.push((name, e.path()));
-            }
-        }
-    }
-    found.into_iter().max_by_key(|(n, _)| rank(n)).map(|(_, p)| p)
-}
-
-/// Steam's Proton, inside the Steam Linux Runtime container its toolmanifest.vdf asks for when that is installed (as Steam
-/// starts a game). Its prefix is `data_dir()/proton` (STEAM_COMPAT_DATA_PATH).
-#[cfg(not(windows))]
-fn steam_proton() -> Option<Runner> {
-    let (root, libs) = steam_libraries()?;
-    let pdir = pick_proton(&libs)?;
-    let mut argv: Vec<OsString> = vec![pdir.join("proton").into(), "waitforexitandrun".into()];
-    let mut label = pdir.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "Proton".into());
-    let manifest = std::fs::read_to_string(pdir.join("toolmanifest.vdf")).unwrap_or_default();
-    if let Some(appid) = vdf_values(&manifest, "require_tool_appid").first() {
-        for lib in &libs {
-            let acf = std::fs::read_to_string(lib.join("steamapps").join(format!("appmanifest_{}.acf", appid))).unwrap_or_default();
-            let Some(dir) = vdf_values(&acf, "installdir").into_iter().next() else { continue };
-            let entry = lib.join("steamapps").join("common").join(&dir).join("_v2-entry-point");
-            if entry.is_file() {
-                argv.splice(0..0, [entry.into_os_string(), "--verb=waitforexitandrun".into(), "--".into()]);
-                label = format!("{} in {}", label, dir);
-                break;
-            }
-        }
-    }
-    let data = data_dir().join("proton");
-    let _ = std::fs::create_dir_all(&data);
-    Some(Runner { argv, env: vec![("STEAM_COMPAT_DATA_PATH", data.into()), ("STEAM_COMPAT_CLIENT_INSTALL_PATH", root.into())], label })
 }
 
 // python-build-standalone 20261013 (its SHA256SUMS), the PyPI wheels the Windows release bundles, Zig 0.17.0 (ziglang.org
@@ -1010,8 +816,8 @@ fn unpack(archive: &Path, parent: &Path, name: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// pkp.exe loads pkp_rt.dll and the ASTC decoders from its own folder. Set up builds pkp.exe into the game folder, which can
-/// be another folder than the release's: without these files Windows (Proton) ends it at once with STATUS_DLL_NOT_FOUND,
+/// The game loads its runtime library and the ASTC decoders from its own folder. Set up builds the game into the game folder,
+/// which can be another folder than the release's: without these files Windows ends it at once with STATUS_DLL_NOT_FOUND,
 /// shown as exit code 53 (#221). Copies what is missing or different from the launcher's folder; nothing when they are one.
 pub fn sync_runtime_files(src: &Path, game_dir: &Path) -> Result<(), String> {
     let canon = |d: &Path| std::fs::canonicalize(d).unwrap_or_else(|_| d.to_path_buf());
@@ -1127,7 +933,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 mod pressure_tests {
     use super::*;
 
