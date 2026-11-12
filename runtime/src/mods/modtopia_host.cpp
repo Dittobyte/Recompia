@@ -196,6 +196,27 @@ void report_held(MtLoader* L, const std::vector<std::string>& waiting) {
         mt_loader_note(L, id.c_str(), "waits until the new code of another mod is allowed in the launcher's Mods page");
 }
 
+// For bug reports, once the mods are started, patched and checked: one line a mod (its state this run, id, version, what it holds, and the
+// core's message: why it is off, or a note), then the gameplay mods every player of a Link Play session needs (gameplay_mods()).
+void log_mods(MtLoader* L) {
+    for (int i = 0, n = mt_loader_count(L); i < n; ++i) {
+        const MtModInfo* m = mt_loader_info(L, i);
+        if (!m) continue;
+        const int f = m->flags;
+        const char* state = m->state == MT_STATE_OK ? "on" : m->state == MT_STATE_OFF ? "off" : "error";
+        const bool msg = m->message && *m->message;
+        NXLOG_AT(m->state == MT_STATE_ERROR ? LogLevel::Warn : LogLevel::Info, kTag, "mods: %-5s %s %s%s%s%s%s%s%s%s%s", state, m->id, m->version,
+                 f & MT_MOD_HAS_CODE ? " [code]" : "", f & MT_MOD_NEW_CODE ? " [new code]" : "", f & MT_MOD_HAS_DATA ? " [data]" : "",
+                 f & MT_MOD_HAS_PATCHES ? " [patches]" : "", f & MT_MOD_LAYEREDFS ? " [LayeredFS]" : "", f & MT_MOD_GAMEPLAY ? " [gameplay]" : "",
+                 msg ? ": " : "", msg ? m->message : "");
+    }
+    const std::vector<std::string> gameplay = gameplay_mods();
+    if (gameplay.empty()) return;
+    std::string list;
+    for (const std::string& g : gameplay) list += (list.empty() ? "" : ", ") + g;
+    NXLOG_I(kTag, "mods: Link Play: every player in a session needs these gameplay mods: %s", list.c_str());
+}
+
 void on_save_committed() {
     detail::Host& h = host();
     std::lock_guard<std::mutex> lk(h.events_mu);
@@ -249,6 +270,7 @@ void start(const StartOptions& opt) {
     if (h.code_held) report_held(L, waiting);
     if (mt_loader_apply_patches(L) > 0) lay_overlay(L);
     mt_loader_check_data(L);
+    log_mods(L);
     services::fsapi::romfs_game_release();
     services::fsapi::set_save_commit_listener(&on_save_committed);
 
