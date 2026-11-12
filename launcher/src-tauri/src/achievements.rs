@@ -213,10 +213,6 @@ pub struct AchievementsView {
     pub offline: bool,
     /// the mod's id, to find it in the Mods page's list (modsList)
     pub mod_id: &'static str,
-    /// the mod's page on the hub (its tracker page when the list has none for it), the pictures' licence, "" when not links the launcher opens
-    pub mod_page: String,
-    pub page: String,
-    pub license: String,
     /// in the hub's order; each item names its group in `cat`
     pub list: Vec<ItemView>,
     /// None when no counts are known (the hub names no address the launcher reads, or nothing was ever fetched)
@@ -236,10 +232,8 @@ pub struct Kept {
 pub fn view(game_dir: &Path, catalog: &CatalogStore, stats: &StatsStore, kept: &Kept, refresh: bool) -> Result<AchievementsView, String> {
     let (catalog, offline) = mods_catalog::load(catalog, &kept.catalog, refresh)?;
     let earned = read_earned(game_dir);
-    let link = |u: &str| if mods_catalog::hub_link(u) { u.to_string() } else { String::new() };
-    let mod_page = catalog.mods.iter().find(|m| m.id == MOD_ID).map(|m| link(&m.page)).unwrap_or_default();
     let Some(block) = catalog.achievements else {
-        return Ok(AchievementsView { available: false, offline, mod_id: MOD_ID, mod_page, page: String::new(), license: String::new(), list: Vec::new(), stats: None, earned });
+        return Ok(AchievementsView { available: false, offline, mod_id: MOD_ID, list: Vec::new(), stats: None, earned });
     };
     let counts = if stats_url_ok(&block.stats) { load_stats(stats, &block.stats, &kept.stats, refresh) } else { None };
     let pics = pictures(&kept.pictures, &block.list, !offline);
@@ -261,9 +255,6 @@ pub fn view(game_dir: &Path, catalog: &CatalogStore, stats: &StatsStore, kept: &
         available: true,
         offline,
         mod_id: MOD_ID,
-        mod_page: if mod_page.is_empty() { link(&block.page) } else { mod_page },
-        page: link(&block.page),
-        license: link(&block.license),
         list,
         stats: counts.map(|(s, from_copy)| StatsView { players: s.players, kept: from_copy }),
         earned,

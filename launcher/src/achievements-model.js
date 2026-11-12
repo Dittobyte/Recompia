@@ -78,7 +78,7 @@ export function modState(modsView, modId) {
 /** The one sentence for the mod's state. */
 export function modLine(state) {
   switch (state.kind) {
-    case 'missing': return t('The Community Achievements mod is not installed, so nothing is earned yet. Get it from the mod hub and put it into the mods folder.');
+    case 'missing': return t('The Community Achievements mod is not installed, so nothing is earned yet. Install it here to start earning achievements.');
     case 'broken': return t('The Community Achievements mod has a problem and does not run.');
     case 'off': return t('The Community Achievements mod is installed but switched off, so nothing is earned.');
     case 'private': return t('The Community Achievements mod is on. Sharing is off: your achievements stay on this PC and you are not counted.');
@@ -87,17 +87,42 @@ export function modLine(state) {
   }
 }
 
-/** The buttons the state offers, in order: 'get' (the mod's hub page), 'folder' (the mods folder), 'enable' (switch it on), 'share'
+/** The buttons the state offers, in order: 'install' (from the hub, in the launcher), 'folder' (the mods folder), 'enable' (switch it on), 'share'
  *  (switch sharing on). */
 export function modActions(state) {
   switch (state.kind) {
-    case 'missing': return ['get', 'folder'];
+    case 'missing': return ['install', 'folder'];
     case 'broken': return ['folder'];
     case 'off': return ['enable'];
     case 'private': return ['share'];
     default: return [];
   }
 }
+
+/** The achievement pictures' licence (the hub ships it beside them), shown in the launcher. */
+export const PICTURES_LICENCE = `Microsoft Fluent Emoji (https://github.com/microsoft/fluentui-emoji)
+
+MIT License
+
+Copyright (c) Microsoft Corporation.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.`;
 
 /** What sharing sends, for the page (the mod's own words in its design notes: Privacy). */
 export const sharingText = () =>
