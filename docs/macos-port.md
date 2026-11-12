@@ -1,8 +1,8 @@
 # macOS support: port plan
 
 Status: **the game runs on Apple Silicon** — M0–M3 done, M4 done except Link Play against a peer and a real gamepad,
-M5 done, M6 partial (launcher, `.app`, CI, the shader pipeline and the release pipeline done; movies untested, signing and
-notarization wired in CI but waiting for the Apple Developer secrets).
+M5 done, M6 partial (launcher, the flat release zip, CI, the shader pipeline and the release pipeline done; movies untested,
+and no signing by decision — the zip ships unsigned and its note covers the one-time Open Anyway).
 §7 is the evidence log; §8 is the operational guide (build, lift, run, launcher, shader cache, memory, traps).
 Tuning beyond the port itself — the 16 items a review of [Chaos192/PokoMac](https://github.com/Chaos192/PokoMac) turned up,
 what is in the tree and how to pick up the rest — is `docs/macos-optimisations.md`.
@@ -312,8 +312,8 @@ Work:
 3. `game-build/src/pkp_main.cpp` (542 lines) — the entry point is already `int main(int argc, char** argv)`
    (`:317`), so only the two `MessageBoxA` calls (`:113`, `:309`) need an `NSAlert`/`fprintf(stderr)` path, plus the
    `PKP_GUI_SUBSYSTEM` linker flag (`game-build/CMakeLists.txt:84-85`, `/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup`)
-   which has no macOS equivalent: on macOS the process is a normal executable inside the `.app`, and "no console
-   window" comes from the bundle, not the linker.
+   which has no macOS equivalent: on macOS the process is a normal executable, and "no console window" comes from
+   starting it outside a terminal, not from the linker.
 4. `runtime/src/services/fs_romfs.cpp:537-564` and `fs_volume.cpp` — `CreateFileW`/`ReadFile` with
    `FILE_SHARE_*` and overlapped reads → `open(O_RDONLY)`/`pread` through the shim (the `mem::ww::OsWriteScope`
    around `:556` stays; it is what keeps the write tracker honest).
@@ -377,32 +377,23 @@ native stack; `[diag] ftrace` timings are sane.
 
 ### M6 — Media, launcher, packaging
 
-> **Status 2026-11-11.** Launcher: done, including the Steam shortcut (macOS keeps Steam in `Library/Application
-> Support`). `.app` bundle: `launcher/scripts/make-app.sh` (ad-hoc signed; the game folder is the one the bundle sits in).
-> CI: `.github/workflows/macos.yml`. libvpx: found in Homebrew, so VP9/VP8 decode on the host, which is what the movies
-> need (D10). Open: a run that reaches a movie, and an `arm64-apple-macos` target in `pkp_build.py`. A one-click release also
-> needs a design decision: the Windows release ships a prebuilt game exe and relinks it against `pkp_rt.dll`, while the macOS
-> build is one static binary.
+> **Status 2026-11-12.** Launcher: done, including the Steam shortcut (macOS keeps Steam in `Library/Application
+> Support`). CI: `.github/workflows/macos.yml`. libvpx: found in Homebrew, so VP9/VP8 decode on the host, which is what the
+> movies need (D10). Open: a run that reaches a movie, and an `arm64-apple-macos` target in `pkp_build.py`.
 >
-> Signing and notarization: `make-mac.sh` signs with `CODESIGN_IDENTITY` (hardened runtime, timestamp, every Mach-O in the
-> bundle, then the bundle) and notarizes and staples the bundle with `NOTARY_PROFILE`. The release workflow's `macos` job sets
-> both from the repository secrets `MACOS_CERT_P12` (base64 of a Developer ID Application `.p12`), `MACOS_CERT_PASSWORD`,
-> `NOTARY_KEY_ID`, `NOTARY_ISSUER_ID` and `NOTARY_KEY_P8` (an App Store Connect API key). Without them the bundle is ad-hoc
-> signed, `spctl` rejects it, and macOS blocks the first launch; the zip then carries `How to open Recompia.txt`, which tells
-> the player to allow it in System Settings, Privacy and Security, or to run
-> `xattr -dr com.apple.quarantine /Applications/PokopiaLauncher.app`, and `Self-sign (optional).command`
-> (`launcher/scripts/self-sign.sh`), which removes that flag and signs the bundle with a certificate it creates in the player's
-> login keychain. A self-signed certificate is enough for a stable, verifiable signature, not for Gatekeeper: only an Apple-issued
-> Developer ID is waved through without the one-time approval.
+> Packaging: **no `.app`, no signature.** `make-mac.sh` builds one zip whose root is `PokopiaRecomp-<version>/` — the launcher
+> binary, `tools/` (the lifter, the SDK sources, the shader harness and MoltenVK) and `libpkp_rt.dylib` — the same shape as
+> the Windows and Linux packages. The player unpacks it anywhere and starts `PokopiaLauncher` from there; macOS blocks the
+> first start, and the zip's `How to open Recompia.txt` walks them through System Settings, Privacy and Security, "Open
+> Anyway" (or `xattr -dr com.apple.quarantine <folder>`). A bundle was tried and dropped: signing it needs every nested code
+> object signed, and the shader harness is a self-contained .NET publish whose assemblies are PE files `codesign` cannot sign,
+> so every signature attempt failed and left the zip unsigned anyway.
 >
-> In-place updates: the release zip is the whole macOS artifact — `Recompia-<version>-macos-arm64.zip` carries
-> `PokopiaLauncher.app` at its root (a fresh install drags it to Applications), and `update.rs` takes the bundle's
-> `Contents/MacOS` tree (the launcher and `tools/`) as the install root it applies to (`find_package`, `exe_dir()`). The
-> bundle's seal covers exactly those files, so after the swap `update.rs` copies the new
-> `libpkp_rt.dylib` over the `Contents/Frameworks` copy the executable's rpath loads, signs the bundle again — with
-> `Recompia Self-Signed` when the player ran the self-sign script, so the identity (and anything macOS granted the app) survives the
-> update, else ad-hoc — and verifies it. A bundle that cannot be verified goes back to the old files, whose seal is the one macOS
-> already accepted. An update writes its own files, so no download flag comes back and Gatekeeper is not asked again.
+> In-place updates: the zip is the whole macOS artifact, and `update.rs` takes `PokopiaRecomp-<version>/` as the install root
+> (`find_package`, `exe_dir()`) — the launcher and `tools/` are replaced in place, as on Windows and Linux. The runtime dylib
+> is in the package twice (beside the launcher, and in `tools/build/sdk`, where Set up copies it from into the game folder);
+> after the swap `update.rs` brings the copies already on disk along with the one the update replaced. Nothing is signed, so
+> there is no seal to renew and no `codesign` call. An update writes its own files, so no download flag comes back.
 
 Work:
 
@@ -411,19 +402,17 @@ Work:
 2. `launcher/` — macOS build of the Tauri app: replace the `pkp.exe`/`vulkan-1.dll`/`.bat` assumptions, point the
    shader-cache pipeline at the bundled `spirv_harness`, keep the disk-space and Vulkan checks
    (`launcher/README.md` steps 1–3).
-3. Packaging: `.app` bundle (`Contents/MacOS/pkp`, `Contents/Frameworks/{libvulkan.1.dylib,MoltenVK_icd.json,
-   libSDL3.dylib}`, `Contents/Resources/{fonts,assets,shaders}`), `Info.plist` with
-   `NSHighResolutionCapable`, `LSMinimumSystemVersion 13.0`, `CFBundleDocumentTypes` none.
-4. Signing: `codesign --options runtime` + `notarytool`. Hardened runtime needs
-   `com.apple.security.cs.disable-library-validation` **only if** MoltenVK/SDL are signed by a different Team ID —
-   sign them in the same pass and the entitlement is unnecessary. No `allow-jit` and no
-   `allow-unsigned-executable-memory` are needed, per D7.
+3. Packaging: decided — no `.app`, no signature (see M6 above). A flat `PokopiaRecomp-<version>/` zip, as on the other
+   platforms. If a bundle ever comes back, note that `codesign` cannot sign the harness's .NET assemblies, so `--deep` fails
+   and the bundle ships unsigned.
+4. Signing: not done on purpose. Only a Developer ID + notarization would make Gatekeeper wave the app through, and both need
+   an Apple account; the zip's note covers the one-time approval instead.
 5. `game-build/release_b/pkp_build.py` — a `--target arm64-apple-macos` path using the system clang (or a pinned
    LLVM tarball), same content-addressed `ObjCache`, same `@progress`/`@error` protocol.
-6. CI: `.github/workflows/macos.yml` on `macos-14` (arm64), build + `nxrt_gfx_demo` smoke test + `.app` artifact.
+6. CI: `.github/workflows/macos.yml` on `macos-14` (arm64), build + `nxrt_gfx_demo` smoke test.
 
-Acceptance: a signed, notarized `.app` that a second Mac opens with a Gatekeeper double-click and plays the game
-with its own dump.
+Acceptance: a second Mac unpacks the release zip, starts `PokopiaLauncher`, allows it once in System Settings and plays the
+game with its own dump.
 
 ---
 
@@ -537,7 +526,7 @@ What is in the tree and what the evidence for it is. Everything below was run on
 | M2, graphics | `nxrt_gfx_demo --headless --frames 300` → `gpu="Apple M3" frames=300 fps≈4400 … validation_errors=0`; `--overlay --frames 600` presents 600 frames with the ImGui overlay; `--screenshot` writes a 1280x720 PNG. |
 | M3, the game | `pkp` loads all four lifted modules (149,924 + 47,943 + 2,730 + 37 functions), runs rtld, starts `sm:` and the services, creates the heap section, brings up NVN on MoltenVK, places the game's five GPU pools, and plays: ~300 fps headless, audio at 48 kHz with no underruns, save data mounted, the world loaded. |
 | M5, diagnostics | the crash report is written by a helper thread with host stacks; `SuspendThread`/`GetThreadContext` stop a thread on its mach port (the sampler reads 2,688 stacks across main, the render thread and 40+ guest threads); `tools/symbolize.py` names both host and guest frames. |
-| M6, launcher | the Tauri launcher runs natively: Set up extracts and translates the shader corpus, Play starts `pkp` with `--ini`, `--setup`/`--preflight`/`--readiness`/`--play` work without the window, `make-app.sh` builds an ad-hoc-signed `.app`, and 102 Rust tests pass. |
+| M6, launcher | the Tauri launcher runs natively: Set up extracts and translates the shader corpus, Play starts `pkp` with `--ini`, `--setup`/`--preflight`/`--readiness`/`--play` work without the window, `make-mac.sh` builds the flat release zip, and the update tests pass. |
 
 ### What macOS had already taken (measured on the target)
 
@@ -624,15 +613,15 @@ The Tauri launcher builds and runs on macOS (`runtime/apps/launcher` is Win32 an
 ```sh
 cd launcher && npm install          # once
 npm run tauri build                 # launcher/src-tauri/target/release/pokopia-launcher
-launcher/scripts/make-app.sh <play folder>   # optional: PokopiaLauncher.app around it
 ```
 
-`npm run tauri build` only: a plain `cargo build --release` is a dev binary (no `TAURI_ENV_*`, no embedded front-end) and
+`npm run tauri build -- --no-bundle` for the release (only the binary is packaged): a plain `cargo build --release` is a dev binary (no `TAURI_ENV_*`, no embedded front-end) and
 opens a white window — it is ~650 KB smaller and has no `index-<hash>.js` in its `strings`.
 
 Put the binary in the game folder; the launcher looks for the game next to itself (`pkp`, `pkp.ini`, `shader_cache`).
-**Launch it as the `.app`** (`open PokopiaLauncher.app` or a double click): a bare Unix executable double-clicked in Finder
-opens Terminal around it, which is where its output and the game's would show. The game's stdout and stderr are discarded
+There is no `.app`: the release folder holds `PokopiaLauncher` and `tools/`, and the launcher is started from there (a
+double click opens Terminal around it, which is where its output and the game's would show; `./PokopiaLauncher` from a
+terminal is the same thing). The game's stdout and stderr are discarded
 when the launcher starts it (Windows spawns it with `CREATE_NO_WINDOW`); its log, crash report and freeze dump are files in
 the game folder either way.
 
@@ -651,8 +640,8 @@ cmake -S game-build -B build/rtb -G Ninja -DCMAKE_BUILD_TYPE=Release -DPKP_RT_DL
 cmake --build build/rtb -j 6
 ```
 
-The release is a zip (`launcher/scripts/make-mac.sh`): `PokopiaLauncher.app` with the runtime dylib, the lifter and the SDK
-sources inside it, and the self-sign command and the Gatekeeper note beside it. The package carries no game code and
+The release is a zip (`launcher/scripts/make-mac.sh`): `PokopiaRecomp-<version>/` with the launcher, `tools/` (the lifter,
+the SDK sources, the shader harness, MoltenVK) and `libpkp_rt.dylib`, plus the Gatekeeper note. The package carries no game code and
 no Python: Set up fetches python-build-standalone and the lz4 and capstone wheels into `tools/macos` at the first run, the
 way the Linux package does, and compiles with the Apple clang of the Command Line Tools. The game folder (`pkp`, `pkp.ini`,
 `shader_cache`, saves) is created in `~/Library/Application Support/Recompia/game`, because the bundle may sit in
@@ -735,8 +724,8 @@ run must fit the host, and the launcher stops the game at the kernel's critical 
 
 - **M4**: Link Play against a `pokopia-native` peer (the relay half is verified), a gamepad with a real pad, the
   `fs_volume` XPC check, and a `tt_runner` executable (the testtools code is in the library; no target builds a runner).
-- **M6**: a movie played end to end (the lifted `movie::` demuxer and the host VP9 decoder are in place, D10); Developer ID
-  signing and notarization (the `.app` is ad-hoc signed); an `arm64-apple-macos` target in `pkp_build.py` (macOS builds
-  through CMake), and a release design for a static binary.
+- **M6**: a movie played end to end (the lifted `movie::` demuxer and the host VP9 decoder are in place, D10); an
+  `arm64-apple-macos` target in `pkp_build.py` (macOS builds through CMake), and a release design for a static binary. No
+  signing by decision (see M6).
 - **Performance**: the M3 is GPU-bound at ~25 fps in the world (present blocks 41–49 ms, the render thread idle); the
   render scale is the lever. The pool shadow copy's bookkeeping, if it ever comes back, is the other.

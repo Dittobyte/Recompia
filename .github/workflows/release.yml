@@ -125,12 +125,17 @@ jobs:
 
   # The Windows package. No build job waits for another: each starts from the checkout, and publish uploads what they produced
   # once they are all done.
-  windows:
+  # The Windows package in three jobs that start together: the runtime (clang-cl, the long pole), the launcher (cargo), and the
+  # package that puts them together with the shader translator and the base package. Two builds on two runners instead of one is
+  # most of the wall clock; sccache, kept in the Actions cache, carries the runtime's ~600 translation units between runs.
+  windows-runtime:
     runs-on: windows-2025
-    timeout-minutes: 120
+    timeout-minutes: 60
     defaults:
       run:
         shell: pwsh
+    env:
+      SCCACHE_GHA_ENABLED: "true"
     steps:
       - uses: actions/checkout@v4
 
@@ -148,12 +153,6 @@ jobs:
           "VERSION=$v" >> $env:GITHUB_ENV
           "PRERELEASE=$(if ($v -match '-') { 'true' } else { 'false' })" >> $env:GITHUB_ENV
 
-      # The launcher is a Tauri app: its dependency tree is most of the build time, and Cargo.lock changes rarely.
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: launcher/src-tauri
-
       # The pinned third-party archives (SDL3, zstd, Vulkan-Headers, volk, VMA, ImGui): CMake reuses a file whose SHA-256
       # matches, so a hit skips the downloads entirely.
       - name: Third-party sources cache
@@ -162,12 +161,24 @@ jobs:
           path: build/deps
           key: nxrt-deps-win-v1
 
+      # The MSI is a 400 MB download and install every run; the extracted tree is the same for a given version.
+      - name: LLVM ${{ env.LLVM_VERSION }} (cache)
+        id: llvm
+        uses: actions/cache@v4
+        with:
+          path: C:\Program Files\LLVM
+          key: llvm-${{ env.LLVM_VERSION }}-win64-v1
+
       - name: LLVM ${{ env.LLVM_VERSION }}
+        if: steps.llvm.outputs.cache-hit != 'true'
         run: |
           $msi = "$env:RUNNER_TEMP\llvm.msi"
           Invoke-WebRequest "https://github.com/llvm/llvm-project/releases/download/llvmorg-$env:LLVM_VERSION/LLVM-$env:LLVM_VERSION-win64.msi" -OutFile $msi -MaximumRetryCount 5 -RetryIntervalSec 30   # GitHub answers this large download with a 504 now and then
           Start-Process msiexec -Wait -ArgumentList '/i', $msi, '/qn'
           & 'C:\Program Files\LLVM\bin\clang-cl.exe' --version
+
+      - name: LLVM on PATH
+        run: |
           'C:\Program Files\LLVM\bin' >> $env:GITHUB_PATH
 
       - uses: ilammy/msvc-dev-cmd@v1
@@ -237,16 +248,59 @@ jobs:
           Write-Output "dependency overrides: $($dargs.Count) of $($deps.Count)"
           exit 0
 
+      - name: sccache (the GitHub Actions cache)
+        uses: mozilla-actions/sccache-action@v0.0.9
+
       - name: pkp_rt.dll
         run: |
           $depArgs = @()
           if ($env:CMAKE_DEP_ARGS) { $depArgs = @($env:CMAKE_DEP_ARGS -split ' ' | Where-Object { $_ }) }
           cmake -S game-build -B build/rtdll -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl `
+                -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
                 -DPKP_RT_DLL=ON -DPKP_RELEASE=ON "-DPKP_VERSION=$env:VERSION" `
                 "-DNXRT_DEPS_DIR=$env:GITHUB_WORKSPACE\build\deps" @depArgs
           if ($LASTEXITCODE) { exit 1 }
           cmake --build build/rtdll --target pkp_rt
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win-rt
+          path: |
+            build/rtdll/pkp_rt.dll
+            build/rtdll/pkp_rt.lib
+          compression-level: 6
+
+  windows-launcher:
+    runs-on: windows-2025
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        run: |
+          if ($env:REL_TAG -and $env:GITHUB_REF_TYPE -ne 'tag') {
+            if ($env:REL_TAG -match '^v\d+\.\d+\.\d+-(alpha|beta|rc)\.\d+$') {
+              if ($env:GITHUB_REF -ne 'refs/heads/testing') { throw "a Testing release_tag publishes from the testing branch only (this run: $env:GITHUB_REF)" }
+            } else {
+              if ($env:GITHUB_REF -ne 'refs/heads/main') { throw "release_tag publishes from main only (this run: $env:GITHUB_REF)" }
+              if ($env:REL_TAG -notmatch '^v\d+\.\d+\.\d+$') { throw "release_tag '$env:REL_TAG' is not v<x.y.z> or v<x.y.z>-beta.N" }
+            }
+          }
+          $v = if ($env:REL_TAG) { $env:REL_TAG -replace '^v', '' } else { '0.0.0' }
+          "VERSION=$v" >> $env:GITHUB_ENV
+          "PRERELEASE=$(if ($v -match '-') { 'true' } else { 'false' })" >> $env:GITHUB_ENV
+
+      # The launcher is a Tauri app: its dependency tree is most of the build time, and Cargo.lock changes rarely.
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: launcher/src-tauri
+
+      # The pinned third-party archives (SDL3, zstd, Vulkan-Headers, volk, VMA, ImGui): CMake reuses a file whose SHA-256
+      # matches, so a hit skips the downloads entirely.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -271,6 +325,48 @@ jobs:
           npm run tauri build
           if ($LASTEXITCODE) { exit 1 }
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win-launcher
+          path: launcher/src-tauri/target/release/pokopia-launcher.exe
+          compression-level: 6
+
+  windows-package:
+    needs: [windows-runtime, windows-launcher]
+    runs-on: windows-2025
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        run: |
+          if ($env:REL_TAG -and $env:GITHUB_REF_TYPE -ne 'tag') {
+            if ($env:REL_TAG -match '^v\d+\.\d+\.\d+-(alpha|beta|rc)\.\d+$') {
+              if ($env:GITHUB_REF -ne 'refs/heads/testing') { throw "a Testing release_tag publishes from the testing branch only (this run: $env:GITHUB_REF)" }
+            } else {
+              if ($env:GITHUB_REF -ne 'refs/heads/main') { throw "release_tag publishes from main only (this run: $env:GITHUB_REF)" }
+              if ($env:REL_TAG -notmatch '^v\d+\.\d+\.\d+$') { throw "release_tag '$env:REL_TAG' is not v<x.y.z> or v<x.y.z>-beta.N" }
+            }
+          }
+          $v = if ($env:REL_TAG) { $env:REL_TAG -replace '^v', '' } else { '0.0.0' }
+          "VERSION=$v" >> $env:GITHUB_ENV
+          "PRERELEASE=$(if ($v -match '-') { 'true' } else { 'false' })" >> $env:GITHUB_ENV
+
+      # The launcher is a Tauri app: its dependency tree is most of the build time, and Cargo.lock changes rarely.
+      - name: Runtime from windows-runtime
+        uses: actions/download-artifact@v4
+        with:
+          name: win-rt
+          path: build/rtdll
+
+      - name: Launcher from windows-launcher
+        uses: actions/download-artifact@v4
+        with:
+          name: win-launcher
+          path: launcher/src-tauri/target/release
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
@@ -309,9 +405,12 @@ jobs:
   # launcher is the AppImage, the runtime is libpkp_rt.so (the Linux build of the same sources), the shader translator is the
   # linux-x64 publish, and a player's Set up compiles pkp for x86_64-linux-gnu with the Zig the launcher fetches. A tag adds it
   # to the release; manual runs without release_tag only build it (artifact).
+
   linux:
     # Ubuntu 22.04: the AppImage then needs glibc 2.35 (Ubuntu 22.04, Debian 12, Mint 21, SteamOS), not 24.04's 2.39
     runs-on: ubuntu-22.04
+    env:
+      SCCACHE_GHA_ENABLED: "true"
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -352,9 +451,13 @@ jobs:
           cmake --version
           python3 --version
 
+      - name: sccache (the GitHub Actions cache)
+        uses: mozilla-actions/sccache-action@v0.0.9
+
       - name: Runtime (libpkp_rt.so)
         run: |
           cmake -S game-build -B build/rtdll -G Ninja -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
                 -DPython3_EXECUTABLE="$(command -v python3)" \
                 "-DNXRT_DEPS_DIR=$PWD/build/deps" \
                 -DPKP_RT_DLL=ON -DPKP_RELEASE=ON "-DPKP_VERSION=$VERSION"
@@ -521,18 +624,14 @@ jobs:
   # The macOS package: the two files that need macOS (the launcher through Tauri's bundler, the runtime dylib against the SDK's
   # frameworks) plus the signature, around the payload the Linux job staged. One zip is the whole release: the bundle for a
   # fresh install, and inside it the Contents/MacOS tree the in-place updater replaces.
-  macos:
-    needs: macos-payload
+  # The macOS package in three jobs: the runtime dylib (against the SDK frameworks, with MoltenVK from the Linux payload), the
+  # launcher (Tauri's bundler), and the package that signs, zips and checks. sccache keeps the dylib's translation units warm.
+  macos-runtime:
+    needs: macos-payload         # the dylib links MoltenVK, which the payload carries
     runs-on: macos-latest          # arm64, the port's target (macos-14 was x64 and its image was retired on 2 November 2026)
-    timeout-minutes: 90
+    timeout-minutes: 60
     env:
-      # Developer ID signing and notarization, when the repository has the secrets (see the "Signing" step). Without them the
-      # bundle keeps its ad-hoc signature and macOS blocks the first launch, which the zip's note explains to the player.
-      MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
-      MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
-      NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
-      NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
-      NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+      SCCACHE_GHA_ENABLED: "true"
     steps:
       - uses: actions/checkout@v4
 
@@ -541,22 +640,11 @@ jobs:
           if [ -n "$REL_TAG" ]; then v=${REL_TAG#v}; else v=0.0.0; fi
           echo "VERSION=$v" >> "$GITHUB_ENV"
 
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: launcher/src-tauri
-
       - name: Third-party sources cache
         uses: actions/cache@v4
         with:
           path: work/deps
           key: nxrt-deps-macos-v1
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: launcher/package-lock.json
 
       - name: Payload (built on Linux)
         uses: actions/download-artifact@v4
@@ -564,12 +652,45 @@ jobs:
           name: macos-payload
           path: work          # restores work/payload and work/moltenvk
 
+      - name: sccache (the GitHub Actions cache)
+        uses: mozilla-actions/sccache-action@v0.0.9
+
       - name: Runtime dylib (libpkp_rt.dylib)
         run: |
           cmake -S game-build -B work/build/rtb -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 \
+                -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
                 "-DNXRT_DEPS_DIR=$PWD/work/deps" "-DNXRT_MOLTENVK_DIR=$PWD/work/moltenvk" \
                 -DPKP_RT_DLL=ON -DNXRT_BUILD_GFX=ON -DNXRT_GAMES=pkp
           cmake --build work/build/rtb --target pkp_rt -j 4
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-rt
+          path: work/build/rtb/libpkp_rt.dylib
+          compression-level: 6
+
+  macos-launcher:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        run: |
+          if [ -n "$REL_TAG" ]; then v=${REL_TAG#v}; else v=0.0.0; fi
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+
+      # The launcher is a Tauri app: its dependency tree is most of the build time, and Cargo.lock changes rarely.
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: launcher/src-tauri
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: launcher/package-lock.json
 
       - name: Launcher
         working-directory: launcher
@@ -579,34 +700,49 @@ jobs:
             sed -i '' -E "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
           fi
           npm ci --no-audit --no-fund
-          npm run tauri build
+          npm run tauri build -- --no-bundle   # the release is a plain folder, not a .app: only the binary is needed
           mkdir -p ../work/play
           cp src-tauri/target/release/pokopia-launcher ../work/play/PokopiaLauncher
 
-      - name: Signing (Developer ID Application, notarized)
-        if: env.MACOS_CERT_P12 != ''
-        run: |
-          set -euo pipefail
-          keychain="$RUNNER_TEMP/signing.keychain-db"
-          printf '%s' "$MACOS_CERT_P12" | base64 -d > "$RUNNER_TEMP/cert.p12"
-          security create-keychain -p actions "$keychain"
-          security set-keychain-settings -lut 3600 "$keychain"
-          security unlock-keychain -p actions "$keychain"
-          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: -s -k actions "$keychain" > /dev/null
-          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
-          identity=$(security find-identity -v -p codesigning "$keychain" | sed -nE 's/.*"(Developer ID Application[^"]+)".*/\1/p' | head -1)
-          if [ -z "$identity" ]; then
-            echo "::error::MACOS_CERT_P12 holds no Developer ID Application certificate"
-            exit 1
-          fi
-          echo "CODESIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
-          mkdir -p "$HOME/.private_keys"
-          printf '%s' "$NOTARY_KEY_P8" > "$HOME/.private_keys/AuthKey_$NOTARY_KEY_ID.p8"
-          xcrun notarytool store-credentials recompia --key "$HOME/.private_keys/AuthKey_$NOTARY_KEY_ID.p8" \
-            --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID"
-          echo "NOTARY_PROFILE=recompia" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-launcher
+          path: work/play/PokopiaLauncher
+          compression-level: 6
 
+  macos-package:
+    needs: [macos-payload, macos-runtime, macos-launcher]
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        run: |
+          if [ -n "$REL_TAG" ]; then v=${REL_TAG#v}; else v=0.0.0; fi
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+
+      - name: Payload (built on Linux)
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-payload
+          path: work          # restores work/payload and work/moltenvk
+
+      - name: Runtime dylib from macos-runtime
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-rt
+          path: work/build/rtb
+
+      - name: Launcher from macos-launcher
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-launcher
+          path: work/play
+
+      # an artifact is a zip: the executable bit does not survive it
+      - name: Launcher is executable
+        run: chmod +x work/play/PokopiaLauncher
       - name: Package (zip)
         run: launcher/scripts/make-mac.sh work/play work/payload "$VERSION"
 
@@ -616,19 +752,18 @@ jobs:
           test -s "$zip"
           rm -rf work/check && mkdir -p work/check
           unzip -q "$zip" -d work/check
-          app="work/check/PokopiaLauncher.app"
-          test -x "$app/Contents/MacOS/PokopiaLauncher"
-          file "$app/Contents/MacOS/PokopiaLauncher" | grep -q arm64
+          root="work/check/PokopiaRecomp-$VERSION"
+          test -x "$root/PokopiaLauncher"
+          file "$root/PokopiaLauncher" | grep -q arm64
           for f in tools/build/sdk/libpkp_rt.dylib tools/build/sdk/libvulkan.1.dylib tools/build/sdk/kbm_icons \
-                   tools/build/sdk/fonts tools/harness/spirv_harness tools/build/pkp_build.py; do
-            test -e "$app/Contents/MacOS/$f" || { echo "missing $f in the bundle"; ls -R "$app/Contents/MacOS" | head -60; exit 1; }
+                   tools/build/sdk/fonts tools/harness/spirv_harness tools/build/pkp_build.py \
+                   libpkp_rt.dylib "How to open Recompia.txt"; do
+            test -e "$root/$f" || { echo "missing $f in the package"; ls -R "$root" | head -60; exit 1; }
           done
-          test -e "$app/Contents/Frameworks/libpkp_rt.dylib" || { echo "the bundle has no runtime dylib in Contents/Frameworks"; exit 1; }
-          test -e "work/check/Self-sign (optional).command" || { echo "the zip has no self-sign command"; exit 1; }
-          # the in-place updater's package: update.rs takes the bundle's Contents/MacOS as the install root
-          unzip -Z1 "$zip" | grep -qx "PokopiaLauncher.app/Contents/MacOS/tools/build/pkp_build.py" || { echo "the zip has no tools/build inside the bundle"; exit 1; }
-          codesign --verify --deep --strict "$app"
-          if [ -n "${CODESIGN_IDENTITY:-}" ]; then spctl -a -vv "$app" || { echo "Gatekeeper rejects the signed bundle"; exit 1; }; fi
+          # the in-place updater's package: update.rs takes PokopiaRecomp-<version>/ as the install root
+          unzip -Z1 "$zip" | grep -qx "PokopiaRecomp-$VERSION/tools/build/pkp_build.py" || { echo "the zip has no tools/build at the package root"; exit 1; }
+          # no .app and no signature: the zip is unpacked and the launcher started from there (the note explains Open Anyway)
+          if unzip -Z1 "$zip" | grep -q '\.app/'; then echo "the zip carries an app bundle"; exit 1; fi
           du -h "$zip"
 
       - name: Checksums
@@ -647,8 +782,9 @@ jobs:
 
   # The one place that writes into the release: it takes the archives every build job produced, uploads them, and writes one
   # SHA256SUMS.txt over all of them. A platform job that failed leaves its archive out instead of failing this one.
+
   publish:
-    needs: [release, windows, linux, macos]
+    needs: [release, windows-package, linux, macos-package]
     if: always() && (github.ref_type == 'tag' || inputs.release_tag != '')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
