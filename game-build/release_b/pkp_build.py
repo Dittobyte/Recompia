@@ -860,6 +860,9 @@ def main():
         return 0 if current else 4 if relink else 3
     if not a.exefs or not a.game:
         ap.error('--exefs and --game are required')
+    # The lifter runs as a child process in another directory, so a relative --exefs would not resolve there (it failed with
+    # FileNotFoundError in nxrecomp, after the game files had been verified).
+    a.exefs = os.path.abspath(a.exefs)
     game = os.path.abspath(a.game)
     build = os.path.join(game, 'build')
     os.makedirs(build, exist_ok=True)
@@ -886,6 +889,12 @@ def main():
     t0 = time.time()
     times = {}
     try:
+        # The link needs the runtime library from the package's sdk folder. A payload staged without it fails at the link,
+        # after the lift and the compile: say so now instead.
+        runtime_lib = os.path.join(SDK, RUNTIME_LIB)
+        if not os.path.isfile(runtime_lib):
+            raise Fail('The package is missing %s, which the link needs: extract the release zip again, or copy the runtime '
+                       'library into %s.' % (RUNTIME_LIB, os.path.dirname(runtime_lib)))
         if DARWIN:
             if subprocess.run(['xcrun', '--find', 'clang++'], capture_output=True).returncode != 0:
                 raise Fail('Apple clang was not found: run "xcode-select --install" and press Set up again.')
