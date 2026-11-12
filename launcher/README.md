@@ -11,9 +11,9 @@ files you extracted from your own copy, writes `pkp.ini` next to `pkp.exe` and b
    shader_cache/spirv`) and builds `shader_cache\spirv\` next to `pkp.exe`:
    - Extract: `tools\shaders\extract_corpus.py` finds every shader in the romfs and in `exefs\main` and writes the
      distinct blocks to `shader_cache\corpus\` (a few pack files, about 5 GB, deleted when setup finishes).
-   - Translate: `tools\spirv_harness\spirv_harness.exe --batch` in chunks of 7000, writing each block's `<hash>.spv` and its row
-     of `results.tsv` into `shader_cache\stage\` as the block finishes (about 1.8 GB per chunk; 26 GB of SPIR-V for the 99,012
-     blocks of 2.0.1).
+   - Translate: `tools\spirv_harness\spirv_harness.exe --serve`, one process for the whole translation that takes a chunk of 7000
+     blocks at a time and writes each block's `<hash>.spv` and its row of `results.tsv` into `shader_cache\stage\` as the block
+     finishes (about 1.8 GB per chunk; 26 GB of SPIR-V for the 99,012 blocks of 2.0.1).
    - Commit: the chunk's rows are appended to `shader_cache\spirv\results.tsv`, which is what makes a block count as translated,
      after its SPIR-V is in the cache.
    - Pack (on by default, "Packed shader files" on the Set up page): each chunk goes from the stage straight into

@@ -332,7 +332,7 @@ fn has_atomic(b: &[u8]) -> bool {
     false
 }
 
-fn quiet(cmd: &mut Command, idle: bool) {
+pub(crate) fn quiet(cmd: &mut Command, idle: bool) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -409,7 +409,7 @@ pub fn find_tools(tools_dir: &Path) -> Result<Tools, String> {
 }
 
 /// A progress line of a tool ("scan: 12 of 99", "  500/1000  3.2 s"): counted by the progress bar, not worth a log line.
-fn is_progress_line(l: &str) -> bool {
+pub(crate) fn is_progress_line(l: &str) -> bool {
     l.starts_with("scan: ") || l.trim().split('/').next().map_or(false, |x| !x.is_empty() && x.bytes().all(|b| b.is_ascii_digit()) && l.contains('/'))
 }
 
@@ -702,6 +702,8 @@ pub fn run(job: &Job, tools: &Tools, cancel: &AtomicBool, mut report: impl FnMut
     let cache = cache_dir(&job.game_dir);
     let corpus = cache.join("corpus");
     let stage = stage_dir(&job.game_dir);
+    // a stage folder left by a Set up that was killed: its rows would look like this run's (a one-shot run cleared it itself)
+    let _ = fs::remove_dir_all(&stage);
     let spirv = job.game_dir.join(SPIRV_REL);
     fs::create_dir_all(&spirv).map_err(|e| format!("cannot create {}: {}", spirv.display(), e))?;
     crate::shader_archive::clean(&job.game_dir);
@@ -801,47 +803,83 @@ pub fn run(job: &Job, tools: &Tools, cancel: &AtomicBool, mut report: impl FnMut
     let total = urows.len() as u64;
     let mut finished = (urows.len() - urows.iter().filter(|r| !done.contains(first_col(r))).count()) as u64;
     report(p("translate", finished, total, format!("Translating shaders: {} of {}", finished, total)));
-    let mut mode = crate::harness::Mode::Fast;   // Safe from the first batch that needed it on (harness::run)
-    for chunk in todo.chunks(CHUNK) {
-        let mut f = fs::File::create(corpus.join("unique.tsv")).map_err(|e| e.to_string())?;
-        writeln!(f, "{}", uheader).map_err(|e| e.to_string())?;
-        for r in chunk {
-            writeln!(f, "{}", r).map_err(|e| e.to_string())?;
-        }
-        drop(f);
-        let base = finished;
-        let ok = crate::harness::run(&tools.harness, &corpus, &stage, job.jobs, &mut mode, cancel, job.idle, job.log.as_ref(), |l| {
-            // "  <n>/<count>  <s> s" every 500 blocks
-            if let Some(n) = l.trim().split('/').next().and_then(|x| x.parse::<u64>().ok()) {
-                report(p("translate", base + n, total, format!("Translating shaders: {} of {}", base + n, total)));
+    // One translator process for the whole translation (`--serve`): a chunk no longer pays the .NET start, the cold JIT and the
+    // thread pool ramp, which was about 3 s of every chunk. A process that dies is started again, in Safe mode when it died without
+    // a report (the same rule a one-shot run gets in harness::run), and its chunk runs from its start: nothing of a dead chunk was
+    // committed.
+    let mut worker: Option<crate::harness::Worker> = None;
+    let mut mode = crate::harness::Mode::Fast;
+    let ran = (|| -> Result<bool, String> {
+        for chunk in todo.chunks(CHUNK) {
+            let mut f = fs::File::create(corpus.join("unique.tsv")).map_err(|e| e.to_string())?;
+            writeln!(f, "{}", uheader).map_err(|e| e.to_string())?;
+            for r in chunk {
+                writeln!(f, "{}", r).map_err(|e| e.to_string())?;
             }
-        })?;
-        // A run that was stopped still leaves every block it finished (the harness writes a row per block as it goes), so what it
-        // got through is committed before setup reports the pause: resuming starts where it stopped. A run that never started has
-        // no table to commit.
-        let started = stage.join("results.tsv").is_file();
-        if !ok && !started {
-            return Ok(false);
-        }
-        let kept = if compact {
-            // Straight from the stage into the archive: a fresh translation is never written loose to the game folder, so a chunk
-            // costs one compressed write instead of a loose write, a read back and a delete.
-            let (rheader, rrows) = stage_rows(&stage)?;
-            let hashes: Vec<String> = rrows.iter().map(|r| first_col(r).to_string()).collect();
-            crate::shader_archive::compact(&job.game_dir, Some(&stage), Some(&hashes), &AtomicBool::new(false), |_, _| {})?;
-            append_rows(&spirv, &rheader, &rrows)?
-        } else {
-            commit_stage(&stage, &spirv)?
-        };
-        let _ = fs::remove_dir_all(&stage);
-        if !ok {
-            if let Some(l) = &job.log {
-                l(&format!("paused: {} shaders translated before the pause are kept", kept));
+            drop(f);
+            let base = finished;
+            let ok = loop {
+                if worker.is_none() {
+                    worker = Some(crate::harness::Worker::start(&tools.harness, &stage, job.jobs, mode, job.idle)?);
+                }
+                let res = worker.as_mut().unwrap().run_chunk(&corpus, cancel, job.log.as_ref(), |l| {
+                    // "  <n>/<count>  <s> s" every 500 blocks
+                    if let Some(n) = l.trim().split('/').next().and_then(|x| x.parse::<u64>().ok()) {
+                        report(p("translate", base + n, total, format!("Translating shaders: {} of {}", base + n, total)));
+                    }
+                });
+                match res {
+                    Ok(ok) => break ok,
+                    Err(f) => {
+                        worker = None;
+                        if mode == crate::harness::Mode::Fast && !f.reported {
+                            mode = crate::harness::Mode::Safe;
+                            if let Some(l) = &job.log {
+                                l(&format!(
+                                    "The shader translator stopped without a report: running it again with workstation GC and {} jobs, and keeping that.",
+                                    job.jobs.clamp(1, 2)
+                                ));
+                            }
+                            continue;
+                        }
+                        return Err(f.message);
+                    }
+                }
+            };
+            // A run that was stopped still leaves every block it finished (the harness writes a row per block as it goes), so what it
+            // got through is committed before setup reports the pause: resuming starts where it stopped. A run that never started has
+            // no table to commit.
+            let started = stage.join("results.tsv").is_file();
+            if !ok && !started {
+                return Ok(false);
             }
-            return Ok(false);
+            let kept = if compact {
+                // Straight from the stage into the archive: a fresh translation is never written loose to the game folder, so a chunk
+                // costs one compressed write instead of a loose write, a read back and a delete.
+                let (rheader, rrows) = stage_rows(&stage)?;
+                let hashes: Vec<String> = rrows.iter().map(|r| first_col(r).to_string()).collect();
+                crate::shader_archive::compact(&job.game_dir, Some(&stage), Some(&hashes), &AtomicBool::new(false), |_, _| {})?;
+                append_rows(&spirv, &rheader, &rrows)?
+            } else {
+                commit_stage(&stage, &spirv)?
+            };
+            let _ = fs::remove_dir_all(&stage);
+            if !ok {
+                if let Some(l) = &job.log {
+                    l(&format!("paused: {} shaders translated before the pause are kept", kept));
+                }
+                return Ok(false);
+            }
+            finished += chunk.len() as u64;
+            report(p("translate", finished, total, format!("Translating shaders: {} of {}", finished, total)));
         }
-        finished += chunk.len() as u64;
-        report(p("translate", finished, total, format!("Translating shaders: {} of {}", finished, total)));
+        Ok(true)
+    })();
+    if let Some(mut w) = worker.take() {
+        w.stop();
+    }
+    if !ran? {
+        return Ok(false);
     }
     let _ = fs::remove_dir_all(&stage);
     let _ = fs::remove_file(corpus.join("unique.tsv"));

@@ -58,7 +58,8 @@ namespace SpirvHarness
 
         const string Usage =
             "usage: spirv_harness <code.bin> <ctrl.bin> [-o out.spv] [--glsl] [--glslc <GLSLC output, NVN2>]\n" +
-            "       spirv_harness --batch <extracted dir> --out <dir> [--jobs N] [--limit N] [--no-val] [--no-retry] [--debug-mode] [--target-env E] [--host desktop|moltenvk] [--spirv-val PATH] [--reflect <Ampere corpus>]";
+            "       spirv_harness --batch <extracted dir> --out <dir> [--jobs N] [--limit N] [--no-val] [--no-retry] [--debug-mode] [--target-env E] [--host desktop|moltenvk] [--spirv-val PATH] [--reflect <Ampere corpus>]\n" +
+            "       spirv_harness --serve --out <dir> [--jobs N] [--no-val] ...: --batch for each corpus folder named on stdin, one per line";
 
         static int Main(string[] args)
         {
@@ -84,6 +85,7 @@ namespace SpirvHarness
                          $"{Environment.ProcessorCount} processors, {GC.GetGCMemoryInfo().TotalAvailableMemoryBytes >> 20} MiB for the GC; " +
                          $"arguments: {string.Join(' ', args)}");
                 if (args.Length >= 2 && args[0] == "--batch") return Batch(args);
+                if (args.Length >= 2 && args[0] == "--serve") return Serve(args);
                 if (args.Length >= 2 && !args[0].StartsWith("-")) return Single(args);
             }
             catch (ArgumentException e)
@@ -536,6 +538,39 @@ namespace SpirvHarness
             File.WriteAllText(Path.Combine(outDir, "summary.txt"), summary);
             Console.Write(summary);
             Progress($"done: {all.Count} blocks");
+            return 0;
+        }
+
+        /// --serve: one process for a whole Set up. Each line on stdin names a corpus folder (the launcher writes one per chunk) and
+        /// gets the same translation a one-shot --batch run does; when that chunk's results.tsv and summary.txt are written, "chunk
+        /// done" goes to stdout and the process waits for the next line. Nothing carries over between chunks but the process, which
+        /// is the point: a chunk no longer pays the .NET start, the cold JIT and the thread pool ramp.
+        static int Serve(string[] args)
+        {
+            string outDir = Opt(args, "--out", null) ?? throw new ArgumentException("--out is required");
+            Directory.CreateDirectory(outDir);
+            List<string> common = args.Skip(1).Where(a => a != "--serve").ToList();   // what a --batch run gets, less its corpus folder
+            string line;
+            while ((line = Console.In.ReadLine()) != null)
+            {
+                line = line.Trim();
+                if (line.Length == 0) continue;
+                if (line == "quit") break;
+                List<string> chunk = new() { "--batch", line };
+                chunk.AddRange(common);
+                try
+                {
+                    Batch(chunk.ToArray());
+                }
+                catch (Exception e)
+                {
+                    // a chunk that dies ends the worker: the launcher reads ErrorFile and starts another one
+                    Fail(outDir, e.ToString());
+                    Console.WriteLine("chunk failed");
+                    return 3;
+                }
+                Console.WriteLine("chunk done");
+            }
             return 0;
         }
 
