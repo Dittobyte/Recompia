@@ -56,6 +56,31 @@ pub struct Entry {
     pub download: Option<Download>,
 }
 
+/// One achievement of the community tracker's list, as the hub publishes it (names and sentences are the hub's, in English).
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
+pub struct Achievement {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub desc: String,
+    /// the group it is listed under; the list's order is the hub's order
+    #[serde(default)]
+    pub cat: String,
+    #[serde(default)]
+    pub goal: u64,
+    /// the picture's address on the hub site ("" = none)
+    #[serde(default)]
+    pub picture: String,
+}
+
+/// The catalog's `achievements` block: where everyone's counts are and the list (the page shows both in the launcher; its web
+/// tracker page and licence link are not read).
+#[derive(Clone, Debug, Default)]
+pub struct Achievements {
+    pub stats: String,
+    pub list: Vec<Achievement>,
+}
+
 /// The list, read.
 #[derive(Clone, Debug, Default)]
 pub struct Catalog {
@@ -64,6 +89,8 @@ pub struct Catalog {
     pub site: String,
     pub submit: String,
     pub mods: Vec<Entry>,
+    /// None when the hub's list has no such block (the Achievements page says so)
+    pub achievements: Option<Achievements>,
 }
 
 /// Reads a catalog.json. Err for anything but schema 1; entries that cannot be read are left out.
@@ -74,7 +101,11 @@ pub fn parse(body: &[u8]) -> Result<Catalog, String> {
     }
     let text = |k: &str| v.get(k).and_then(|s| s.as_str()).unwrap_or("").to_string();
     let mods = v.get("mods").and_then(|m| m.as_array()).map(|a| a.iter().filter_map(|m| serde_json::from_value(m.clone()).ok()).collect()).unwrap_or_default();
-    Ok(Catalog { preview: v.get("preview").and_then(|p| p.as_bool()).unwrap_or(false), site: text("site"), submit: text("submit"), mods })
+    let achievements = v.get("achievements").filter(|a| a.is_object()).map(|a| {
+        let list = a.get("list").and_then(|l| l.as_array()).map(|l| l.iter().filter_map(|x| serde_json::from_value(x.clone()).ok()).collect()).unwrap_or_default();
+        Achievements { stats: a.get("stats").and_then(|s| s.as_str()).unwrap_or("").to_string(), list }
+    });
+    Ok(Catalog { preview: v.get("preview").and_then(|p| p.as_bool()).unwrap_or(false), site: text("site"), submit: text("submit"), mods, achievements })
 }
 
 /// Made for this game version, and for a core this launcher has.
@@ -225,6 +256,21 @@ mod tests {
         assert_eq!(v.submit, "https://pokopia-native.vercel.app/mods/submit");
         assert_eq!(v.hub, "https://pokopia-native.vercel.app/mods");
         assert!(parse(br#"{"schema": 2, "mods": []}"#).is_err());
+    }
+
+    #[test]
+    fn reads_the_achievements_block_and_its_absence() {
+        let with = r#"{"schema": 1, "mods": [], "achievements": {"page": "https://pokopia-native.vercel.app/mods/achievements",
+          "stats": "https://achievements.pokopia-native.workers.dev/api/stats", "license": "https://pokopia-native.vercel.app/img/ach/LICENSE.txt", "extra": 1,
+          "list": [{"id": "dex_5", "name": "New Neighbors", "desc": "Have 5 Pokemon in your Pokedex.", "cat": "pokedex", "goal": 5,
+                    "picture": "https://pokopia-native.vercel.app/img/ach/dex_5.webp", "new": true}, {"name": "no id"}, {"id": "dex_25", "name": "Busy Street"}]}}"#;
+        let a = parse(with.as_bytes()).unwrap().achievements.unwrap();
+        assert_eq!(a.list.len(), 2, "an entry without an id is left out, not the list");
+        assert_eq!((a.list[0].cat.as_str(), a.list[0].goal), ("pokedex", 5));
+        assert!(a.list[1].picture.is_empty() && a.list[1].cat.is_empty());
+        assert!(a.stats.ends_with("/api/stats"));
+        assert!(parse(br#"{"schema": 1, "mods": []}"#).unwrap().achievements.is_none());
+        assert!(parse(br#"{"schema": 1, "achievements": []}"#).unwrap().achievements.is_none());
     }
 
     #[test]

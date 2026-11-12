@@ -327,6 +327,18 @@ const mockCatalog = {
   ],
 };
 
+// ?page=achievements: a short list with counts, two earned; the mod is not installed (add it to mockMods to see the other states)
+const mockAch = (n, name, cat, goal, players) => ({ id: n, name, desc: `Have ${goal} of the ${cat}.`, cat, goal, picture: '', players });
+const mockAchievements = {
+  available: true, offline: false, mod_id: 'community_achievements',
+  stats: { players: 240, kept: false },
+  earned: { dex_5: 1762900000, habitat_5: 1762990000 },
+  list: [
+    mockAch('dex_5', 'New Neighbors', 'pokedex', 5, 200), mockAch('dex_25', 'Busy Street', 'pokedex', 25, 90), mockAch('dex_200', 'Living Encyclopedia', 'pokedex', 200, 2),
+    mockAch('habitat_5', 'Home Sweet Habitat', 'habitats', 5, 150), mockAch('streak_30', 'Dedicated', 'streak', 30, 0), mockAch('relic_1', 'Dig It', 'relics', 1, 12),
+  ],
+};
+
 function handle(cmd, args) {
   if (cmd.startsWith('plugin:window|') || cmd.startsWith('plugin:')) return null;
   if (sc.down && cmd !== 'get_releases') throw 'The launcher backend did not answer.';
@@ -441,6 +453,7 @@ function handle(cmd, args) {
     case 'mods_install': return structuredClone(mockMods);
     case 'mods_auto_update': return [];
     case 'open_mods_dir': return null;
+    case 'achievements_view': return structuredClone(mockAchievements);
     default:
       console.warn('[mock] unknown command', cmd, args);
       throw `The mock has no command ${cmd}`;

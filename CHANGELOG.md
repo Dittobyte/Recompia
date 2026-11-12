@@ -4,12 +4,16 @@
 
 - New **Item editor (experimental)** in Settings > Gameplay, off by default: it adds an **Items** tab to the game's Settings screen where you change how many of an item in your bag you hold (up to the game's stack limit). It does not add new items and is off during Link Play. Back up your save first. Update only: no shader rebuild, no Set up again
 - New **Aspect Ratio** setting in the game's Settings > Display and in the launcher (Auto, 16:9, 16:10, 21:9, 32:9; applies after a restart): 16:9 now keeps the game in 16:9 on a 16:10 or ultrawide screen. The toggle that only chose black bars over stretching is now called **Letterbox** (#564). Update only: no shader rebuild, no Set up again
+- Fixed the **Nearest** upscaler with **Scene Resolution** below 100% leaving the 3D scene smooth and blurry, the same as Off: the scene is now enlarged with hard pixels while the menus and HUD stay sharp (#571). Update only: no shader rebuild, no Set up again
 
 ### Mods
 - Added a **Mods** tab to the game's own Settings: pick a mod, switch it on or off (applies at the next start), see its state and change its settings, which reach the mod at once
 - Mods can now take screenshots (without the game's overlay menus in them) and react to keyboard keys
 - Mods can tint the final picture (colour presets, colorblind filters), show a picture beside their messages, and make HTTPS requests to the sites their own description names (no redirects, cookies or sign-in)
 - Changing mods that need other hook points now translates only the game part they touch: a plan with main-only points no longer redoes the other three parts (on PC: about 4.5 minutes for main-only points, under a minute for points outside main)
+
+### Launcher
+- New **Achievements** page: the Modtopia community tracker in the launcher, with the achievements grouped as the hub lists them, how many players have each one, the rarest right now, and which ones you earned (from the Community Achievements mod). It also shows whether the mod is installed, on and sharing, and can switch it or its sharing on. The launcher only reads the counts and sends nothing. Update only: no shader rebuild, no Set up again
 
 ### Linux
 - The game runs natively on Linux: no Proton, no Wine. The download is `PokopiaRecomp-<version>-linux-x64.tar.gz`, with the launcher as an AppImage and the runtime as `libpkp_rt.so`, the same runtime the Windows build links as `pkp_rt.dll`
