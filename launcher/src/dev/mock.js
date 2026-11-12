@@ -319,11 +319,18 @@ const mockMods = {
   ],
 };
 const mockCatalog = {
-  offline: false, preview: false, hub: 'https://pokopia-native.vercel.app/mods', submit: 'https://pokopia-native.vercel.app/mods/submit',
+  offline: false, preview: false, game: '2.0.1', hub: 'https://pokopia-native.vercel.app/mods', submit: 'https://pokopia-native.vercel.app/mods/submit',
+  groups: [{ key: 'qol', label: 'Quality of life' }, { key: 'gameplay', label: 'Gameplay' }, { key: 'community', label: 'Community' }],
   mods: [
-    { id: 'auto_run', name: 'Auto-Run', version: '1.0.0', summary: 'Tap once to keep running.', authors: ['The Modtopia contributors'], license: 'MIT', gameplay: false, network: false, page: 'https://pokopia-native.vercel.app/mods/auto-run', available: true, installed: '', newer: false },
-    { id: 'bigger_stacks', name: 'Bigger Stacks', version: '1.1.0', summary: 'More of an item in one slot.', authors: ['The Modtopia contributors'], license: 'MIT', gameplay: true, network: false, page: '', available: true, installed: '1.0.0', newer: true },
-    { id: 'community_achievements', name: 'Community Achievements', version: '1.0.0', summary: 'Achievements counted with the community.', authors: ['The Modtopia contributors'], license: 'MIT', gameplay: false, network: true, page: '', available: false, installed: '', newer: false },
+    { id: 'auto_run', name: 'Auto-Run', version: '1.0.0', summary: 'Tap once to keep running.', description: 'Tap once to keep running: your character goes on forward (you still steer) until you tap again, pull the stick back or open a menu.
+
+Works with the controller and the keyboard.',
+      settings: ['Controller button that starts and stops it (the game no longer sees that button)', 'Keyboard key that starts and stops it', 'Run (hold B) instead of walking', 'Say so on the screen'], tested: ['2.0.1', '1.0.5'], group: 'qol', source: 'https://github.com/example/auto-run', size: 77330,
+      authors: ['The Modtopia contributors'], license: 'MIT', gameplay: false, network: false, page: 'https://pokopia-native.vercel.app/mods/auto-run', available: true, installed: '', newer: false },
+    { id: 'bigger_stacks', name: 'Bigger Stacks', version: '1.1.0', summary: 'More of an item in one slot.', description: 'More of an item in one slot. The game still counts what you hold, only the limit moves.', settings: ['Stack limit'], tested: [], group: 'gameplay', source: '', size: 4096,
+      authors: ['The Modtopia contributors'], license: 'MIT', gameplay: true, network: false, page: '', available: true, installed: '1.0.0', newer: true },
+    { id: 'community_achievements', name: 'Community Achievements', version: '1.0.0', summary: 'Achievements counted with the community.', description: '', settings: [], tested: ['2.0.1'], group: 'community', source: '', size: 0,
+      authors: ['The Modtopia contributors'], license: 'MIT', gameplay: false, network: true, page: '', available: false, installed: '', newer: false },
   ],
 };
 

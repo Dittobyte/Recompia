@@ -34,6 +34,45 @@ export function cardAction(card, preview) {
   return card.installed ? 'update' : 'install';
 }
 
+/** The hub's card is marked as tried on this game version (`tested` is the list of versions Rust passes on, mods_catalog.rs). */
+export const isTested = (card, game) => !!game && Array.isArray(card.tested) && card.tested.includes(game);
+
+/** The cards of one group; '' is every card. */
+export const filterByGroup = (cards, key) => (key ? cards.filter((c) => c.group === key) : cards);
+
+/** The filter chips: "All" first, then the groups in the hub's order. Nothing when the list has no groups. */
+export function groupChips(groups) {
+  return groups?.length ? [{ key: '', label: t('All') }, ...groups.map((g) => ({ key: g.key, label: g.label }))] : [];
+}
+
+/** The chosen group, or '' (All) when a refreshed list no longer has it. */
+export const keepGroup = (groups, key) => (groups?.some((g) => g.key === key) ? key : '');
+
+/** A package size for a person: "75 KB", "1.2 MB". */
+export const sizeText = (bytes) => (bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : bytes >= 1024 ? `${Math.round(bytes / 1024)} KB` : `${bytes} B`);
+
+/** What a card's Details dialog says, all plain text: { title, by, description, settings: [label], facts: [line], links: [{ label, url }] }.
+ *  The description falls back to the summary when the hub gave no longer text. `game` is the game version of the list. */
+export function detailsView(card, game) {
+  const facts = [];
+  if (card.tested?.length) facts.push(t('Tested on game version {versions}.', { versions: card.tested.join(', ') }));
+  else if (game) facts.push(t('The hub has not marked it as tested on game version {version}.', { version: game }));
+  if (card.size > 0) facts.push(t('Download size: {size}', { size: sizeText(card.size) }));
+  if (card.gameplay) facts.push(t('It changes gameplay: everyone in a Link Play session needs it too.'));
+  if (card.network) facts.push(t('It goes online.'));
+  const links = [];
+  if (card.page) links.push({ label: t('Mod page'), url: card.page });
+  if (card.source) links.push({ label: t('Source'), url: card.source });
+  return {
+    title: `${card.name} ${card.version}`,
+    by: byLine(card),
+    description: card.description || card.summary || '',
+    settings: card.settings || [],
+    facts,
+    links,
+  };
+}
+
 /** The lines of the Mods page's two questions about what a mod does, in the order shown. */
 function whatItDoes(m, codeLine) {
   const lines = [byLine(m), codeLine];

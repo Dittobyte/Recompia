@@ -1,5 +1,5 @@
 // Tests for the pure part of the Mods page (src/mods-model.js). Run: node launcher/scripts/test-mods-model.mjs
-import { allowQuestion, badges, byLine, canMove, cardAction, installQuestion, isSlider, settingValue, updatedLine } from '../src/mods-model.js';
+import { allowQuestion, badges, byLine, canMove, cardAction, detailsView, filterByGroup, groupChips, installQuestion, isSlider, isTested, keepGroup, settingValue, sizeText, updatedLine } from '../src/mods-model.js';
 
 let bad = 0;
 const check = (ok, what) => { if (!ok) { console.log(`FAIL ${what}`); bad++; } };
@@ -37,6 +37,27 @@ check(isSlider({ kind: 'number', min: 0.5, max: 1.6 }) && !isSlider({ kind: 'num
 check(!canMove([1, 2], 0, -1) && canMove([1, 2], 0, 1) && !canMove([1, 2], 1, 1), 'move at the ends');
 
 check(updatedLine([{ name: 'A', from: '1.0.0', to: '1.1.0' }, { name: 'B', from: '0.1.0', to: '0.2.0' }]) === 'Updated by itself: A 1.0.0 → 1.1.0, B 0.1.0 → 0.2.0', 'the update line names each mod and its versions');
+
+// Browse: groups, the Tested tag, Details
+const cards = [{ id: 'a', group: 'camera' }, { id: 'b', group: 'qol' }, { id: 'c', group: '' }, { id: 'd', group: 'camera' }];
+check(filterByGroup(cards, '') === cards, 'no group chosen: every card');
+check(filterByGroup(cards, 'camera').map((c) => c.id).join() === 'a,d', 'one group');
+check(filterByGroup(cards, 'nowhere').length === 0, 'a group without cards');
+const groups = [{ key: 'camera', label: 'Camera' }, { key: 'qol', label: 'Quality of life' }];
+check(groupChips(groups).map((g) => g.label).join() === 'All,Camera,Quality of life' && groupChips(groups)[0].key === '', 'chips: All first, then the hub order');
+check(groupChips([]).length === 0 && groupChips(undefined).length === 0, 'no groups, no chips');
+check(keepGroup(groups, 'qol') === 'qol' && keepGroup(groups, 'gone') === '' && keepGroup([], 'qol') === '', 'a group that is gone falls back to All');
+check(isTested({ tested: ['2.0.1', '1.0.5'] }, '2.0.1') && !isTested({ tested: ['1.0.5'] }, '2.0.1') && !isTested({ tested: [] }, '2.0.1') && !isTested({}, '2.0.1') && !isTested({ tested: ['2.0.1'] }, ''), 'tested only when the list holds the game version');
+check(sizeText(512) === '512 B' && sizeText(77330) === '76 KB' && sizeText(3 * 1048576) === '3.0 MB', 'sizes');
+
+const rich = { name: 'Card', version: '1.1.0', authors: ['A'], license: 'MIT', summary: 'Short.', description: 'Short. And more.', settings: ['Key', 'Speed'], tested: ['2.0.1'], size: 77330, gameplay: true, network: true, page: 'https://pokopia-native.vercel.app/mods/card', source: 'https://github.com/x/y' };
+const d = detailsView(rich, '2.0.1');
+check(d.title === 'Card 1.1.0' && d.by === 'By A. Licence: MIT.' && d.description === 'Short. And more.' && d.settings.join() === 'Key,Speed', 'details: name, who, whole text, settings');
+check(d.facts[0] === 'Tested on game version 2.0.1.' && d.facts[1] === 'Download size: 76 KB' && d.facts.length === 4, 'details: tested, size, gameplay, online');
+check(d.links.map((l) => l.label).join() === 'Mod page,Source', 'details: links');
+const plain = detailsView({ name: 'P', version: '1.0.0', authors: [], license: '', summary: 'Only the summary.', tested: [], size: 0, gameplay: false, network: false, page: '', source: '' }, '2.0.1');
+check(plain.description === 'Only the summary.' && plain.settings.length === 0 && plain.links.length === 0, 'details: no description falls back to the summary');
+check(plain.facts.join() === 'The hub has not marked it as tested on game version 2.0.1.', 'details: not tested says so, no size, no extras');
 
 console.log(bad ? `TEST FAILED (${bad})` : 'mods model tests passed');
 process.exit(bad ? 1 : 0);
