@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Linux: the game runs without Proton.** Needs **Set up again** once on glibc 2.38 or newer; no shader rebuild, your shaders and saves are kept
+  - Before: on Linux, Set up built pkp.exe and the shader cache through Proton, and Play started the game through Proton
+  - Now: the Linux package carries a native runtime and shader translator. On glibc 2.38 or newer (Ubuntu 24.04, Fedora 39, Bazzite and later) Set up links the game as a native Linux program and Play starts it directly
+  - Still not: on an older system (Ubuntu 22.04, Debian 12, Mint 21) the game keeps running through Proton as before
 - New **Show on Discord while playing** in the launcher's Settings: shows "Playing Recompia" and how long you have played on your Discord profile while the game runs. Off by default; Discord must be open. Update only: no shader rebuild, no Set up again
 - Fixed the Pokédex tabs showing "Time" as their title after the Settings screen had been opened (#494)
 - The Discord links in the launcher, the READMEs and the website now use the new invite, discord.recompia.com. Update only: no shader rebuild, no Set up again

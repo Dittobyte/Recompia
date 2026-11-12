@@ -241,11 +241,50 @@ jobs:
             gh release create $env:REL_TAG --target $env:GITHUB_SHA (Get-Item build/rel/*.zip).FullName build/rel/SHA256SUMS.txt --title $title --notes-file build/notes.md
           }
 
-  # The Linux package: the Windows zip above (the runtime, the build kit, the shader translator: they run through Proton) with the
-  # Linux launcher as an AppImage in place of PokopiaLauncher.exe, which does not start under Proton (no WebView2). A tag adds it
-  # to the release; manual runs without release_tag only build it (artifact).
+  # The native Linux runtime (game-build/scripts/build-linux.sh): libpkp_rt.so, the ASTC decoders, the fonts and the linux-x64
+  # shader translator. The linux job puts them next to the launcher, so Set up links the native `pkp` and nothing runs through
+  # Proton (launcher host.rs, Game). Packed as a tar so the translator keeps its exec bit through the artifact.
+  linux-native:
+    # Ubuntu 24.04: libpkp_rt.so then needs glibc 2.38 (__isoc23_*), what pkp_build.py --target linux links against; the
+    # launcher keeps pkp.exe through Proton on an older glibc
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        run: |
+          if [ -n "$REL_TAG" ]; then v=${REL_TAG#v}; else v=0.0.0; fi
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+
+      - name: Packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends clang ninja-build libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
+              libxi-dev libxss-dev libxfixes-dev libxtst-dev libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev \
+              libpulse-dev libpipewire-0.3-dev libasound2-dev libudev-dev libdbus-1-dev libdrm-dev libgbm-dev libegl-dev libvpx-dev
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Native runtime and shader translator
+        run: |
+          game-build/scripts/build-linux.sh --version "$VERSION" --out build/linux-native
+          tar -C build/linux-native -czf build/linux-native.tar.gz .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-native-${{ env.VERSION }}
+          path: build/linux-native.tar.gz
+          compression-level: 0
+
+  # The Linux package: the Windows zip above (the runtime and the build kit for pkp.exe through Proton) with the Linux launcher as
+  # an AppImage in place of PokopiaLauncher.exe, which does not start under Proton (no WebView2), and the native runtime and shader
+  # translator from linux-native. The launcher links the native `pkp` where the system's glibc allows it, else pkp.exe. A tag adds
+  # it to the release; manual runs without release_tag only build it (artifact).
   linux:
-    needs: release
+    needs: [release, linux-native]
     # Ubuntu 22.04: the AppImage then needs glibc 2.35 (Ubuntu 22.04, Debian 12, Mint 21, SteamOS), not 24.04's 2.39
     runs-on: ubuntu-22.04
     timeout-minutes: 60
@@ -313,14 +352,20 @@ jobs:
           name: PokopiaRecomp-${{ env.VERSION }}-win64
           path: build/win
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-native-${{ env.VERSION }}
+          path: build/native
+
       - name: Package
         run: |
           mkdir -p build/stage build/rel
           unzip -q build/win/PokopiaRecomp-$VERSION-win64.zip -d build/stage
           pkg=build/stage/PokopiaRecomp-$VERSION
           test -d "$pkg/tools/build" || { echo "unexpected zip layout"; ls build/stage; exit 1; }
-          # Windows-only parts: the launcher, the start script, the embedded Python and Zig (Set up fetches the Linux ones)
-          rm -rf "$pkg/PokopiaLauncher.exe" "$pkg/Play.bat" "$pkg/tools/python" "$pkg/tools/build/zig"
+          # Windows-only parts: the launcher, the start script, the embedded Python and Zig (Set up fetches the Linux ones) and the
+          # Windows shader translator (the linux-x64 one below takes its folder; host.rs translator picks it on every glibc)
+          rm -rf "$pkg/PokopiaLauncher.exe" "$pkg/Play.bat" "$pkg/tools/python" "$pkg/tools/build/zig" "$pkg/tools/spirv_harness"
           sed "s/@VERSION@/$VERSION/g" game-build/release_b/README.linux.txt > "$pkg/README.txt"
           # machine translations of that README (README.<lang>.txt), when the repository has them
           for t in game-build/release_b/README.linux.*.txt; do
@@ -329,6 +374,9 @@ jobs:
             sed "s/@VERSION@/$VERSION/g" "$t" > "$pkg/README.$lang.txt"
           done
           install -m 755 launcher/src-tauri/target/release/bundle/appimage/*.AppImage "$pkg/PokopiaLauncher.AppImage"
+          # the native runtime next to the launcher (libpkp_rt.so, libastcdec-*.so, fonts/, tools/spirv_harness/)
+          tar -xzf build/native/linux-native.tar.gz -C "$pkg"
+          test -f "$pkg/libpkp_rt.so" -a -x "$pkg/tools/spirv_harness/spirv_harness" || { echo "native runtime missing"; ls -R "$pkg" | head -40; exit 1; }
           tar -C build/stage -czf build/rel/PokopiaRecomp-$VERSION-linux-x64.tar.gz PokopiaRecomp-$VERSION
           (cd build/rel && sha256sum -b PokopiaRecomp-$VERSION-linux-x64.tar.gz | tee linux.sha256)
           ls -la build/rel
