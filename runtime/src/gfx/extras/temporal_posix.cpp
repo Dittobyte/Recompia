@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// macOS: the two temporal upscalers are Windows SDKs. DLSS goes through Streamline's sl.*.dll and FSR 3 through the
-// FidelityFX DLLs, so temporal_dlss.cpp and temporal_ffx.cpp are not in this build (docs/macos-port.md M2, D2). This file
-// is what the rest of the graphics shell sees instead: neither backend is available or starts, the settings page shows
+// Linux and macOS: the two temporal upscalers are Windows SDKs. DLSS goes through Streamline's sl.*.dll and FSR 3 through
+// the FidelityFX DLLs, so temporal_dlss.cpp and temporal_ffx.cpp are not in these builds (docs/macos-port.md M2, D2). This
+// file is what the rest of the graphics shell sees instead: neither backend is available or starts, the settings page shows
 // both as unavailable, and volk initialises the normal loader. FSR 1 and NIS are plain compute shaders and do run.
 #include "temporal.h"
 

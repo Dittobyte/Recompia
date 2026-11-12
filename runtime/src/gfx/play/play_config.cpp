@@ -188,7 +188,7 @@ bool parse_onto(const std::string& text, Settings* s, std::string* err, std::vec
     }
 #if defined(__APPLE__)
     // Display defaults revision 1 (macOS): vsync on. With it off the swapchain presents immediately and Metal shows frames mid-refresh:
-    // Pokopia on a MacBook tore and flashed partly drawn frames with the frame time swinging between 8 and 50 ms. Applied once to the
+    // the game tore and flashed partly drawn frames on a MacBook with the frame time swinging between 8 and 50 ms. Applied once to the
     // factory text and to an older file (which is then saved); a player who turns vsync off afterwards keeps it off.
     if (s->display_rev < 1) {
         if (!s->display.vsync) {
