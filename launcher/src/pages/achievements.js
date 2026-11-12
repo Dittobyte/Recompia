@@ -1,14 +1,15 @@
 // Achievements: a mirror of the Modtopia community tracker. The hub's list with everyone's counts and the pictures (Rust, achievements.rs:
 // the launcher only reads, never reports), what this player has earned (the mod's earned.tsv), and the state of the Community Achievements
 // mod with the one action that fits it. What the page says and groups is ../achievements-model.js. The mod's switch and its sharing
-// setting go through the Mods page's commands (mods.rs), so there is one way into the mods folder.
+// setting go through the Mods page's commands (mods.rs), so there is one way into the mods folder. The launcher keeps the mod and its
+// sharing on until the player unlocks them (mods_lock.rs): Unlock asks first, as on the Mods page.
 import './achievements.css';
 import { api } from '../api.js';
 import { t, language } from '../i18n.js';
 import { confirm, errText, esc, icon, toast } from '../ui.js';
 import { store } from '../store.js';
-import { allowQuestion, installQuestion } from '../mods-model.js';
-import { PICTURES_LICENCE, dateText, earnedCount, groupList, modActions, modLine, modState, percentText, rarest, sharingText, totals } from '../achievements-model.js';
+import { allowQuestion, installQuestion, unlockQuestion } from '../mods-model.js';
+import { PICTURES_LICENCE, dateText, earnedCount, groupList, lockLines, modActions, modLine, modState, percentText, rarest, sharingText, totals } from '../achievements-model.js';
 
 
 /** The achievement's picture, or the trophy when it has none. */
@@ -39,11 +40,15 @@ export async function render(el, _ctx) {
       folder: `<button class="btn quiet sm" data-act="folder">${icon('folder-open')}${esc(t('Open mods folder'))}</button>`,
       enable: `<button class="btn primary sm" data-act="enable" ${busy ? 'disabled' : ''}>${icon('check')}${esc(t('Switch the mod on'))}</button>`,
       share: `<button class="btn sm" data-act="share" ${busy ? 'disabled' : ''}>${icon('users')}${esc(t('Turn sharing on'))}</button>`,
+      unlock: `<button class="btn quiet sm" data-act="unlock" ${busy ? 'disabled' : ''}>${icon('lock-open')}${esc(t('Unlock the mod'))}</button>`,
+      lock: `<button class="btn quiet sm" data-act="lock" ${busy ? 'disabled' : ''}>${icon('lock')}${esc(t('Lock the mod'))}</button>`,
+      'unlock-sharing': `<button class="btn quiet sm" data-act="unlock-sharing" ${busy ? 'disabled' : ''}>${icon('lock-open')}${esc(t('Unlock sharing'))}</button>`,
+      'lock-sharing': `<button class="btn quiet sm" data-act="lock-sharing" ${busy ? 'disabled' : ''}>${icon('lock')}${esc(t('Lock sharing'))}</button>`,
     };
     const actions = modActions(state).map((a) => buttons[a]).join('');
     const message = state.mod?.message ? `<p class="faint selectable">${esc(state.mod.message)}</p>` : '';
     return `<section class="ach-mod glass">
-      <p>${esc(modLine(state))}</p>${message}
+      <p>${esc(modLine(state))}</p>${message}${lockLines(state).map((l) => `<p class="faint">${esc(l)}</p>`).join('')}
       <p class="faint ach-note">${esc(sharingText())}</p>
       ${actions ? `<div class="cluster">${actions}</div>` : ''}
     </section>`;
@@ -190,6 +195,15 @@ export async function render(el, _ctx) {
     if (mod) await change(() => api.modsSetSetting({ id: mod.id, key: 'share', number: 1 }));
   }
 
+  /** Unlock asks first (what turning it off costs the player); Lock keeps it on again at once (installs it when it was removed). */
+  async function setLock(what, locked) {
+    if (!locked) {
+      const q = unlockQuestion(what);
+      if (!await confirm({ title: q.title, html: q.lines.map((l) => `<p>${esc(l)}</p>`).join(''), ok: q.ok, danger: true })) return;
+    }
+    await change(() => api.modsSetLock({ what, locked }));
+  }
+
   el.addEventListener('click', (e) => {
     const b = e.target.closest('[data-act]');
     if (!b || b.disabled) return;
@@ -198,6 +212,10 @@ export async function render(el, _ctx) {
       case 'enable': return enable();
       case 'share': return shareOn();
       case 'install': return install();
+      case 'unlock': return setLock('mod', false);
+      case 'lock': return setLock('mod', true);
+      case 'unlock-sharing': return setLock('sharing', false);
+      case 'lock-sharing': return setLock('sharing', true);
       case 'licence': return licence();
       case 'folder': return api.openModsDir().catch((err) => toast(errText(err), 'error'));
     }

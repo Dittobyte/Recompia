@@ -40,7 +40,7 @@ export const api = {
   cancelNup: () => invoke('cancel_nup'),
 
   // Play and setup
-  play: () => invoke('play'),
+  play: (args) => invoke('play', args),   // { withoutMods } (optional: this one start runs without mods)
   gameStatus: () => invoke('game_status'),
   setupStatus: () => invoke('setup_status'),
   startSetup: (args) => invoke('start_setup', args),   // { gentle }
@@ -96,6 +96,8 @@ export const api = {
   modsCatalog: (args) => invoke('mods_catalog', args),   // { refresh }
   modsInstall: (args) => invoke('mods_install', args),   // { id }
   modsAutoUpdate: () => invoke('mods_auto_update'),   // [{ name, from, to }] updated, once per session, only with the launcher preference on
+  modsKeepLocked: () => invoke('mods_keep_locked'),   // ['install' | 'switch_on' | 'share_on'] done, once at launcher start
+  modsSetLock: (args) => invoke('mods_set_lock', args),   // { what: 'mod' | 'sharing', locked }
   openModsDir: () => invoke('open_mods_dir'),
   // Achievements (the community tracker)
   achievementsView: (args) => invoke('achievements_view', args),   // { refresh }

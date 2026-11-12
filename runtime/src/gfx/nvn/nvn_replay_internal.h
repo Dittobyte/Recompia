@@ -370,6 +370,11 @@ struct QueryState {   // owner: nvn_replay_query.cpp; the ops are in run_list (R
 extern QueryState g_q;
 bool occ_ready();
 extern nxrt::GaugeCounter g_gauge_pipeline_binds;
+// ---- the game's 2D left out (nvn_replay_ui.cpp, nxrt/ui_layer.h) -------------------------------------------------------------------
+// After ensure_pass: true while the 2D is hidden and this draw is part of it (vertex inputs, colour target 0 a presented texture). One
+// relaxed atomic load while nothing is hidden.
+bool ui_skip_draw(const ShaderInfo* vs);
+void ui_shutdown();   // replay_shutdown: the presented textures are let go
 // ---- frame trace and debug aids (nvn_replay_trace.cpp) ---------------------------------------------------------------------------
 // Their state is private to the trace module. The draw and dispatch paths test one flag per site (both false in play) and call in.
 extern bool g_trace;         // this submission is traced ([nvn] trace_frame, trace_after_fs, trace_sec, a script request)

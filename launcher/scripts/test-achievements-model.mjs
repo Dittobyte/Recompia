@@ -1,5 +1,5 @@
 // Tests for the pure part of the Achievements page (src/achievements-model.js). Run: node launcher/scripts/test-achievements-model.mjs
-import { dateText, earnedCount, groupList, modActions, modLine, modState, percentText, rarest, totals } from '../src/achievements-model.js';
+import { dateText, earnedCount, groupList, lockLines, modActions, modLine, modState, percentText, rarest, totals } from '../src/achievements-model.js';
 
 let bad = 0;
 const check = (ok, what) => { if (!ok) { console.log(`FAIL ${what}`); bad++; } };
@@ -43,6 +43,17 @@ const acts = (k) => modActions({ kind: k }).join();
 check(acts('missing') === 'install,folder' && acts('off') === 'enable' && acts('private') === 'share', 'each state offers its action');
 check(acts('sharing') === '' && acts('unknown') === '' && acts('broken') === 'folder', 'nothing to do when it is working');
 check(['missing', 'broken', 'off', 'private', 'sharing', 'unknown'].every((k) => modLine({ kind: k }).length > 20), 'every state has a sentence');
+
+// locks (mods_lock.rs marks the list: the mod and its share setting, and the view's { kept, sharing })
+const lockedMod = (locked, shareLocked, enabled = true) => ({ id: 'community_achievements', state: 'ok', enabled, locked, lockable: true,
+  settings: [{ key: 'messages', number: 1, locked: false, lockable: false }, { key: 'share', number: 1, locked: shareLocked, lockable: true }] });
+const st = (m, locks) => modState({ mods: m ? [m] : [], locks }, 'community_achievements');
+check(modActions(st(lockedMod(true, true), { kept: true, sharing: true })).join() === 'unlock,unlock-sharing', 'locked: both unlocks');
+check(modActions(st(lockedMod(false, false, false), { kept: false, sharing: false })).join() === 'enable,lock,lock-sharing', 'unlocked and off: switch on, or lock both');
+check(modActions(st(null, { kept: false, sharing: true })).join() === 'install,folder,lock', 'unlocked and removed: Lock installs it again');
+check(modActions(st(null, { kept: true, sharing: true })).join() === 'install,folder', 'locked and missing: the launcher installs it');
+check(st(null, null).locks === null && modActions(st(null, undefined)).join() === 'install,folder', 'an unmarked list offers no lock');
+check(lockLines(st(lockedMod(true, true), {})).length === 2 && lockLines(st(lockedMod(false, false), {})).length === 0, 'lock lines follow the locks');
 
 console.log(bad ? `TEST FAILED (${bad})` : 'achievements model tests passed');
 process.exit(bad ? 1 : 0);

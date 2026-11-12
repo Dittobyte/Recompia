@@ -3,6 +3,7 @@
 // `node scripts/test-achievements-model.mjs` runs it. The page is pages/achievements.js; the list comes from Rust (achievements.rs
 // AchievementsView), the mod's state from the Mods page's list (mods.rs ModsView).
 import { t } from './i18n.js';
+import { lockAction } from './mods-model.js';
 
 /** The title of a group of the hub's list (its `cat`). The hub names no titles, so these are ours; an unknown group shows its id. */
 export function categoryTitle(cat) {
@@ -63,16 +64,26 @@ export function rarest(list, n = 3) {
 /** The date an achievement was earned, from the unix time the mod keeps. */
 export const dateText = (unix, locale) => new Date(unix * 1000).toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
 
-/** What the mod's state is, from the Mods page's list: { kind, mod }. kind: 'unknown' (the list could not be read), 'missing' (not
- *  installed), 'broken', 'off' (installed, switched off), 'private' (on, sharing off) or 'sharing' (on, sharing on). */
+/** What the mod's state is, from the Mods page's list: { kind, mod, locks }. kind: 'unknown' (the list could not be read), 'missing' (not
+ *  installed), 'broken', 'off' (installed, switched off), 'private' (on, sharing off) or 'sharing' (on, sharing on). locks: what the
+ *  launcher keeps on ({ kept, sharing }, mods_lock.rs), null when the list does not say. */
 export function modState(modsView, modId) {
-  if (!modsView) return { kind: 'unknown', mod: null };
+  if (!modsView) return { kind: 'unknown', mod: null, locks: null };
+  const locks = modsView.locks ?? null;
   const mod = modsView.mods.find((m) => m.id === modId);
-  if (!mod) return { kind: 'missing', mod: null };
-  if (mod.state === 'error') return { kind: 'broken', mod };
-  if (!mod.enabled) return { kind: 'off', mod };
+  if (!mod) return { kind: 'missing', mod: null, locks };
+  if (mod.state === 'error') return { kind: 'broken', mod, locks };
+  if (!mod.enabled) return { kind: 'off', mod, locks };
   const share = mod.settings.find((s) => s.key === 'share');
-  return { kind: share && share.number === 0 ? 'private' : 'sharing', mod };
+  return { kind: share && share.number === 0 ? 'private' : 'sharing', mod, locks };
+}
+
+/** The lock sentences for the mod card: the mod kept on, its sharing kept on (each while the launcher locks it). */
+export function lockLines(state) {
+  const out = [];
+  if (state.mod?.locked) out.push(t('Locked: the launcher keeps it on, so your achievements and stats are recorded. Unlock it to switch it off or remove it.'));
+  if (state.mod?.settings.some((s) => s.key === 'share' && s.locked)) out.push(t('Sharing is locked on. Unlock it to switch sharing off.'));
+  return out;
 }
 
 /** The one sentence for the mod's state. */
@@ -88,15 +99,20 @@ export function modLine(state) {
 }
 
 /** The buttons the state offers, in order: 'install' (from the hub, in the launcher), 'folder' (the mods folder), 'enable' (switch it on), 'share'
- *  (switch sharing on). */
+ *  (switch sharing on), then the locks: 'unlock' / 'lock' (the mod), 'unlock-sharing' / 'lock-sharing'. A missing mod the player unlocked
+ *  offers 'lock' (it installs it again). */
 export function modActions(state) {
-  switch (state.kind) {
-    case 'missing': return ['install', 'folder'];
-    case 'broken': return ['folder'];
-    case 'off': return ['enable'];
-    case 'private': return ['share'];
-    default: return [];
-  }
+  const out = {
+    missing: ['install', 'folder'],
+    broken: ['folder'],
+    off: ['enable'],
+    private: ['share'],
+  }[state.kind] ?? [];
+  if (state.kind === 'missing') return state.locks && !state.locks.kept ? [...out, 'lock'] : out;
+  if (!state.mod) return out;
+  const mod = lockAction(state.mod);
+  const sharing = lockAction(state.mod.settings.find((s) => s.key === 'share'));
+  return [...out, ...(mod ? [mod] : []), ...(sharing ? [`${sharing}-sharing`] : [])];
 }
 
 /** The achievement pictures' licence (the hub ships it beside them), shown in the launcher. */

@@ -15,6 +15,7 @@
 
 #include "modtopia_mappings.gen.h"
 #include "mods_internal.h"
+#include "nxrt/config.h"
 #include "nxrt/file_write.h"
 #include "nxrt/game.h"
 #include "nxrt/log.h"
@@ -196,6 +197,42 @@ void report_held(MtLoader* L, const std::vector<std::string>& waiting) {
         mt_loader_note(L, id.c_str(), "waits until the new code of another mod is allowed in the launcher's Mods page");
 }
 
+// For bug reports, once the mods are started, patched and checked: one line a mod (its state this run, id, version, what it holds, and the
+// core's message: why it is off, or a note), then the gameplay mods every player of a Link Play session needs (gameplay_mods()).
+void log_mods(MtLoader* L) {
+    for (int i = 0, n = mt_loader_count(L); i < n; ++i) {
+        const MtModInfo* m = mt_loader_info(L, i);
+        if (!m) continue;
+        const int f = m->flags;
+        const char* state = m->state == MT_STATE_OK ? "on" : m->state == MT_STATE_OFF ? "off" : "error";
+        const bool msg = m->message && *m->message;
+        NXLOG_AT(m->state == MT_STATE_ERROR ? LogLevel::Warn : LogLevel::Info, kTag, "mods: %-5s %s %s%s%s%s%s%s%s%s%s", state, m->id, m->version,
+                 f & MT_MOD_HAS_CODE ? " [code]" : "", f & MT_MOD_NEW_CODE ? " [new code]" : "", f & MT_MOD_HAS_DATA ? " [data]" : "",
+                 f & MT_MOD_HAS_PATCHES ? " [patches]" : "", f & MT_MOD_LAYEREDFS ? " [LayeredFS]" : "", f & MT_MOD_GAMEPLAY ? " [gameplay]" : "",
+                 msg ? ": " : "", msg ? m->message : "");
+    }
+    const std::vector<std::string> gameplay = gameplay_mods();
+    if (gameplay.empty()) return;
+    std::string list;
+    for (const std::string& g : gameplay) list += (list.empty() ? "" : ", ") + g;
+    NXLOG_I(kTag, "mods: Link Play: every player in a session needs these gameplay mods: %s", list.c_str());
+}
+
+// A comma- or blank-separated ini list (the launcher writes `a, b`).
+std::vector<std::string> ini_list(const char* key) {
+    std::vector<std::string> out;
+    std::string item;
+    for (const char ch : config_get_str("mods", key, "") + ",") {
+        if (ch == ',' || ch == ' ' || ch == '\t') {
+            if (!item.empty()) out.push_back(std::move(item));
+            item.clear();
+        } else {
+            item += ch;
+        }
+    }
+    return out;
+}
+
 void on_save_committed() {
     detail::Host& h = host();
     std::lock_guard<std::mutex> lk(h.events_mu);
@@ -207,7 +244,17 @@ void on_save_committed() {
 void start(const StartOptions& opt) {
     detail::Host& h = host();
     const game::Info& gi = game::info();
-    if (!gi.mods || h.L) return;
+    if (!gi.mods || h.L || h.off) return;
+    // Start without mods: the player's way out when a mod keeps the game from starting (the launcher passes it for one start). Nothing
+    // of the mods is touched: no scan, no files laid over the game's, the player's switches and the mods' settings stay as they are.
+    if (config_get_bool("mods", "off", false)) {
+        h.off = true;
+        NXLOG_I(kTag, "mods: [mods] off: this start runs without mods");
+        notices::post("mods", "Started without mods: they are back at the next start", 10);
+        return;
+    }
+    h.locked = ini_list("locked");
+    h.locked_settings = ini_list("locked_settings");
     std::error_code ec;
     const stdfs::path mods_dir = stdfs::absolute(stdfs::u8path(gi.mods->mods_dir), ec);
     if (ec || !stdfs::is_directory(mods_dir, ec)) {
@@ -249,6 +296,7 @@ void start(const StartOptions& opt) {
     if (h.code_held) report_held(L, waiting);
     if (mt_loader_apply_patches(L) > 0) lay_overlay(L);
     mt_loader_check_data(L);
+    log_mods(L);
     services::fsapi::romfs_game_release();
     services::fsapi::set_save_commit_listener(&on_save_committed);
 
@@ -272,5 +320,17 @@ std::vector<std::string> gameplay_mods() {
 }
 
 MtLoader* loader() { return host().L; }
+bool started_without() { return host().off; }
+
+bool locked(const char* id) {
+    const std::vector<std::string>& l = host().locked;
+    return id && std::find(l.begin(), l.end(), id) != l.end();
+}
+
+bool setting_locked(const char* id, const char* key) {
+    if (!id || !key) return false;
+    const std::vector<std::string>& l = host().locked_settings;
+    return std::find(l.begin(), l.end(), std::string(id) + ":" + key) != l.end();
+}
 
 }  // namespace nxrt::mods

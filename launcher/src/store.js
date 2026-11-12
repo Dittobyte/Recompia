@@ -5,7 +5,7 @@ import { api } from './api.js';
 import { num, t } from './i18n.js';
 import { fromBackend } from './backend-text.js';
 import { confirm, errCode, errText, esc, icon, toast } from './ui.js';
-import { updatedLine } from './mods-model.js';
+import { keptLine, updatedLine } from './mods-model.js';
 import { canInstall, canUpdate, gamePhase, needsFinish, taskOf } from './action.js';
 
 const subs = new Set();
@@ -107,7 +107,20 @@ export const store = {
     store.refreshNews(false).then(() => store.refreshNews(true));
     afterUpdate();
     store.refreshStorage().then(offerCompact);
-    store.updateMods();
+    store.keepLockedMods().then(() => store.updateMods());
+  },
+
+  /** The mod the launcher keeps on (Community Achievements and its sharing, mods_lock.rs): installed or switched back on at start unless
+   *  the player unlocked it, then one line says what changed. Offline or busy: nothing, the next start tries again. Never in Play's way. */
+  async keepLockedMods() {
+    try {
+      const line = keptLine(await api.modsKeepLocked());
+      if (!line) return;
+      toast(line, 'ok');
+      await store.refresh();   // a new mod may need hook points: readiness says Set up again
+    } catch (e) {
+      console.warn('mods_keep_locked', e);
+    }
   },
 
   /** Mods by themselves (launcher preference, off by default; once per session in Rust): says once which were updated. Silent otherwise. */
@@ -217,11 +230,12 @@ export const store = {
     }
   },
 
-  async play() {
+  /** `withoutMods`: this one start runs without mods (the player's way out when a mod keeps the game from starting). */
+  async play({ withoutMods = false } = {}) {
     if (store.state.starting) return;
     set({ starting: true }, 'task');
     try {
-      await api.play();
+      await api.play(withoutMods ? { withoutMods } : undefined);
     } catch (e) {
       toast(errText(e), 'error');
       store.refresh();

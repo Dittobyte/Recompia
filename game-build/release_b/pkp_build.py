@@ -42,6 +42,11 @@ linking, is trimmed to --cache-mb (default 3072, 0 = off) and never serves a par
 
 Resumable: a module's lift counts once its marker file is written, an object once it is renamed into place, so a stopped
 build continues where it stopped. A file named <game>/build/cancel stops it (the launcher's Pause).
+Power cuts: every file a later run trusts without reading it again (a lifted module's sources, an object, a cache entry, a
+library, pkp.exe) is flushed to the disk before the step that makes it trusted (flush()); otherwise a power cut can keep the
+rename and the size but not the data, and an object read as zeros past that point failed the link on every Set up again.
+Zig's own cache lasts one run, and an object whose end reads as zeros (an older release's, or a disk that dropped the flush)
+is compiled again (whole_object()).
 Output for the launcher, one per line on stdout:  @progress <phase> <done> <total> <text>  /  @error <text>
 Exit codes: 0 done, 1 error, 2 cancelled.
 """
@@ -297,6 +302,33 @@ def write_json(path, value):
     os.replace(tmp, path)
 
 
+def flush(path):
+    """Write path's data to the disk (FlushFileBuffers on Windows, fsync elsewhere). NTFS journals a rename and a file's size
+    at once, its data later: after a power cut a file renamed a moment before can have its size and read as zeros."""
+    with open(path, 'r+b') as f:
+        os.fsync(f.fileno())
+
+
+def flush_replace(tmp, path):
+    """os.replace(tmp, path) once tmp's data is on the disk, so path is never there without it."""
+    flush(tmp)
+    os.replace(tmp, path)
+
+
+def whole_object(path):
+    """Whether the object file path is there and does not end in 4 KiB of zero bytes. A COFF object ends with its symbol and
+    string tables, never zeros; a power cut that kept the size but not the data leaves zeros there (seen: the data stopped at
+    4 MiB, the last 700 KiB were zero, and the link failed on every symbol of the unit)."""
+    try:
+        size = os.path.getsize(path)
+        with open(path, 'rb') as f:
+            f.seek(max(0, size - 4096))
+            tail = f.read()
+    except OSError:
+        return False
+    return size > 0 and tail.count(0) != len(tail)
+
+
 def nso_short(path):
     """How many bytes an NSO lacks against the segments its header lists (0 = complete; a text-mode FTP copy drops a byte per CR LF pair).
     From pokopia-native (MIT), nxs2.py nso_short @7c3655d."""
@@ -415,10 +447,11 @@ def mod_sites(plan, exefs, gen):
         for name, lines in new.items():
             with open(os.path.join(out, name + '.sites'), 'w', encoding='utf-8') as f:
                 f.write('# the mods\' hook points, from <game>/mods/.modtopia/hooks.tsv\n' + '\n'.join(lines) + '\n')
+            flush(os.path.join(out, name + '.sites'))
         tmp = record + '.tmp'
         with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
             f.write(modplan.built_text(plan, built, GAME.version))
-        os.replace(tmp, record)
+        flush_replace(tmp, record)
     return {m[0]: os.path.join(out, m[0] + '.sites') for m in MODULES if os.path.isfile(os.path.join(out, m[0] + '.sites'))}
 
 
@@ -446,6 +479,9 @@ def lift(runner, exefs, gen, jobs, extra_sites, skip=()):
         rc, tail = runner.run(cmd, cwd=RECOMP)
         if rc != 0:
             raise Fail('Translating %s failed (exit %d):\n%s' % (name, rc, tail))
+        for d, _, files in os.walk(out):     # the marker makes the sources trusted (flush())
+            for n in files:
+                flush(os.path.join(d, n))
         open(marker, 'w').write('ok\n')
     progress('lift', len(MODULES), len(MODULES), 'Game code translated')
 
@@ -478,8 +514,9 @@ class ObjCache:
 
     An entry is <key>-<size>.o in the cache folder. key = sha256 of the unit's source bytes, the part of the generated headers
     next to it that the unit can see (_header_view), the lifter's include/ tree, the compiler (its file hash) and the flags. The
-    compiler or the flags changing gives other keys, so nothing stale is ever hit. An entry is written to a .tmp file and
-    renamed, and a hit must have exactly the size in its name, so a cut-off write or a damaged file is a miss (and is deleted).
+    compiler or the flags changing gives other keys, so nothing stale is ever hit. An entry is written to a .tmp file, flushed
+    and renamed, and a hit must have exactly the size in its name and be whole_object(), so a cut-off write or a damaged file
+    is a miss (and is deleted).
     Hits are copied out, never linked. The folder is trimmed to the size cap, least recently used first (a hit refreshes the
     entry's time). Any cache error is a miss."""
 
@@ -553,16 +590,16 @@ class ObjCache:
             tmp = dst + '.tmp'
             try:
                 want = int(n[len(key) + 1:-2])
-                if want > 0 and os.path.getsize(src) == want:
+                if want > 0 and os.path.getsize(src) == want and whole_object(src):
                     shutil.copyfile(src, tmp)
                     if os.path.getsize(tmp) == want:
-                        os.replace(tmp, dst)
+                        flush_replace(tmp, dst)
                         os.utime(src)
                         self.hits += 1
                         return True
                     os.remove(tmp)
                 else:
-                    os.remove(src)        # not the size it says: damaged, never used
+                    os.remove(src)        # not the size it says, or its end is zeros: damaged, never used
             except (OSError, ValueError):
                 pass
         self.misses += 1
@@ -579,7 +616,7 @@ class ObjCache:
             if os.path.getsize(tmp) != size:
                 os.remove(tmp)
                 return
-            os.replace(tmp, final)
+            flush_replace(tmp, final)
         except OSError:
             pass
 
@@ -627,7 +664,7 @@ def compile_all(runner, gen, obj, jobs, env, cache=None, skip=()):
     todo = []
     for name, src in units:
         o = os.path.join(obj, name, os.path.basename(src)[:-4] + '.o')
-        if not os.path.isfile(o):
+        if not whole_object(o):
             todo.append((name, src, o))
     done = total - len(todo)
     for name, _, _, _, _ in MODULES:
@@ -654,7 +691,7 @@ def compile_all(runner, gen, obj, jobs, env, cache=None, skip=()):
         rc, tail = runner.run(cmd, env=env)
         if rc != 0:
             return 'Compiling %s/%s failed (exit %d):\n%s' % (name, os.path.basename(src), rc, tail)
-        os.replace(tmp, o)
+        flush_replace(tmp, o)
         if cache:
             cache.store(keys[src], o)
         return None
@@ -736,7 +773,9 @@ def archive(runner, obj, lib, stamp, env, record, mod_stamps, skip=()):
             rc, tail = runner.run([ZIG, 'ar', 'rcs', a, '@' + rsp], env=env)
         if rc != 0:
             raise Fail('Archiving %s failed (exit %d):\n%s' % (name, rc, tail))
+        flush(a)                          # the stamps below make it trusted
     shutil.copyfile(record, os.path.join(lib, MOD_BUILT))
+    flush(os.path.join(lib, MOD_BUILT))
     write_json(os.path.join(lib, MODULE_STAMPS), mod_stamps)
     write_json(os.path.join(lib, 'stamp.json'), stamp)
 
@@ -804,7 +843,7 @@ def link(runner, lib, game, env):
             raise Fail('Linking pkp.exe failed (exit %d):\n%s' % (rc, tail))
         clear_high_entropy_va(tmp)
     dst = os.path.join(game, exe)
-    os.replace(tmp, dst)
+    flush_replace(tmp, dst)                             # done.json then makes it trusted (check())
     if DARWIN or LINUX:
         # The exe loads the runtime from its own folder (-rpath @executable_path / $ORIGIN), as pkp.exe finds pkp_rt.dll beside it.
         replace_file(os.path.join(SDK, RUNTIME_LIB), os.path.join(game, RUNTIME_LIB))
@@ -831,7 +870,7 @@ def link(runner, lib, game, env):
             replace_file(font, os.path.join(font_dst, 'DejaVuSans.ttf'))
     built = os.path.join(game, 'build', MOD_BUILT)      # the mod hook points this pkp.exe has, for the runtime
     shutil.copyfile(os.path.join(lib, MOD_BUILT), built + '.tmp')
-    os.replace(built + '.tmp', built)
+    flush_replace(built + '.tmp', built)
     progress('link', 1, 1, '%s built' % exe)
     return dst
 
@@ -912,8 +951,12 @@ def main():
         runner = Runner(cancel_file)
         env = dict(os.environ)
         if not DARWIN:
-            env['ZIG_GLOBAL_CACHE_DIR'] = os.path.join(build, 'zig-cache')
-            env['ZIG_LOCAL_CACHE_DIR'] = os.path.join(build, 'zig-cache')
+            # zig's cache lasts one run, as after linking: a stopped run's can hold an object a power cut left as zeros under a
+            # manifest that survived, which zig hands back as compiled. The objects themselves are kept in obj/ and objcache/
+            zig_cache = os.path.join(build, 'zig-cache')
+            shutil.rmtree(zig_cache, ignore_errors=True)
+            env['ZIG_GLOBAL_CACHE_DIR'] = zig_cache
+            env['ZIG_LOCAL_CACHE_DIR'] = zig_cache
         gen, obj, lib = os.path.join(build, 'lift'), os.path.join(build, 'obj'), os.path.join(build, 'lib')
         reuse = libs_current(lib, libstamp)
         if reuse:                        # only the runtime or the SDK files changed: link the kept libraries again

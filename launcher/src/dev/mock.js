@@ -306,7 +306,7 @@ async function runTicks(event, make, count = 40) {
   }
 }
 
-// ?page=mods: two installed mods (one with code not allowed yet) and a short hub list
+// ?page=mods: three installed mods (one with code not allowed yet, one the launcher locks) and a short hub list
 const mockMods = {
   dir: `${GAME_DIR}/mods`, gameplay: [], points: 2,
   mods: [
@@ -316,18 +316,45 @@ const mockMods = {
         { key: 'scale', label: 'Field of view', description: '', kind: 'number', restart: false, min: 0.5, max: 1.6, step: 0.05, choices: [], text: '1.25', number: 1.25 },
       ] },
     { id: 'bigger_stacks', name: 'Bigger Stacks', version: '1.0.0', authors: 'The Modtopia contributors', license: 'MIT', description: '', source: 'bigger_stacks-1.0.0.pkmod', gameplay: true, guessed: false, code: true, needs_yes: true, network: '', enabled: false, state: 'off', message: 'switched off', hook_points: 1, settings: [] },
+    { id: 'community_achievements', name: 'Community Achievements', version: '0.3.0', authors: 'The Modtopia contributors', license: 'MIT', description: 'Achievements for what you do in Pokopia.', source: 'community_achievements-0.3.0.pkmod', gameplay: false, guessed: false, code: true, needs_yes: false, network: 'achievements.pokopia-native.workers.dev', enabled: true, state: 'ok', message: '', hook_points: 0,
+      settings: [
+        { key: 'messages', label: 'Show a message when I earn an achievement', description: '', kind: 'bool', restart: false, min: 0, max: 0, step: 0, choices: [], text: 'On', number: 1 },
+        { key: 'share', label: 'Share my achievements with other players (no name) and show how many have each', description: '', kind: 'bool', restart: false, min: 0, max: 0, step: 0, choices: [], text: 'On', number: 1 },
+      ] },
   ],
 };
+// the launcher's locks (config achievements_unlocked / achievements_sharing_unlocked, inverted), marked on every list as mods_lock.rs does
+const mockLocks = { kept: true, sharing: true };
+function markedMods() {
+  const v = structuredClone(mockMods);
+  v.locks = { ...mockLocks };
+  for (const m of v.mods) {
+    m.lockable = m.id === 'community_achievements';
+    m.locked = m.lockable && mockLocks.kept;
+    for (const s of m.settings) {
+      s.lockable = m.lockable && s.key === 'share';
+      s.locked = s.lockable && mockLocks.sharing;
+    }
+  }
+  return v;
+}
 const mockCatalog = {
-  offline: false, preview: false, hub: 'https://pokopia-native.vercel.app/mods', submit: 'https://pokopia-native.vercel.app/mods/submit',
+  offline: false, preview: false, game: '2.0.1', hub: 'https://pokopia-native.vercel.app/mods', submit: 'https://pokopia-native.vercel.app/mods/submit',
+  groups: [{ key: 'qol', label: 'Quality of life' }, { key: 'gameplay', label: 'Gameplay' }, { key: 'community', label: 'Community' }],
   mods: [
-    { id: 'auto_run', name: 'Auto-Run', version: '1.0.0', summary: 'Tap once to keep running.', authors: ['The Modtopia contributors'], license: 'MIT', gameplay: false, network: false, page: 'https://pokopia-native.vercel.app/mods/auto-run', available: true, installed: '', newer: false },
-    { id: 'bigger_stacks', name: 'Bigger Stacks', version: '1.1.0', summary: 'More of an item in one slot.', authors: ['The Modtopia contributors'], license: 'MIT', gameplay: true, network: false, page: '', available: true, installed: '1.0.0', newer: true },
-    { id: 'community_achievements', name: 'Community Achievements', version: '1.0.0', summary: 'Achievements counted with the community.', authors: ['The Modtopia contributors'], license: 'MIT', gameplay: false, network: true, page: '', available: false, installed: '', newer: false },
+    { id: 'auto_run', name: 'Auto-Run', version: '1.0.0', summary: 'Tap once to keep running.', description: 'Tap once to keep running: your character goes on forward (you still steer) until you tap again, pull the stick back or open a menu.
+
+Works with the controller and the keyboard.',
+      settings: ['Controller button that starts and stops it (the game no longer sees that button)', 'Keyboard key that starts and stops it', 'Run (hold B) instead of walking', 'Say so on the screen'], tested: ['2.0.1', '1.0.5'], group: 'qol', source: 'https://github.com/example/auto-run', size: 77330,
+      authors: ['The Modtopia contributors'], license: 'MIT', gameplay: false, network: false, page: 'https://pokopia-native.vercel.app/mods/auto-run', available: true, installed: '', newer: false },
+    { id: 'bigger_stacks', name: 'Bigger Stacks', version: '1.1.0', summary: 'More of an item in one slot.', description: 'More of an item in one slot. The game still counts what you hold, only the limit moves.', settings: ['Stack limit'], tested: [], group: 'gameplay', source: '', size: 4096,
+      authors: ['The Modtopia contributors'], license: 'MIT', gameplay: true, network: false, page: '', available: true, installed: '1.0.0', newer: true },
+    { id: 'community_achievements', name: 'Community Achievements', version: '1.0.0', summary: 'Achievements counted with the community.', description: '', settings: [], tested: ['2.0.1'], group: 'community', source: '', size: 0,
+      authors: ['The Modtopia contributors'], license: 'MIT', gameplay: false, network: true, page: '', available: false, installed: '', newer: false },
   ],
 };
 
-// ?page=achievements: a short list with counts, two earned; the mod is not installed (add it to mockMods to see the other states)
+// ?page=achievements: a short list with counts, two earned; the mod is installed and locked (Unlock, remove it on ?page=mods, Lock again)
 const mockAch = (n, name, cat, goal, players) => ({ id: n, name, desc: `Have ${goal} of the ${cat}.`, cat, goal, picture: '', players });
 const mockAchievements = {
   available: true, offline: false, mod_id: 'community_achievements',
@@ -357,7 +384,7 @@ function handle(cmd, args) {
     case 'open_setup_log': case 'open_game_file': case 'open_game_dir': case 'open_save_dir': case 'open_link':
       console.info('[mock] open', cmd, args);
       return null;
-    case 'get_config': return { dump_dir: dumpDir, game_dir: '', minimize_on_play: false, discord_presence: false, gentle_build: false, loose_shaders: looseShaders, channel: mockChannel, mods_auto_update: modsAutoUpdate };
+    case 'get_config': return { dump_dir: dumpDir, game_dir: '', minimize_on_play: false, discord_presence: false, gentle_build: false, loose_shaders: looseShaders, channel: mockChannel, mods_auto_update: modsAutoUpdate, achievements_unlocked: !mockLocks.kept, achievements_sharing_unlocked: !mockLocks.sharing };
     case 'save_config': modsAutoUpdate = !!args.config.mods_auto_update; looseShaders = !!args.config.loose_shaders; mockChannel = args.config.channel || 'stable'; return null;
     case 'get_overview': return { game_dir: GAME_DIR, default_game_dir: GAME_DIR, exe_exists: sc.exe_exists, builds_exe: true };
     case 'pick_folder': return 'D:/Dumps/Pokopia';
@@ -436,22 +463,30 @@ function handle(cmd, args) {
       return c.match(/.{4}/g).join('-');
     }
     case 'room_code_host': return params.get('gamecode');
-    case 'mods_list': return structuredClone(mockMods);
-    case 'mods_set_enabled': mockMods.mods.find((m) => m.id === args.id).enabled = args.on; return structuredClone(mockMods);
+    case 'mods_list': return markedMods();
+    case 'mods_set_enabled': mockMods.mods.find((m) => m.id === args.id).enabled = args.on; return markedMods();
     case 'mods_move': {
       const i = mockMods.mods.findIndex((m) => m.id === args.id), j = i + args.delta;
       if (j >= 0 && j < mockMods.mods.length) [mockMods.mods[i], mockMods.mods[j]] = [mockMods.mods[j], mockMods.mods[i]];
-      return structuredClone(mockMods);
+      return markedMods();
     }
     case 'mods_set_setting': {
       const s = mockMods.mods.find((m) => m.id === args.id).settings.find((x) => x.key === args.key);
       if (args.number !== undefined) { s.number = args.number; s.text = String(args.number); } else s.text = args.text;
-      return structuredClone(mockMods);
+      return markedMods();
     }
-    case 'mods_remove': mockMods.mods = mockMods.mods.filter((m) => m.id !== args.id); return structuredClone(mockMods);
+    case 'mods_remove': mockMods.mods = mockMods.mods.filter((m) => m.id !== args.id); return markedMods();
     case 'mods_catalog': return structuredClone(mockCatalog);
-    case 'mods_install': return structuredClone(mockMods);
+    case 'mods_install': return markedMods();
     case 'mods_auto_update': return [];
+    case 'mods_keep_locked': return [];
+    case 'mods_set_lock': {
+      mockLocks[args.what === 'mod' ? 'kept' : 'sharing'] = args.locked;
+      const ca = mockMods.mods.find((m) => m.id === 'community_achievements');
+      if (args.locked && ca && args.what === 'mod') ca.enabled = true;
+      if (args.locked && ca && args.what === 'sharing') ca.settings.find((s) => s.key === 'share').number = 1;
+      return markedMods();
+    }
     case 'open_mods_dir': return null;
     case 'achievements_view': return structuredClone(mockAchievements);
     default:
