@@ -40,7 +40,7 @@ export const api = {
   cancelNup: () => invoke('cancel_nup'),
 
   // Play and setup
-  play: () => invoke('play'),
+  play: (args) => invoke('play', args),   // { withoutMods } (optional: this one start runs without mods)
   gameStatus: () => invoke('game_status'),
   setupStatus: () => invoke('setup_status'),
   startSetup: (args) => invoke('start_setup', args),   // { gentle }

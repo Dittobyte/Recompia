@@ -856,4 +856,6 @@ export default {
   'Settings you can change': '可更改的設定',
   'Source': '來源',
   'No mods in this group': '此分組中沒有 Mod',
+  'Start without mods': '不載入模組啟動',
+  'Starts the game once without mods. Your mods and their settings stay as they are.': '不載入模組啟動一次遊戲。你的模組及其設定保持不變。',
 };

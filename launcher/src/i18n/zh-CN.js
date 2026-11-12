@@ -856,4 +856,6 @@ export default {
   'Settings you can change': '可更改的设置',
   'Source': '来源',
   'No mods in this group': '此分组中没有 Mod',
+  'Start without mods': '不加载模组启动',
+  'Starts the game once without mods. Your mods and their settings stay as they are.': '不加载模组启动一次游戏。你的模组及其设置保持不变。',
 };

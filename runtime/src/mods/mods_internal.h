@@ -28,6 +28,7 @@ struct Built {
 
 struct Host {
     MtLoader* L = nullptr;
+    bool off = false;   // [mods] off: this start runs without mods (no loader at all)
     // Strings the core keeps pointers to (MtOptions, MtBackend): they live as long as the process.
     std::string mods_dir, mappings_dir, host_name, game_version, build_id, save_dir;
     std::unordered_map<uint64_t, Built> built;   // guest address -> the point built there

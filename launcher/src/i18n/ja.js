@@ -856,4 +856,6 @@ export default {
   'Settings you can change': '変更できる設定',
   'Source': 'ソース',
   'No mods in this group': 'このグループに Mod はありません',
+  'Start without mods': 'MODなしで起動',
+  'Starts the game once without mods. Your mods and their settings stay as they are.': 'MODなしでゲームを1回起動します。MODとその設定はそのまま残ります。',
 };

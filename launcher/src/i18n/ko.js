@@ -856,4 +856,6 @@ export default {
   'Settings you can change': '변경할 수 있는 설정',
   'Source': '소스',
   'No mods in this group': '이 그룹에는 모드가 없습니다',
+  'Start without mods': '모드 없이 시작',
+  'Starts the game once without mods. Your mods and their settings stay as they are.': '모드 없이 게임을 한 번 시작합니다. 모드와 그 설정은 그대로 유지됩니다.',
 };
