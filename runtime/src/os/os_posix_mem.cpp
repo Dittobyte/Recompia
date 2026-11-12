@@ -82,6 +82,7 @@ uintptr_t round_up(uintptr_t a) { return round_down(a + host_page() - 1); }
 struct Region {
     uintptr_t base = 0;
     uintptr_t size = 0;
+    uintptr_t alloc_base = 0;   // base of the allocation this entry came from (VirtualAlloc / MapViewOfFile); 0 = its own
     DWORD state = MEM_FREE;   // MEM_RESERVE or MEM_COMMIT
     DWORD protect = PAGE_NOACCESS;
     bool own_mapping = false;   // mmap'd by us: MEM_RELEASE munmaps it
@@ -130,6 +131,22 @@ int region_split_at(uintptr_t a) {
     return i + 1;
 }
 
+uintptr_t region_alloc(const Region& r) { return r.alloc_base ? r.alloc_base : r.base; }
+
+// The entries of one allocation: a contiguous, sorted range (a region only splits into neighbours). Sets [first, last).
+bool region_alloc_range(uintptr_t alloc, size_t* first, size_t* last) {
+    bool found = false;
+    for (size_t k = 0; k < g_regions.size(); ++k) {
+        if (region_alloc(g_regions[k]) != alloc) continue;
+        if (!found) {
+            *first = k;
+            found = true;
+        }
+        *last = k + 1;
+    }
+    return found;
+}
+
 // Merges the neighbours in [first, last] that describe the same thing now: one state, one protection, one mapping, one section
 // slice. Splitting a region at both ends of every protect call otherwise leaves one entry per call behind, and every later call
 // walks the table: the write tracker arms and disarms the same pages thousands of times a second. The caller holds g_reg_mu.
@@ -144,8 +161,12 @@ void region_coalesce(size_t first, int last) {
     for (size_t i = first > 0 ? first - 1 : 0; i < end && i + 1 < g_regions.size();) {
         Region& x = g_regions[i];
         const Region& y = g_regions[i + 1];
-        const bool same = x.base + x.size == y.base && x.state == y.state && x.protect == y.protect && x.own_mapping == y.own_mapping &&
-                          x.section_view == y.section_view && x.section == y.section && (!x.section_view || x.section_off + x.size == y.section_off);
+        // Two allocations that happen to sit next to each other with the same state are not one region: merging them makes
+        // VirtualFree/UnmapViewOfFile of the second fail and releasing the first unmap both, which is guest memory still in
+        // use (issue 581: garbage vertices, a giant triangle through the scene).
+        const bool same = x.base + x.size == y.base && region_alloc(x) == region_alloc(y) && x.state == y.state && x.protect == y.protect &&
+                          x.own_mapping == y.own_mapping && x.section_view == y.section_view && x.section == y.section &&
+                          (!x.section_view || x.section_off + x.size == y.section_off);
         if (!same) {
             ++i;
             continue;
@@ -339,6 +360,7 @@ LPVOID VirtualAlloc(LPVOID addr, SIZE_T size, DWORD type, DWORD protect) {
             r.state = MEM_RESERVE;
             r.protect = protect;
             r.own_mapping = true;
+                        r.alloc_base = r.base;
             region_insert(r);
             return p;
         }
@@ -367,6 +389,7 @@ LPVOID VirtualAlloc(LPVOID addr, SIZE_T size, DWORD type, DWORD protect) {
         r.state = MEM_RESERVE;
         r.protect = protect;
         r.own_mapping = true;
+                r.alloc_base = r.base;
         region_insert(r);
         return reinterpret_cast<LPVOID>(want);
     }
@@ -384,6 +407,7 @@ LPVOID VirtualAlloc(LPVOID addr, SIZE_T size, DWORD type, DWORD protect) {
             r.state = MEM_COMMIT;
             r.protect = protect;
             r.own_mapping = true;
+                        r.alloc_base = r.base;
             region_insert(r);
             return p;
         }
@@ -439,16 +463,25 @@ BOOL VirtualFree(LPVOID addr, SIZE_T size, DWORD type) {
     }
 
     if (type & MEM_RELEASE) {
+        // The whole allocation goes, not only the entry the caller named: a VirtualProtect splits an allocation into several
+        // entries, and releasing just the first one left the rest mapped (an old leak, and with the merge above, guest memory
+        // that is still in use).
+        const uintptr_t alloc = region_alloc(r);
+        size_t first = static_cast<size_t>(i), last = first + 1;
+        region_alloc_range(alloc, &first, &last);
+        uintptr_t total = 0;
+        for (size_t k = first; k < last; ++k) total += g_regions[k].size;
         // Reservations come from mmap (the __GUEST segment, anonymous) or mach_vm_allocate (an exact address anywhere
         // else); a VM-level deallocation releases both. A section view is a file mapping, which munmap releases.
 #if defined(__APPLE__)
-        if (r.own_mapping) mach_vm_deallocate(mach_task_self(), r.base, r.size);
-        else ::munmap(reinterpret_cast<void*>(r.base), r.size);
+        if (r.own_mapping) mach_vm_deallocate(mach_task_self(), alloc, total);
+        else ::munmap(reinterpret_cast<void*>(alloc), total);
 #else
-        ::munmap(reinterpret_cast<void*>(r.base), r.size);
+        ::munmap(reinterpret_cast<void*>(alloc), total);
 #endif
-        if (r.section) release(r.section);
-        g_regions.erase(g_regions.begin() + i);
+        for (size_t k = first; k < last; ++k)
+            if (g_regions[k].section) release(g_regions[k].section);
+        g_regions.erase(g_regions.begin() + static_cast<std::ptrdiff_t>(first), g_regions.begin() + static_cast<std::ptrdiff_t>(last));
         return TRUE;
     }
 
@@ -763,6 +796,7 @@ LPVOID MapViewOfFileEx(HANDLE section, DWORD access, DWORD hi, DWORD lo, SIZE_T 
     r.section_view = true;
     r.section_off = off;
     r.section = s;
+    r.alloc_base = r.base;
     retain(s);
     region_insert(r);
     return p;
@@ -785,12 +819,19 @@ BOOL UnmapViewOfFile(LPCVOID view) {
         return FALSE;
     }
     Region& r = g_regions[static_cast<size_t>(i)];
-    if (::munmap(reinterpret_cast<void*>(r.base), r.size) != 0) {
+    // a view split by VirtualProtect is several entries: unmap the whole allocation and drop all of them
+    const uintptr_t alloc = region_alloc(r);
+    size_t first = static_cast<size_t>(i), last = first + 1;
+    region_alloc_range(alloc, &first, &last);
+    uintptr_t total = 0;
+    for (size_t k = first; k < last; ++k) total += g_regions[k].size;
+    if (::munmap(reinterpret_cast<void*>(alloc), total) != 0) {
         nxos_set_error_from_errno(errno);
         return FALSE;
     }
-    if (r.section) release(r.section);
-    g_regions.erase(g_regions.begin() + i);
+    for (size_t k = first; k < last; ++k)
+        if (g_regions[k].section) release(g_regions[k].section);
+    g_regions.erase(g_regions.begin() + static_cast<std::ptrdiff_t>(first), g_regions.begin() + static_cast<std::ptrdiff_t>(last));
     return TRUE;
 }
 
