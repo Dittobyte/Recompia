@@ -735,6 +735,22 @@ void DeleteCriticalSection(PCRITICAL_SECTION) {}
 // ==================================================================================================================
 namespace {
 
+#if defined(__linux__)
+// The main thread's stack, the Linux side of pkp.exe's /STACK:134217728: the host main thread runs the guest's main thread and
+// lifted code nests deeply. Linux grows the main stack up to RLIMIT_STACK (8 MiB on SteamOS and most desktops) and ignores the
+// PT_GNU_STACK size the link writes; it keeps at least 128 MiB free below the stack for that growth, so raising the soft limit
+// before main() is enough. glibc sized its default thread stack from the limit before this runs, so other threads keep theirs.
+// A hard limit below 128 MiB caps it there. macOS takes the size from the executable's LC_MAIN (-stack_size).
+// From Dittobyte/Recompia#546 (game-build/src/pkp_host_stack_linux.cpp there).
+[[gnu::constructor]] void raise_main_stack() {
+    constexpr rlim_t kMainStack = 134217728;
+    rlimit rl{};
+    if (getrlimit(RLIMIT_STACK, &rl) != 0 || rl.rlim_cur == RLIM_INFINITY || rl.rlim_cur >= kMainStack) return;
+    rl.rlim_cur = rl.rlim_max == RLIM_INFINITY || rl.rlim_max >= kMainStack ? kMainStack : rl.rlim_max;
+    setrlimit(RLIMIT_STACK, &rl);
+}
+#endif
+
 struct StartBox {
     PTHREAD_START_ROUTINE fn = nullptr;
     LPVOID arg = nullptr;

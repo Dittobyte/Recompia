@@ -826,7 +826,8 @@ def link(runner, lib, game, env):
             raise Fail('Reserving the guest address space failed (exit %d):\n%s' % (rc, tail))
     elif LINUX:
         # Zig targeting x86_64-linux-gnu. The exe finds libpkp_rt.so next to itself (-rpath $ORIGIN, the ELF equivalent of
-        # @executable_path), and the main thread's stack is the same 128 MiB the Windows /STACK and the Mach-O -stack_size give it.
+        # @executable_path). The main thread's 128 MiB stack (the Windows /STACK, the Mach-O -stack_size) comes from the runtime raising
+        # RLIMIT_STACK before main (os_posix.cpp raise_main_stack): glibc ignores the PT_GNU_STACK size below for the main thread.
         # --strip-debug: Zig's Linux output carries full DWARF (1.4 GB against 278 MB stripped); the symbol table stays, so the
         # crash reporter's host frames still resolve.
         cmd = list(COMPILER) + CXXFLAGS + ['-I', SDK, '-I', os.path.join(lib, 'gen'), os.path.join(SDK, 'pkp_stub.cpp')] + libs + [
