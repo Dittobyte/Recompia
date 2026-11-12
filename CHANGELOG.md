@@ -3,6 +3,7 @@
 ## Unreleased
 
 - New **Item editor (experimental)** in Settings > Gameplay, off by default: it adds an **Items** tab to the game's Settings screen where you change how many of an item in your bag you hold (up to the game's stack limit). It does not add new items and is off during Link Play. Back up your save first. Update only: no shader rebuild, no Set up again
+- New **Aspect Ratio** setting in the game's Settings > Display and in the launcher (Auto, 16:9, 16:10, 21:9, 32:9; applies after a restart): 16:9 now keeps the game in 16:9 on a 16:10 or ultrawide screen. The toggle that only chose black bars over stretching is now called **Letterbox** (#564). Update only: no shader rebuild, no Set up again
 
 ### Mods
 - Added a **Mods** tab to the game's own Settings: pick a mod, switch it on or off (applies at the next start), see its state and change its settings, which reach the mod at once
