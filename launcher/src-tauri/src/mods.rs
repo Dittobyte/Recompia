@@ -210,6 +210,8 @@ pub struct ModsView {
     pub points: i32,
     /// what the launcher locks now (mods_lock.rs `mark`; None until marked), so a page can offer Lock for a mod that is not installed
     pub locks: Option<crate::mods_lock::Locks>,
+    /// the Community Achievements mod's id, so the page can say what its state means for the Achievements page
+    pub achievements_mod: &'static str,
 }
 
 fn view_of(core: &Core, game_dir: &Path) -> ModsView {
@@ -243,7 +245,7 @@ fn view_of(core: &Core, game_dir: &Path) -> ModsView {
             lockable: false,
         })
         .collect();
-    ModsView { dir: crate::dump::fwd(&mods_dir(game_dir)), mods, gameplay: core.gameplay_mods(), points: core.plan_count(), locks: None }
+    ModsView { dir: crate::dump::fwd(&mods_dir(game_dir)), mods, gameplay: core.gameplay_mods(), points: core.plan_count(), locks: None, achievements_mod: crate::achievements::MOD_ID }
 }
 
 /// The installed mods, after writing their plan (a mod dropped in by hand changes it as much as a click does).
