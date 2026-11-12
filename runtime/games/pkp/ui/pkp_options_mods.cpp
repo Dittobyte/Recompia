@@ -5,7 +5,9 @@
 //   1  On/Off    the player's switch, saved when the screen commits (mt_loader_set_enabled + mt_loader_save_list), in force at the next
 //                start. A code mod whose code the player has not allowed (MT_MOD_NEW_CODE) is held by the host and cannot be switched on
 //                here: the row only shows its state; code is allowed in the launcher's Mods page only.
-//   2  Status    read only: its state, and the core's message for it (why it is off, broken or held) as the description
+//   2  Status    read only: its state this run, or the saved switch when it differs ("Off from next start", "On from next start"); the
+//                description: the core's message for it (why it is off, broken or held) or its description, what it holds (code, files or
+//                LayeredFS files, patches), whether it changes gameplay or looks only, the hosts it talks to and its package checksum
 //   3  Page      only when it has more than 10 settings: which 9 the rows below show (Use::Rows)
 //   3.. its settings: bool and choice (2..4 names) as choices, longer choices and numbers as sliders (a number's range coarsened to at
 //      most 255 positions), a key through the key capture (keyboard keys only: the names the mods' key settings store), text read only.
@@ -20,10 +22,12 @@
 #include <cmath>
 #include <cstdio>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "modtopia/modtopia_host.h"
 #include "nxrt/mods.h"
+#include "nxrt/text.h"
 
 namespace nxrt::games::pkp::options_detail {
 namespace {
@@ -40,7 +44,9 @@ enum class Kind : uint8_t { NoMods, Mod, Switch, Status, Page, Setting };
 // One mod as the tab knows it since the screen opened (or last committed).
 struct Mod {
     std::string id, title, state, about;    // title: name and version; about: the core's message, else the description
+    std::string facts;                      // what it holds and does, the network hosts and the checksum (tags())
     bool held = false;                      // code the player has not allowed: the switch cannot turn it on
+    bool on_at_start = false;               // the switch this run started with
     int on_cur = 0, on_orig = 0;            // the switch: as shown, as saved
     std::vector<double> num;                // each setting's value in force (bool, number, choice index)
     std::vector<std::string> text;          // ... and of a text or key setting
@@ -60,12 +66,48 @@ struct Line {
 
 std::string str(const char* s) { return s ? s : ""; }
 
-const char* state_word(const MtModInfo& m) {
+// Its state this run, or the saved switch when that differs from it (in force at the next start).
+const char* state_word(const MtModInfo& m, bool on_at_start, bool on_saved) {
     if ((m.flags & MT_MOD_HAS_CODE) && (m.flags & MT_MOD_NEW_CODE)) return "Not allowed";
     if (m.state == MT_STATE_ERROR) return "Error";
-    if (!m.enabled) return "Off";
-    if (m.state == MT_STATE_OFF) return "Not loaded";
-    return "On";
+    if (m.state == MT_STATE_OK) return on_saved ? "On" : "Off from next start";
+    if (!on_at_start) return on_saved ? "On from next start" : "Off";
+    return "Not loaded";
+}
+
+// What a mod holds and does, for its Status row: "Has code, LayeredFS files. Changes gameplay (guessed from its files). Talks to
+// a.example. Checksum (sha256): ..." (the checksum is the one players compare with the author's).
+std::string tags(const MtModInfo& m) {
+    constexpr size_t kHosts = 120;   // the hosts' share of the description
+    const int f = m.flags;
+    std::string has;
+    const auto add = [&has](const char* s) { has += (has.empty() ? "" : ", ") + std::string(s); };
+    if (f & MT_MOD_HAS_CODE) add(f & MT_MOD_NEW_CODE ? "new code" : "code");
+    if (f & MT_MOD_LAYEREDFS) add("LayeredFS files");
+    else if (f & MT_MOD_HAS_DATA) add("files");
+    if (f & MT_MOD_HAS_PATCHES) add("patches");
+    std::string out = has.empty() ? "" : "Has " + has + ". ";
+    out += f & MT_MOD_GAMEPLAY ? "Changes gameplay: every player of a Link Play session needs it" : "Looks only";
+    if (f & MT_MOD_KIND_GUESSED) out += " (guessed from its files)";
+    out += ".";
+    if ((f & MT_MOD_NETWORK) && m.network && *m.network) {
+        std::string hosts = m.network;
+        if (hosts.size() > kHosts) hosts = hosts.substr(0, nxrt::text::utf8_cut(hosts, kHosts - 3)) + "...";
+        out += " Talks to " + hosts + ".";
+    }
+    if (m.sha256 && *m.sha256) out += std::string(" Checksum (sha256): ") + m.sha256;
+    return out;
+}
+
+// The Status row's description: the message or description, cut so the facts after it fit the screen's description (512 bytes).
+std::string status_desc(const Mod& m) {
+    constexpr size_t kDesc = 500;
+    std::string about = m.about.empty() ? m.title : m.about;
+    const size_t room = m.facts.size() + 2 < kDesc ? kDesc - m.facts.size() - 2 : 0;
+    if (about.size() > room) about = room > 3 ? about.substr(0, nxrt::text::utf8_cut(about, room - 3)) + "..." : std::string();
+    if (about.empty()) return m.facts;
+    const char end = about.back();
+    return about + (end == '.' || end == '!' || end == '?' ? " " : ". ") + m.facts;
 }
 
 // A key setting's capture: the key name as the core stores it ("F3", "PageUp": SDL's scancode names, play::input_name).
@@ -125,6 +167,7 @@ private:
     int shown_ = 0, page_ = 0;
     std::vector<Line> lines_;
     mutable ModKey keys_[kSettingRows];
+    std::unordered_map<std::string, bool> start_on_;   // id -> the switch this run started with (Mod::on_at_start)
 };
 
 const char* ModsTab::value_text(int i, int pos, char* out, size_t n) const {
@@ -266,7 +309,7 @@ void ModsTab::build() {
     st.shape = Shape{2, 0, 1, Use::ReadOnly};
     st.label = "Status";
     st.names = {m.state, m.state};
-    st.desc = m.about.empty() ? m.title : m.about;
+    st.desc = status_desc(m);
     lines_.push_back(std::move(st));
 
     const int total = settings_of(shown_);
@@ -305,10 +348,13 @@ void ModsTab::open() {
         Mod m;
         m.id = str(in->id);
         m.title = str(in->name && *in->name ? in->name : in->id) + " " + str(in->version);
-        m.state = state_word(*in);
         m.about = in->message && *in->message ? str(in->message) : str(in->description);
+        m.facts = tags(*in);
         m.held = (in->flags & MT_MOD_HAS_CODE) && (in->flags & MT_MOD_NEW_CODE);
         m.on_cur = m.on_orig = in->enabled ? 1 : 0;
+        // The core's switch changes only when this tab saves one, so its value at the first open is the one the run started with.
+        m.on_at_start = start_on_.try_emplace(m.id, in->enabled != 0).first->second;
+        m.state = state_word(*in, m.on_at_start, m.on_orig != 0);
         mods_.push_back(std::move(m));
     }
     for (size_t i = 0; i < mods_.size(); ++i) {
@@ -350,12 +396,15 @@ void ModsTab::accept() {
     for (size_t i = 0; i < mods_.size(); ++i) {
         Mod& m = mods_[i];
         m.on_orig = m.on_cur;
+        if (const MtModInfo* in = mt_loader_info(L_, static_cast<int>(i))) m.state = state_word(*in, m.on_at_start, m.on_orig != 0);
         for (size_t s = 0; s < m.num.size(); ++s) {
             m.num[s] = mt_setting_get_number(L_, static_cast<int>(i), static_cast<int>(s));
             char buf[512] = {};
             if (mt_setting_get_text(L_, static_cast<int>(i), static_cast<int>(s), buf, sizeof buf) == MT_OK) m.text[s] = buf;
         }
     }
+    for (Line& l : lines_)
+        if (l.kind == Kind::Status) l.names = {mods_[static_cast<size_t>(shown_)].state, mods_[static_cast<size_t>(shown_)].state};
 }
 
 // Every switch as saved, every setting the screen changed back to its value (the mod is told again).
