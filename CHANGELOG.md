@@ -18,7 +18,7 @@
 - The defaults that fix a Linux kernel or Mesa behaviour now ask the kernel, not Wine: a kernel submission's pool walk, the lazy and shadow pool imports, the submit thread and its batching, the short sleep's timed address wait, the graphics pipeline library upgrade, the loop guard and the pipeline cache save all apply to the native build, which is what the Proton build had
 - Write tracking arms a whole range with one `mprotect` instead of one per 4 KiB page (a 10 MiB arm measured 3132 us -> 34 us), and the timed address wait is a futex, so the game's ~100 us GPU-fence polls no longer keep two cores busy
 - Steam Deck: add the AppImage as a non-Steam game. An AppImage leaves the graphics stack to the host on purpose, so it needs `libEGL`, `libGL`, `libGLESv2` and `libvulkan`, which every desktop and SteamOS ship
-- Still not: **FSR 3 and DLSS**. Both are Windows-only SDKs and the native build turns them off, where the Proton build had them; FSR 1 and NIS are plain compute shaders and still run. Also Link Play against a peer, and a real gamepad
+- Still not: **FSR 3 and DLSS**. Both are Windows-only SDKs and the native build turns them off, where the Proton build had them; FSR 1 and NIS are plain compute shaders and still run. Also Link Play against a peer, a real gamepad, and a mod's HTTPS requests: the host HTTP client is WinHTTP, so the native build refuses them (`MT_ERR_STATE` to the mod) instead of failing quietly
 
 ### macOS
 - The game runs natively on Apple silicon: `libpkp_rt.dylib`, a `pkp` linked from the player's own dump, Metal through MoltenVK, CoreAudio for sound and SDL3 for the window
@@ -27,7 +27,7 @@
 - `pkp` carries its own Metal shader-cache identity (an `Info.plist` linked into it, one per game folder). Without one it shared a cache folder with every other program outside an app bundle, and a start compiled every pipeline again whenever one of those was running
 - A frame limit holds through loading screens too, the game's own thread synchronisation is ordered the way Apple's cores need it (`LDAR`/`STLR`), SHA-1 uses the ARMv8 instructions, and the runtime's write tracking follows the host's 16 KiB pages, so a texture the game rewrites is not read back stale
 - The guest address space is reserved in `pkp`'s Mach-O header as a zero-fill `__GUEST` segment: libmalloc's xzone allocator takes about 24 GiB of it at random addresses before `main` runs
-- Still not: the two in-game movies (they are VP9 in WebM and no run has reached one yet), Link Play against a peer, and a signed and notarized `.app` — the zip is unsigned and its note covers the one-time **Open Anyway**. In the world the GPU is the limit: about 25 fps on an M3 at 1080p internal
+- Still not: the two in-game movies (they are VP9 in WebM and no run has reached one yet), Link Play against a peer, a mod's HTTPS requests (the host HTTP client is WinHTTP), and a signed and notarized `.app` — the zip is unsigned and its note covers the one-time **Open Anyway**. In the world the GPU is the limit: about 25 fps on an M3 at 1080p internal
 
 ### Docs
 - `docs/linux-port.md` and `docs/macos-port.md` describe both ports, and `docs/macos-optimisations.md` records what is tuned, what is not, and how to measure it

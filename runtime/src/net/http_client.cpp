@@ -1,20 +1,28 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The host HTTP(S) client (http_client.h) on WinHTTP, in its synchronous mode on one worker thread per request. On Linux the game is this
-// same Windows exe under Proton, whose WinHTTP carries the requests, so there is no second implementation.
+// The host HTTP(S) client (http_client.h) on WinHTTP, in its synchronous mode on one worker thread per request. WinHTTP is Windows-only:
+// the native Linux and macOS builds have no HTTPS stack linked in, so there start() reports that no request could be made (below).
 #include "http_client.h"
 
+#if defined(_WIN32)
 #include <windows.h>
 #include <winhttp.h>
+#endif
 
+#include "nxrt/log.h"
+#if defined(_WIN32)
 #include <atomic>
 #include <thread>
 
-#include "nxrt/log.h"
 #include "nxrt/text.h"
+#endif
 
+#if defined(_WIN32)
 #pragma comment(lib, "winhttp.lib")
+#endif
 
 namespace nxrt::http {
+
+#if defined(_WIN32)
 
 namespace {
 
@@ -141,5 +149,23 @@ bool start(Request r, DoneFn done) {
     }
     return true;
 }
+
+#else   // the native Linux and macOS builds
+
+// WinHTTP is Windows-only, and these builds link no other HTTPS stack (the Windows exe run under Proton had Wine's). A request is
+// refused before it starts, which modtopia_backend turns into MT_ERR_STATE, so the mod is told its request failed instead of waiting
+// for an answer that never comes.
+bool start(Request r, DoneFn done) {
+    (void)r;
+    (void)done;
+    static const bool once = [] {
+        NXLOG_W("http", "host HTTP requests are not available on this platform (WinHTTP is Windows-only): a mod's request fails");
+        return true;
+    }();
+    (void)once;
+    return false;
+}
+
+#endif
 
 }  // namespace nxrt::http
