@@ -36,6 +36,7 @@
 #include <vector>
 
 #include "nxrt/config.h"
+#include "nxrt/fault_guard.h"
 #include "nxrt/ftrace.h"
 #include "nxrt/gauge.h"
 #include "nxrt/host_device.h"
@@ -191,32 +192,14 @@ struct CopyGauges {
 };
 CopyGauges g_copy_gauges;
 
-// memcpy that survives an access violation (a guest page decommitted under it). No C++ objects here (SEH).
+// memcpy that survives an access violation (a guest page decommitted under it).
 bool seh_copy(void* d, const void* s, size_t n) {
-#if defined(_WIN32)
-    __try {
-        std::memcpy(d, s, n);
-    } __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
-        return false;
-    }
-    return true;
-#else
-    return nxos_guard([&] { std::memcpy(d, s, n); });   // the shim's __try: a fault inside returns 0
-#endif
+    return nxrt::fault_guarded([&] { std::memcpy(d, s, n); });
 }
 
 bool seh_same(const void* a, const void* b, size_t n) {      // as seh_copy; false on a fault
-#if defined(_WIN32)
-    __try {
-        return std::memcmp(a, b, n) == 0;
-    } __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
-        return false;
-    }
-#else
     bool same = false;
-    if (!nxos_guard([&] { same = std::memcmp(a, b, n) == 0; })) return false;
-    return same;
-#endif
+    return nxrt::fault_guarded([&] { same = std::memcmp(a, b, n) == 0; }) && same;
 }
 
 void reg_remove(PoolChunk* c) {

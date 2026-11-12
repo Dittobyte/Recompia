@@ -1094,27 +1094,8 @@ void RaiseException(DWORD code, DWORD flags, DWORD nargs, const ULONG_PTR* args)
 // because the guest pages under it can be decommitted; clang has no SEH, so the callable runs under a sigsetjmp in
 // the SIGSEGV/SIGBUS handler and a fault inside it returns 0 instead of killing the process. Vectored handlers run
 // first, exactly as on Windows, so write_watch's un-protect-and-retry still wins. The callable must not own
-// resources: a fault leaves it without unwinding.
+// resources: a fault leaves it without unwinding. Callers use nxrt/fault_guard.h, which is SEH on Windows and this here.
 int nxos_guarded_call(void (*fn)(void*), void* arg);   // 1 = returned normally, 0 = faulted
-
-#if defined(__cplusplus)
-namespace nxos_detail {
-template <class F>
-struct GuardThunk {
-    F* fn;
-    // p is the GuardThunk, not the callable: casting it to F* and calling that read `fn` (and the two words past this
-    // 8-byte struct) as the callable's captures, so a by-reference lambda got garbage pointers and the copy went to
-    // whatever the neighbouring stack frame held (the land thread's stack top, 2026-11-10).
-    static void call(void* p) { (*static_cast<GuardThunk*>(p)->fn)(); }
-};
-}  // namespace nxos_detail
-template <class F>
-bool nxos_guard(F&& fn) {
-    F callable = static_cast<F&&>(fn);
-    nxos_detail::GuardThunk<F> thunk{&callable};
-    return nxos_guarded_call(&nxos_detail::GuardThunk<F>::call, &thunk) != 0;
-}
-#endif
 
 // ---- COM (no-op: the launcher and the media/audio backends are Windows-only) -------------------------------------
 #define COINIT_APARTMENTTHREADED 0x2
