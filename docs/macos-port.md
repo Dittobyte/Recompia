@@ -4,6 +4,8 @@ Status: **the game runs on Apple Silicon** — M0–M3 done, M4 done except Link
 M5 done, M6 partial (launcher, `.app`, CI, the shader pipeline and the release pipeline done; movies untested, signing and
 notarization wired in CI but waiting for the Apple Developer secrets).
 §7 is the evidence log; §8 is the operational guide (build, lift, run, launcher, shader cache, memory, traps).
+Tuning beyond the port itself — the 16 items a review of [Chaos192/PokoMac](https://github.com/Chaos192/PokoMac) turned up,
+what is in the tree and how to pick up the rest — is `docs/macos-optimisations.md`.
 
 Target: a native `arm64` macOS build of `pkp` (Apple Silicon), running the same lifted game libraries the Windows
 build links.
