@@ -49,8 +49,13 @@ constexpr game::LoopGuard kLoopGuards[] = {
     {"b81c48ff486acef4", "cp_c3", 13, "cp_t_cb0_12", 1},
 };
 
+// The 2D after the picture (#572): the composite (the LUT tone map above) is the last full-screen pass into the window texture; the HUD,
+// menus, text and the world markers (speech bubbles, "This way!") are drawn after it into the same texture as vertex-input draws, the fades
+// as full-screen draws without vertex inputs. The camera menu and the album draw the composite into a corner of it for their blurred
+// background, also without vertex inputs. Based on pokopia-native's (MIT) in-game findings for the same build (its wide view and
+// anti-aliasing notes: an effect between the composite and the HUD leaves the HUD sharp, a squeeze of the later draws moves only the 2D).
 constexpr game::Render kRender = {&kReadbackDefer, &kCamera, kToneMaps, sizeof kToneMaps / sizeof kToneMaps[0],
-                                  kLoopGuards, sizeof kLoopGuards / sizeof kLoopGuards[0]};
+                                  kLoopGuards, sizeof kLoopGuards / sizeof kLoopGuards[0], true};
 
 }  // namespace
 
