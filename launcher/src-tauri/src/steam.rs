@@ -537,6 +537,8 @@ pub fn remove(testing: bool, target: Target) -> Result<String, String> {
 mod tests {
     use super::*;
 
+    // unix only: Windows finds Steam under Program Files, not under a home folder a test can point at
+    #[cfg(unix)]
     #[test]
     fn roots_find_the_platform_install() {
         let base = std::env::temp_dir().join(format!("steam_roots_{}", std::process::id()));
