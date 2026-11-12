@@ -283,10 +283,12 @@ jobs:
 
       - name: Shader translator
         run: |
-          [ -d refs/ryubing/.git ] || git clone --filter=blob:none https://git.ryujinx.app/ryubing/ryujinx.git refs/ryubing
+          if (-not (Test-Path refs/ryubing/.git)) { git clone --filter=blob:none https://git.ryujinx.app/ryubing/ryujinx.git refs/ryubing }
           git -C refs/ryubing checkout -f $env:RYUBING_COMMIT
           ./tools/shaders/scripts/setup_ryujinx.ps1
           dotnet publish -c Release -r win-x64 --self-contained true tools/shaders/harness/SpirvHarness.csproj -o build/harness
+          if ($LASTEXITCODE) { exit 1 }
+          ./build/harness/spirv_harness.exe --help > $null
           if ($LASTEXITCODE) { exit 1 }
 
       - name: Package
@@ -485,22 +487,19 @@ jobs:
           mkdir -p work
           [ -d refs/ryubing/.git ] || git clone --filter=blob:none https://git.ryujinx.app/ryubing/ryujinx.git refs/ryubing
           git -C refs/ryubing checkout -f "$RYUBING_COMMIT"
-          # setup_ryujinx.ps1 stages these with robocopy, which Linux does not have
-          dst=tools/shaders/third_party/ryubing
-          mkdir -p "$dst/src"
-          for p in Ryujinx.Common Spv.Generator Ryujinx.Graphics.Shader; do
-            rsync -a --exclude obj --exclude bin "refs/ryubing/src/$p" "$dst/src/"
-          done
-          cp refs/ryubing/Directory.Build.props refs/ryubing/Directory.Packages.props refs/ryubing/global.json \
-             refs/ryubing/nuget.config refs/ryubing/LICENSE.txt "$dst/"
-          dotnet publish tools/shaders/harness -c Release -r osx-arm64 --self-contained -o work/harness
+          bash tools/shaders/scripts/setup_ryujinx.sh          # the same staging the Linux package uses
+          dotnet publish -c Release -r osx-arm64 --self-contained true tools/shaders/harness/SpirvHarness.csproj -o work/harness
+          test -x work/harness/spirv_harness                   # a macOS binary: it cannot run here, only the publish can be checked
 
       - name: MoltenVK
         run: |
-          curl -fsSL -o work/moltenvk.tar "https://github.com/KhronosGroup/MoltenVK/releases/download/$MOLTENVK_VERSION/MoltenVK-macos.tar"
+          curl -fsSL --retry 3 --retry-delay 5 -o work/moltenvk.tar \
+            "https://github.com/KhronosGroup/MoltenVK/releases/download/$MOLTENVK_VERSION/MoltenVK-macos.tar"
+          test -s work/moltenvk.tar
           tar -xf work/moltenvk.tar -C work
           mkdir -p work/moltenvk
           cp work/MoltenVK/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib work/MoltenVK/LICENSE work/moltenvk/
+          test -s work/moltenvk/libMoltenVK.dylib
 
       - name: Prompt icons
         run: |
@@ -513,7 +512,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: macos-payload
-          path: work/payload
+          # work/moltenvk rides along: the macOS runner links the runtime against it, so it never downloads MoltenVK itself
+          path: |
+            work/payload
+            work/moltenvk
           compression-level: 6
 
   # The macOS package: the two files that need macOS (the launcher through Tauri's bundler, the runtime dylib against the SDK's
@@ -560,14 +562,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: macos-payload
-          path: work/payload
-
-      - name: MoltenVK (the runtime links against it)
-        run: |
-          curl -fsSL -o work/moltenvk.tar "https://github.com/KhronosGroup/MoltenVK/releases/download/$MOLTENVK_VERSION/MoltenVK-macos.tar"
-          tar -xf work/moltenvk.tar -C work
-          mkdir -p work/moltenvk
-          cp work/MoltenVK/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib work/MoltenVK/LICENSE work/moltenvk/
+          path: work          # restores work/payload and work/moltenvk
 
       - name: Runtime dylib (libpkp_rt.dylib)
         run: |
