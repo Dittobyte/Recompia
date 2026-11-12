@@ -4,7 +4,8 @@
 //   0  Mod       a slider over the mods in load order (then the rest); moving it shows that mod's rows (Use::Rows)
 //   1  On/Off    the player's switch, saved when the screen commits (mt_loader_set_enabled + mt_loader_save_list), in force at the next
 //                start. A code mod whose code the player has not allowed (MT_MOD_NEW_CODE) is held by the host and cannot be switched on
-//                here: the row only shows its state; code is allowed in the launcher's Mods page only.
+//                here: the row only shows its state; code is allowed in the launcher's Mods page only. A mod the launcher keeps on
+//                (mods::locked, the launcher's [mods] locked) shows On read only while it is on: it is unlocked in the launcher's Mods page.
 //   2  Status    read only: its state this run, or the saved switch when it differs ("Off from next start", "On from next start"); the
 //                description: the core's message for it (why it is off, broken or held) or its description, what it holds (code, files or
 //                LayeredFS files, patches), whether it changes gameplay or looks only, the hosts it talks to and its package checksum
@@ -12,7 +13,7 @@
 //   3.. its settings: bool and choice (2..4 names) as choices, longer choices and numbers as sliders (a number's range coarsened to at
 //      most 255 positions), a key through the key capture (keyboard keys only: the names the mods' key settings store), text read only.
 //      A setting reaches the mod at once (mt_setting_set_*, the core saves config/<id>.toml and tells the mod); a discard puts back the
-//      value it had when the screen opened or last committed.
+//      value it had when the screen opened or last committed. A setting the launcher keeps on (mods::setting_locked) is read only.
 // No mods folder or no mods: one read-only row that says so. Strings from the core are copied: they live until the core's next change.
 // The hooks run on the game's thread, as does the core's frame; a captured key reaches the core on play mode's main thread, which HOST.md
 // allows ("settings changes made in a menu reach the mod on the menu's thread").
@@ -46,6 +47,7 @@ struct Mod {
     std::string id, title, state, about;    // title: name and version; about: the core's message, else the description
     std::string facts;                      // what it holds and does, the network hosts and the checksum (tags())
     bool held = false;                      // code the player has not allowed: the switch cannot turn it on
+    bool locked = false;                    // the launcher keeps it on: the switch cannot turn it off
     bool on_at_start = false;               // the switch this run started with
     int on_cur = 0, on_orig = 0;            // the switch: as shown, as saved
     std::vector<double> num;                // each setting's value in force (bool, number, choice index)
@@ -137,7 +139,7 @@ public:
     int def(int i) const override { return orig[i]; }   // the core keeps the defaults: a reset leaves the row as it is
     CaptureClient* capture(int i) const override {
         const Line& l = lines_[i];
-        return l.kind == Kind::Setting && l.type == MT_SET_KEY ? &keys_[i - first_setting_row()] : nullptr;
+        return l.kind == Kind::Setting && l.shape.use == Use::Capture ? &keys_[i - first_setting_row()] : nullptr;
     }
     const char* value_text(int i, int pos, char* out, size_t n) const override;
 
@@ -258,6 +260,14 @@ Line ModsTab::setting_line(int s, int row) {
             break;
         }
     }
+    if (mods::setting_locked(mods_[shown_].id.c_str(), in->key)) {
+        // shown as the core words its value (On, the choice, the number, the key), not changeable here
+        char buf[128] = {};
+        mt_setting_get_text(L_, shown_, s, buf, sizeof buf);
+        l.names = {buf, buf};
+        l.shape = Shape{2, 0, 1, Use::ReadOnly};
+        l.desc += (l.desc.empty() ? "" : " ") + std::string("Locked in the launcher, which keeps it as it is. Unlock it in the launcher's Mods page to change it.");
+    }
     return l;
 }
 
@@ -290,7 +300,12 @@ void ModsTab::build() {
     sw.kind = Kind::Switch;
     sw.label = "On/Off";
     sw.names = {"Off", "On"};
-    if (m.held) {
+    if (m.locked && m.on_orig) {
+        sw.shape = Shape{2, 0, 1, Use::ReadOnly};
+        sw.names = {"On", "On"};
+        sw.desc = "Locked in the launcher, which keeps this mod on. To switch it off or remove it, unlock it in the launcher's Mods page first: "
+                  "it says what that changes.";
+    } else if (m.held) {
         sw.shape = Shape{2, 0, 1, Use::ReadOnly};
         sw.names = {m.on_orig ? "On" : "Off", m.on_orig ? "On" : "Off"};
         sw.desc = "This mod has new or changed code that you have not allowed, so it does not run. Allow it in the launcher's Mods page; "
@@ -329,7 +344,7 @@ void ModsTab::build() {
         const int row = static_cast<int>(lines_.size()), s = first + k;
         lines_.push_back(setting_line(s, row));
         const Line& l = lines_.back();
-        if (l.type == MT_SET_KEY) {
+        if (l.shape.use == Use::Capture) {
             cur[row] = orig[row] = capture::kMid;
         } else if (l.shape.use == Use::Live) {
             cur[row] = position(l, mt_setting_get_number(L_, shown_, s));
@@ -351,6 +366,7 @@ void ModsTab::open() {
         m.about = in->message && *in->message ? str(in->message) : str(in->description);
         m.facts = tags(*in);
         m.held = (in->flags & MT_MOD_HAS_CODE) && (in->flags & MT_MOD_NEW_CODE);
+        m.locked = mods::locked(in->id);
         m.on_cur = m.on_orig = in->enabled ? 1 : 0;
         // The core's switch changes only when this tab saves one, so its value at the first open is the one the run started with.
         m.on_at_start = start_on_.try_emplace(m.id, in->enabled != 0).first->second;
