@@ -120,14 +120,19 @@ bool detail::address_wait_ns(const uint32_t* token, int64_t ns) {
 }
 
 bool detail::address_wait_word(const std::atomic<uint32_t>* word, uint32_t seen, int64_t ns) {
-    return wait_word(word, seen, ns) != -ETIMEDOUT;
+    if (word->load(std::memory_order_relaxed) != seen) return true;
+    wait_word(word, seen, ns);
+    // Only a changed word is a wake: RtlWaitOnAddress may return spuriously and a futex wait returns EINTR when a signal arrives,
+    // and a caller that treats either as "woken" ends a guest's timed sleep early (wait_sleep, time.cpp).
+    return word->load(std::memory_order_relaxed) != seen;
 }
 
 void detail::address_wake_word(const std::atomic<uint32_t>* word) { wake_word(word); }
 
 bool detail::address_wait_word_ns(const std::atomic<uint32_t>& word, uint32_t seen, int64_t ns) {
     if (word.load(std::memory_order_relaxed) != seen) return true;
-    return wait_word(&word, seen, ns) != -ETIMEDOUT;
+    wait_word(&word, seen, ns);
+    return word.load(std::memory_order_relaxed) != seen;   // as above: a spurious return is not a wake
 }
 
 void detail::address_wake_all(const std::atomic<uint32_t>& word) { wake_word(&word); }
