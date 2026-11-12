@@ -144,6 +144,7 @@ private:
     }
 
     void run() {
+        nxrt::log_set_thread_name("audio-wav");
         for (;;) {
             Job j;
             {

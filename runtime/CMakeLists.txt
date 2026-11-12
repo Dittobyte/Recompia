@@ -180,6 +180,8 @@ add_subdirectory(third_party/miniz)   # zlib streams (MIT): the Pokopia save rep
 if(NXRT_LINUX)
     target_link_libraries(nxrt PRIVATE nxrt_miniz)   # album.cpp's PNG writer (services/album.cpp)
 endif()
+add_subdirectory(third_party/modtopia)   # the Modtopia mod loader core (MIT, C11): the mods host, src/mods/ (nxrt/mods.h)
+target_link_libraries(nxrt PUBLIC nxrt_modtopia PRIVATE nxrt_modtopia_mappings)
 include(cmake/media_deps.cmake)   # libvpx for the Switch 2 video decoders (optional)
 
 if(NXRT_BUILD_GFX)
