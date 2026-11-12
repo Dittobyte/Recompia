@@ -511,6 +511,19 @@ DWORD GetProcessHandleCount(HANDLE, PDWORD count) {
     return TRUE;
 }
 
+BOOL GetExitCodeThread(HANDLE h, PDWORD code) {
+    if (!code) return FALSE;
+    auto* t = as<ThreadObj>(h, Kind::Thread);
+    if (!t) {
+        t_last_error = ERROR_INVALID_HANDLE;
+        return FALSE;
+    }
+    // The shim keeps no per-thread exit code (a pthread returns void*), so a thread that has ended reports 0 and a running one
+    // STILL_ACTIVE: the caller asks whether it ended (diag/hle_census.cpp), not what it returned.
+    *code = t->exited.load(std::memory_order_acquire) ? 0u : STILL_ACTIVE;
+    return TRUE;
+}
+
 // ==================================================================================================================
 // SRWLOCK: a real reader/writer lock over one pthread mutex plus one condition variable
 //

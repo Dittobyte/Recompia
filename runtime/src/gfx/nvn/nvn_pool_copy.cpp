@@ -206,11 +206,17 @@ bool seh_copy(void* d, const void* s, size_t n) {
 }
 
 bool seh_same(const void* a, const void* b, size_t n) {      // as seh_copy; false on a fault
+#if defined(_WIN32)
     __try {
         return std::memcmp(a, b, n) == 0;
     } __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
         return false;
     }
+#else
+    bool same = false;
+    if (!nxos_guard([&] { same = std::memcmp(a, b, n) == 0; })) return false;
+    return same;
+#endif
 }
 
 void reg_remove(PoolChunk* c) {

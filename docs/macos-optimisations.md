@@ -16,19 +16,19 @@ section says what to run.
 
 | # | PokoMac item | State here |
 |---|---|---|
-| 1 | LDAR is a full barrier plus a seq_cst load, STLR a seq_cst store plus a barrier after it | **done** — `recomp/include/nxrecomp/ctx.h:175-209`, `cxx.h:66-93`, `lift/a64.py:379`, `lift/tier2/misc.py:270` |
-| 2 | `VK_KHR_portability_enumeration` + `VK_KHR_portability_subset` | **done** — `runtime/src/gfx/vk_device.cpp:420-424,461,662-667` |
+| 1 | LDAR is a full barrier plus a seq_cst load, STLR a seq_cst store plus a barrier after it | **done** — `recomp/include/nxrecomp/ctx.h:186-209`, `cxx.h:68-93`, `lift/a64.py:379`, `lift/tier2/misc.py:270` |
+| 2 | `VK_KHR_portability_enumeration` + `VK_KHR_portability_subset` | **done** — `runtime/src/gfx/vk_device.cpp:430-431,468,677-679` |
 | 3 | SHA-1 with the ARMv8 instructions | **done** — `runtime/src/gfx/nvn/nvn_shaders.cpp:29-38,109-169,202` |
-| 4 | Write tracking at 16 KiB host pages | **done** — `runtime/src/mem/write_watch.cpp:97-129` and its callers |
-| 5 | No `VkPipelineCache` with MoltenVK, 8 build threads | **knob only** — `[nvn] pipeline_cache_moltenvk` (`nvn_pipeline.cpp:229-241`); the default is unchanged on purpose (§3) |
+| 4 | Write tracking at 16 KiB host pages | **done** — `runtime/src/mem/write_watch.cpp:99-129` and its callers |
+| 5 | No `VkPipelineCache` with MoltenVK, 8 build threads | **knob only** — `[nvn] pipeline_cache_moltenvk` (`nvn_pipeline.cpp:233-245`); the default is unchanged on purpose (§3) |
 | 6 | `shouldMaximizeConcurrentCompilation` | **open** — needs Obj-C/Metal (§4.1) |
-| 7 | Pool mirrors off on Apple | **done** — `runtime/src/gfx/nvn/nvn_gpu_pool.cpp:993-1006` |
+| 7 | Pool mirrors off on Apple | **done** — `runtime/src/gfx/nvn/nvn_gpu_pool.cpp:995-1010` |
 | 8 | Metal shader-cache identity | **done** — `game-build/release_b/pkp_build.py` `write_identity` + `IDENTITY`; link inspected on a Mac only *(never run — §3)* |
 | 9 | `pkp --prepare-pipelines` | **open** — pkp has no CLI at all (§4.2) |
-| 10 | Real-time policy for the render thread | **already ours** — `kernel/sched.cpp:335` → `os_posix.cpp:735-739` |
+| 10 | Real-time policy for the render thread | **already ours** — `kernel/sched.cpp:335` → `os_posix.cpp:733-741` |
 | 11 | Lazy barriers + sticky read-only depth | **half ours** — the lazy-barrier half already exists (`nvn_replay_pass.cpp:146-155`); sticky depth is open (§4.3) |
-| 12 | vsync on by default on macOS, once | **done** — `[meta] display_rev` (`play_config.cpp:189-203`, `play_config_table.cpp:216`) |
-| 13 | A frame limit holds through loading | **done** — `frame_limiter_set_player_cap` (`play_frame_cap.cpp:74-78`) |
+| 12 | vsync on by default on macOS, once | **done** — `[meta] display_rev` (`play_config.cpp:189-205`, `play_config_table.cpp:216`) |
+| 13 | A frame limit holds through loading | **done** — `frame_limiter_set_player_cap` (`play_frame_cap.cpp:105-110`) |
 | 14 | MetalFX temporal upscaling | **open** — large (§4.4) |
 | 15 | UDOT/SDOT, ZBIC-compressed NSOs | **open** — for games we do not ship (§4.5) |
 | 16 | KosmicKrisp as a second driver | **open** — needs a Mac (§4.6) |
@@ -165,7 +165,7 @@ the writable layout and must end the pass.
 Site: `nvn_replay_draw.cpp:423-431`. Today `g_cmd.want_depth_ro = samples_depth_target(*pl)` goes straight
 into `ensure_pass(...)`, and `ensure_pass` (`nvn_replay_pass.cpp:143-145`) ends the pass whenever
 `P.depth_ro != depth_ro`. The draw's depth write is `S.ds.depth_test && S.ds.depth_write` (the pipeline
-state already forces the host `depthWriteEnable` to false in a read-only pass, `nvn_replay_draw.cpp:271`).
+state already forces the host `depthWriteEnable` to false in a read-only pass, `nvn_replay_draw.cpp:272`).
 
 ```cpp
 bool want_ro = g_cmd.want_depth_ro;

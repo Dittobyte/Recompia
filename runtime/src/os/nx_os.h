@@ -509,6 +509,7 @@ BOOL TerminateProcess(HANDLE proc, UINT code);
 void ExitProcess(UINT code);
 void ExitThread(DWORD code);
 BOOL GetExitCodeProcess(HANDLE proc, PDWORD code);
+BOOL GetExitCodeThread(HANDLE thread, PDWORD code);
 BOOL CloseHandle(HANDLE h);
 BOOL DuplicateHandle(HANDLE src_proc, HANDLE src, HANDLE dst_proc, HANDLE* out, DWORD access, BOOL inherit, DWORD options);
 DWORD GetProcessHandleCount(HANDLE proc, PDWORD count);

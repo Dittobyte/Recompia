@@ -46,12 +46,16 @@ bool guest_range(uint64_t addr, size_t n, bool write) {
 // The copy itself, guarded: a page the map calls mapped may still fault (a race with an unmap). The write tracker's vectored handler serves
 // its guarded pages before this handler is asked (nxrt/write_watch.h). No C++ object may live in this frame (SEH).
 bool guarded_copy(void* dst, const void* src, size_t n) {
+#if defined(_WIN32)
     __try {
         std::memcpy(dst, src, n);
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
+#else
+    return nxos_guard([&] { std::memcpy(dst, src, n); });   // the shim's __try: a fault inside returns 0
+#endif
 }
 
 void be_log(void*, int level, const char* line) {
