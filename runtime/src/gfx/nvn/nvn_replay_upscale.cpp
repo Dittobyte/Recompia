@@ -142,10 +142,13 @@ static void temporal_for_draw(const ProgLayout& pl) {
 // size (the scene and the post images made at its size), so each of them is sampled nearest; a full-size input read whole is read 1:1,
 // where nearest and bilinear give the same texels, and smaller inputs (bloom) stay filtered. Without a scene part the largest input
 // below the target size is the scene. The first input alone was not always the scene: the stretch stayed bilinear.
+// A scene_scale below 100 always puts the scene in the top-left of full-size targets, so it counts as a part even when the game publishes
+// no fraction (dynamic resolution, a split screen, or a frame before its first copy of the parameters): taking the largest smaller input
+// then picked the bloom chain and left the scene's stretch bilinear (#571).
 static void nearest_scene_for_draw(const ProgLayout& pl, VkExtent3D te) {
     float fx = 1.0f, fy = 1.0f;
     extras::scene_fraction(&fx, &fy);
-    const bool part = fx < 1.0f || fy < 1.0f;
+    const bool part = fx < 1.0f || fy < 1.0f || extras::upscale_scene_scale() < 100;
     Texture* best = nullptr;
     uint64_t best_area = 0;
     auto add = [](Texture* t) {
@@ -172,10 +175,12 @@ static void nearest_scene_for_draw(const ProgLayout& pl, VkExtent3D te) {
     }
     if (!part && best) add(best);
     static uint32_t told = ~0u;
-    if (told != g_su.near_n) {
-        told = g_su.near_n;
-        NXLOG_I(kTag, "scene upscale: nearest, %u input(s) of the tone-map draw sampled nearest (%s)", g_su.near_n,
-                part ? "the scene part of full-size targets" : "the largest input below the target size");
+    const uint32_t tell = g_su.near_n | (part ? 0x100u : 0u);
+    if (told != tell) {
+        told = tell;
+        NXLOG_I(kTag, "scene upscale: nearest, %u input(s) of the tone-map draw sampled nearest (%s; fraction %.3f x %.3f, scene_scale %d%%, target %ux%u)",
+                g_su.near_n, part ? "the scene part of full-size targets" : "the largest input below the target size", fx, fy,
+                extras::upscale_scene_scale(), te.width, te.height);
     }
 }
 
