@@ -382,20 +382,21 @@ native stack; `[diag] ftrace` timings are sane.
 > needs a design decision: the Windows release ships a prebuilt game exe and relinks it against `pkp_rt.dll`, while the macOS
 > build is one static binary.
 >
-> Signing and notarization: `make-dmg.sh` signs with `CODESIGN_IDENTITY` (hardened runtime, timestamp, every Mach-O in the
-> bundle, then the bundle) and notarizes and staples the image with `NOTARY_PROFILE`. The release workflow's `macos` job sets
+> Signing and notarization: `make-mac.sh` signs with `CODESIGN_IDENTITY` (hardened runtime, timestamp, every Mach-O in the
+> bundle, then the bundle) and notarizes and staples the bundle with `NOTARY_PROFILE`. The release workflow's `macos` job sets
 > both from the repository secrets `MACOS_CERT_P12` (base64 of a Developer ID Application `.p12`), `MACOS_CERT_PASSWORD`,
 > `NOTARY_KEY_ID`, `NOTARY_ISSUER_ID` and `NOTARY_KEY_P8` (an App Store Connect API key). Without them the bundle is ad-hoc
-> signed, `spctl` rejects it, and macOS blocks the first launch; the DMG then carries `How to open Recompia.txt`, which tells
+> signed, `spctl` rejects it, and macOS blocks the first launch; the zip then carries `How to open Recompia.txt`, which tells
 > the player to allow it in System Settings, Privacy and Security, or to run
 > `xattr -dr com.apple.quarantine /Applications/PokopiaLauncher.app`, and `Self-sign (optional).command`
 > (`launcher/scripts/self-sign.sh`), which removes that flag and signs the bundle with a certificate it creates in the player's
 > login keychain. A self-signed certificate is enough for a stable, verifiable signature, not for Gatekeeper: only an Apple-issued
 > Developer ID is waved through without the one-time approval.
 >
-> In-place updates: the release also ships `Recompia-<version>-macos-arm64.zip`, which `make-dmg.sh` writes beside the DMG. It is
-> the bundle's `Contents/MacOS` tree (the launcher and `tools/`) under `PokopiaRecomp-<version>/`, which is the install root
-> `update.rs` applies to (`exe_dir()`). The bundle's seal covers exactly those files, so after the swap `update.rs` copies the new
+> In-place updates: the release zip is the whole macOS artifact — `Recompia-<version>-macos-arm64.zip` carries
+> `PokopiaLauncher.app` at its root (a fresh install drags it to Applications), and `update.rs` takes the bundle's
+> `Contents/MacOS` tree (the launcher and `tools/`) as the install root it applies to (`find_package`, `exe_dir()`). The
+> bundle's seal covers exactly those files, so after the swap `update.rs` copies the new
 > `libpkp_rt.dylib` over the `Contents/Frameworks` copy the executable's rpath loads, signs the bundle again — with
 > `Recompia Self-Signed` when the player ran the self-sign script, so the identity (and anything macOS granted the app) survives the
 > update, else ad-hoc — and verifies it. A bundle that cannot be verified goes back to the old files, whose seal is the one macOS
@@ -648,12 +649,17 @@ cmake -S game-build -B build/rtb -G Ninja -DCMAKE_BUILD_TYPE=Release -DPKP_RT_DL
 cmake --build build/rtb -j 6
 ```
 
-The release is a DMG (`launcher/scripts/make-dmg.sh`): `PokopiaLauncher.app` with the runtime dylib, the lifter and the SDK
-sources inside it, and an Applications shortcut, so it installs the way a Mac app does. The package carries no game code and
+The release is a zip (`launcher/scripts/make-mac.sh`): `PokopiaLauncher.app` with the runtime dylib, the lifter and the SDK
+sources inside it, and the self-sign command and the Gatekeeper note beside it. The package carries no game code and
 no Python: Set up fetches python-build-standalone and the lz4 and capstone wheels into `tools/macos` at the first run, the
 way the Linux package does, and compiles with the Apple clang of the Command Line Tools. The game folder (`pkp`, `pkp.ini`,
 `shader_cache`, saves) is created in `~/Library/Application Support/Recompia/game`, because the bundle may sit in
 `/Applications`.
+
+Only two files in that bundle need macOS: the launcher (Tauri's bundler) and `libpkp_rt.dylib` (it links the SDK's
+frameworks). Everything else — the lifter, the SDK sources, the shader harness as a self-contained `osx-arm64` publish,
+MoltenVK and the prompt icons — is staged on a Linux runner by `launcher/scripts/make-payload.sh`, so the macOS runner only
+compiles and signs (`macos-payload` -> `macos` in `release.yml`).
 
 That writes `libpkp_rt.dylib` (the runtime and the game module) and `pkp` (`src/pkp_stub.cpp` plus the lifted modules,
 linking `@rpath/libpkp_rt.dylib`). The executable carries the `__GUEST` segment, because the main executable's Mach-O

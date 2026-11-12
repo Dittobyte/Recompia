@@ -1,6 +1,8 @@
-# release -> windows, linux, macos -> publish. The first job creates the GitHub release (title and notes from the tag's section
-# of CHANGELOG.md), the three platform jobs build their package and upload it into that release, and publish writes one
-# SHA256SUMS.txt over all three archives. A tag v<x.y.z> does this; a manual run without release_tag only builds (artifacts).
+# release, windows, linux, macos-payload -> macos -> publish. Every build job starts at once: release creates the GitHub release
+# (title and notes from the tag's section of CHANGELOG.md) while windows, linux and macos-payload build their packages. macos
+# takes the payload the Linux job staged and adds the two files only macOS can build (the launcher and the runtime dylib), and
+# publish uploads every archive into the release and writes one SHA256SUMS.txt over them. A tag v<x.y.z> does this; a manual run
+# without release_tag only builds (artifacts).
 # Manual runs with release_tag = v<x.y.z> publish the same way and GitHub creates the tag on the commit that was built. No test
 # or pull request checks.
 # Testing channel: a tag v<x.y.z>-alpha.N, -beta.N or -rc.N (run on the `testing` branch) publishes a GitHub PRERELEASE. The launcher's
@@ -29,6 +31,8 @@ concurrency:
 env:
   LLVM_VERSION: 23.1.4
   RYUBING_COMMIT: a82350bb774f70fcbd41c9987bf67a3775409963
+  # MoltenVK, the Vulkan driver of the macOS package: the release archive the runtime links against and the bundle ships
+  MOLTENVK_VERSION: v1.4.2
   # package the third-party payload comes from (make-release.ps1): the upstream v0.1.1 repository is gone, so our own last release
   BASE_REPO: Dittobyte/Recompia
   BASE_RELEASE: v0.8.2
@@ -119,10 +123,9 @@ jobs:
             gh release create "$REL_TAG" --target "$GITHUB_SHA" --title "$title" --notes-file build-notes.md "${args[@]}"
           fi
 
-  # The Windows package. Every job below uploads its own archive into the release the job above created; the checksum file
-  # is written once, by publish, after all three are in.
+  # The Windows package. No build job waits for another: each starts from the checkout, and publish uploads what they produced
+  # once they are all done.
   windows:
-    needs: release
     runs-on: windows-2025
     timeout-minutes: 120
     defaults:
@@ -300,18 +303,11 @@ jobs:
           path: build/rel/*.zip
           compression-level: 0
 
-      - name: Publish
-        if: env.REL_TAG != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release upload $env:REL_TAG -R $env:GITHUB_REPOSITORY (Get-Item build/rel/*.zip).FullName --clobber
-
   # The Linux package: built on Linux from this checkout, no Proton, no Wine and nothing taken from the Windows build. The
   # launcher is the AppImage, the runtime is libpkp_rt.so (the Linux build of the same sources), the shader translator is the
   # linux-x64 publish, and a player's Set up compiles pkp for x86_64-linux-gnu with the Zig the launcher fetches. A tag adds it
   # to the release; manual runs without release_tag only build it (artifact).
   linux:
-    needs: release
     # Ubuntu 22.04: the AppImage then needs glibc 2.35 (Ubuntu 22.04, Debian 12, Mint 21, SteamOS), not 24.04's 2.39
     runs-on: ubuntu-22.04
     timeout-minutes: 60
@@ -465,20 +461,71 @@ jobs:
           path: build/rel/*.tar.gz
           compression-level: 0
 
-      - name: Publish
-        if: env.REL_TAG != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$REL_TAG" -R "$GITHUB_REPOSITORY" build/rel/PokopiaRecomp-$VERSION-linux-x64.tar.gz --clobber
+  # Everything the macOS bundle carries except the two files only macOS can build (the launcher binary and the runtime dylib):
+  # the shader harness as a self-contained osx-arm64 publish, the Ryujinx sources it compiles against, MoltenVK, the lifter, the
+  # SDK sources and the prompt icons. Linux does it, so the macOS runner only compiles and signs.
+  macos-payload:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
 
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Ryujinx sources cache
+        uses: actions/cache@v4
+        with:
+          path: refs/ryubing
+          key: ryujinx-${{ env.RYUBING_COMMIT }}
+
+      - name: Shader harness (self-contained osx-arm64)
+        run: |
+          mkdir -p work
+          [ -d refs/ryubing/.git ] || git clone --filter=blob:none https://git.ryujinx.app/ryubing/ryujinx.git refs/ryubing
+          git -C refs/ryubing checkout -f "$RYUBING_COMMIT"
+          # setup_ryujinx.ps1 stages these with robocopy, which Linux does not have
+          dst=tools/shaders/third_party/ryubing
+          mkdir -p "$dst/src"
+          for p in Ryujinx.Common Spv.Generator Ryujinx.Graphics.Shader; do
+            rsync -a --exclude obj --exclude bin "refs/ryubing/src/$p" "$dst/src/"
+          done
+          cp refs/ryubing/Directory.Build.props refs/ryubing/Directory.Packages.props refs/ryubing/global.json \
+             refs/ryubing/nuget.config refs/ryubing/LICENSE.txt "$dst/"
+          dotnet publish tools/shaders/harness -c Release -r osx-arm64 --self-contained -o work/harness
+
+      - name: MoltenVK
+        run: |
+          curl -fsSL -o work/moltenvk.tar "https://github.com/KhronosGroup/MoltenVK/releases/download/$MOLTENVK_VERSION/MoltenVK-macos.tar"
+          tar -xf work/moltenvk.tar -C work
+          mkdir -p work/moltenvk
+          cp work/MoltenVK/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib work/MoltenVK/LICENSE work/moltenvk/
+
+      - name: Prompt icons
+        run: |
+          python3 -m pip install --user --break-system-packages pillow   # tools/kbm_icons.py draws them
+          sudo apt-get update -qq && sudo apt-get install -y -qq fonts-dejavu-core
+
+      - name: Payload
+        run: sh launcher/scripts/make-payload.sh work/payload work/harness work/moltenvk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-payload
+          path: work/payload
+          compression-level: 6
+
+  # The macOS package: the two files that need macOS (the launcher through Tauri's bundler, the runtime dylib against the SDK's
+  # frameworks) plus the signature, around the payload the Linux job staged. One zip is the whole release: the bundle for a
+  # fresh install, and inside it the Contents/MacOS tree the in-place updater replaces.
   macos:
-    needs: release
+    needs: macos-payload
     runs-on: macos-latest          # arm64, the port's target (macos-14 was x64 and its image was retired on 2 November 2026)
     timeout-minutes: 90
     env:
-      HOMEBREW_NO_AUTO_UPDATE: "1"
       # Developer ID signing and notarization, when the repository has the secrets (see the "Signing" step). Without them the
-      # bundle keeps its ad-hoc signature and macOS blocks the first launch, which the DMG's README explains to the player.
+      # bundle keeps its ad-hoc signature and macOS blocks the first launch, which the zip's note explains to the player.
       MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
       MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
       NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
@@ -492,12 +539,6 @@ jobs:
           if [ -n "$REL_TAG" ]; then v=${REL_TAG#v}; else v=0.0.0; fi
           echo "VERSION=$v" >> "$GITHUB_ENV"
 
-      - name: Packages
-        run: |
-          brew install molten-vk          # cmake and ninja come with the image
-          echo "NXRT_MOLTENVK_DIR=$(brew --prefix molten-vk)/lib" >> "$GITHUB_ENV"
-          python3 -m pip install --user --break-system-packages pillow   # tools/kbm_icons.py draws the prompt icons (Homebrew's python is externally managed)
-
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -509,42 +550,31 @@ jobs:
           path: work/deps
           key: nxrt-deps-macos-v1
 
-      - name: Ryujinx sources cache
-        uses: actions/cache@v4
-        with:
-          path: refs/ryubing
-          key: ryujinx-${{ env.RYUBING_COMMIT }}
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: launcher/package-lock.json
 
-      - uses: actions/setup-dotnet@v4
+      - name: Payload (built on Linux)
+        uses: actions/download-artifact@v4
         with:
-          dotnet-version: '10.0.x'
+          name: macos-payload
+          path: work/payload
+
+      - name: MoltenVK (the runtime links against it)
+        run: |
+          curl -fsSL -o work/moltenvk.tar "https://github.com/KhronosGroup/MoltenVK/releases/download/$MOLTENVK_VERSION/MoltenVK-macos.tar"
+          tar -xf work/moltenvk.tar -C work
+          mkdir -p work/moltenvk
+          cp work/MoltenVK/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib work/MoltenVK/LICENSE work/moltenvk/
 
       - name: Runtime dylib (libpkp_rt.dylib)
         run: |
           cmake -S game-build -B work/build/rtb -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 \
-                "-DNXRT_DEPS_DIR=$PWD/work/deps" \
+                "-DNXRT_DEPS_DIR=$PWD/work/deps" "-DNXRT_MOLTENVK_DIR=$PWD/work/moltenvk" \
                 -DPKP_RT_DLL=ON -DNXRT_BUILD_GFX=ON -DNXRT_GAMES=pkp
           cmake --build work/build/rtb --target pkp_rt -j 4
-
-      - name: Shader harness (self-contained osx-arm64)
-        run: |
-          [ -d refs/ryubing/.git ] || git clone --filter=blob:none https://git.ryujinx.app/ryubing/ryujinx.git refs/ryubing
-          git -C refs/ryubing checkout -f "$RYUBING_COMMIT"
-          # setup_ryujinx.ps1 stages these with robocopy, which macOS does not have
-          dst=tools/shaders/third_party/ryubing
-          mkdir -p "$dst/src"
-          for p in Ryujinx.Common Spv.Generator Ryujinx.Graphics.Shader; do
-            rsync -a --exclude obj --exclude bin "refs/ryubing/src/$p" "$dst/src/"
-          done
-          cp refs/ryubing/Directory.Build.props refs/ryubing/Directory.Packages.props refs/ryubing/global.json \
-             refs/ryubing/nuget.config refs/ryubing/LICENSE.txt "$dst/"
-          dotnet publish tools/shaders/harness -c Release -r osx-arm64 --self-contained -o work/harness
 
       - name: Launcher
         working-directory: launcher
@@ -582,59 +612,48 @@ jobs:
             --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID"
           echo "NOTARY_PROFILE=recompia" >> "$GITHUB_ENV"
 
-      - name: Package (DMG)
-        run: launcher/scripts/make-dmg.sh work/play "$VERSION"
+      - name: Package (zip)
+        run: launcher/scripts/make-mac.sh work/play work/payload "$VERSION"
 
       - name: Check the package
         run: |
-          dmg="work/play/Recompia-$VERSION-macos-arm64.dmg"
-          test -s "$dmg"
-          mount=$(mktemp -d)
-          hdiutil attach -quiet -nobrowse -mountpoint "$mount" "$dmg"
-          app="$mount/PokopiaLauncher.app"
+          zip="work/play/Recompia-$VERSION-macos-arm64.zip"
+          test -s "$zip"
+          rm -rf work/check && mkdir -p work/check
+          unzip -q "$zip" -d work/check
+          app="work/check/PokopiaLauncher.app"
           test -x "$app/Contents/MacOS/PokopiaLauncher"
           file "$app/Contents/MacOS/PokopiaLauncher" | grep -q arm64
           for f in tools/build/sdk/libpkp_rt.dylib tools/build/sdk/libvulkan.1.dylib tools/build/sdk/kbm_icons \
                    tools/build/sdk/fonts tools/harness/spirv_harness tools/build/pkp_build.py; do
             test -e "$app/Contents/MacOS/$f" || { echo "missing $f in the bundle"; ls -R "$app/Contents/MacOS" | head -60; exit 1; }
           done
+          test -e "$app/Contents/Frameworks/libpkp_rt.dylib" || { echo "the bundle has no runtime dylib in Contents/Frameworks"; exit 1; }
+          test -e "work/check/Self-sign (optional).command" || { echo "the zip has no self-sign command"; exit 1; }
+          # the in-place updater's package: update.rs takes the bundle's Contents/MacOS as the install root
+          unzip -Z1 "$zip" | grep -qx "PokopiaLauncher.app/Contents/MacOS/tools/build/pkp_build.py" || { echo "the zip has no tools/build inside the bundle"; exit 1; }
           codesign --verify --deep --strict "$app"
           if [ -n "${CODESIGN_IDENTITY:-}" ]; then spctl -a -vv "$app" || { echo "Gatekeeper rejects the signed bundle"; exit 1; }; fi
-          hdiutil detach -quiet "$mount"
-          du -h "$dmg"
-          # the in-place updater's package: update.rs needs PokopiaRecomp-<version>/ with the launcher and tools/build in it
-          zip="work/play/Recompia-$VERSION-macos-arm64.zip"
-          test -s "$zip"
-          unzip -Z1 "$zip" | grep -qx "PokopiaRecomp-$VERSION/PokopiaLauncher" || { echo "the update zip has no launcher at PokopiaRecomp-$VERSION/PokopiaLauncher"; exit 1; }
-          unzip -Z1 "$zip" | grep -qx "PokopiaRecomp-$VERSION/tools/build/pkp_build.py" || { echo "the update zip has no tools/build"; exit 1; }
           du -h "$zip"
 
       - name: Checksums
         run: |
           cd work/play
-          shasum -a 256 "Recompia-$VERSION-macos-arm64.dmg" | sed -E 's/  / */' > macos.sha256
+          shasum -a 256 "Recompia-$VERSION-macos-arm64.zip" | sed -E 's/  / */' > macos.sha256
           cat macos.sha256
 
       - uses: actions/upload-artifact@v4
         with:
           name: PokopiaRecomp-${{ env.VERSION }}-macos-arm64
           path: |
-            work/play/Recompia-${{ env.VERSION }}-macos-arm64.dmg
             work/play/Recompia-${{ env.VERSION }}-macos-arm64.zip
             work/play/macos.sha256
           compression-level: 0
 
-      - name: Publish
-        if: env.REL_TAG != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release upload "$REL_TAG" -R "$GITHUB_REPOSITORY" "work/play/Recompia-$VERSION-macos-arm64.dmg" "work/play/Recompia-$VERSION-macos-arm64.zip" --clobber
-
-  # One checksum file for the whole release: the per-platform jobs upload their archives, and this reads them back once all
-  # three are done, so no two jobs append to SHA256SUMS.txt at the same time.
+  # The one place that writes into the release: it takes the archives every build job produced, uploads them, and writes one
+  # SHA256SUMS.txt over all of them. A platform job that failed leaves its archive out instead of failing this one.
   publish:
-    needs: [windows, linux, macos]
+    needs: [release, windows, linux, macos]
     if: always() && (github.ref_type == 'tag' || inputs.release_tag != '')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -645,7 +664,7 @@ jobs:
           path: build/assets
           merge-multiple: true
 
-      - name: Checksums
+      - name: Upload
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.release_tag }}
@@ -655,9 +674,9 @@ jobs:
           cd build/assets
           ls -la
           rm -f SHA256SUMS.txt
-          # whatever the platform jobs produced: a job that failed leaves its archive out instead of failing this one
-          sha256sum -b ./*.zip ./*.tar.gz ./*.dmg 2>/dev/null | sed -E 's#\./##' > SHA256SUMS.txt || true
+          archives=(./*.zip ./*.tar.gz)
+          sha256sum -b "${archives[@]}" | sed -E 's#\./##' > SHA256SUMS.txt || true
           cat SHA256SUMS.txt
           test -s SHA256SUMS.txt || { echo "::error::no release archives were built"; exit 1; }
-          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" SHA256SUMS.txt --clobber
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" "${archives[@]}" SHA256SUMS.txt --clobber
 

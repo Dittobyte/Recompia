@@ -5,7 +5,7 @@
 # for the game in the folder the .app sits in.
 set -eu
 here=$(cd "${1:?usage: make-app.sh <play folder with PokopiaLauncher, pkp and pkp.ini> [version]}" && pwd)
-# the release version: the launcher's manifest, unless make-dmg.sh names one
+# the release version: the launcher's manifest, unless make-mac.sh names one
 version=${2:-$(sed -nE 's/^[[:space:]]*"version": "([^"]+)".*/\1/p' "$(dirname "$0")/../src-tauri/tauri.conf.json" | head -1)}
 app="$here/PokopiaLauncher.app"
 bin="$here/PokopiaLauncher"
@@ -36,7 +36,7 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-# the release version, from make-dmg.sh (the tag) or the default
+# the release version, from make-mac.sh (the tag) or the default
 sed -i '' -e "s/@VERSION@/$version/g" "$app/Contents/Info.plist"
 
 # Ad-hoc signature: enough for a local double-click. A distribution build signs with a Developer ID and notarizes

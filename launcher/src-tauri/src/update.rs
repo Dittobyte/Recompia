@@ -51,8 +51,8 @@ pub const CANCELLED: &str = "Update cancelled.";
 #[cfg(windows)]
 const ASSET_SUFFIX: &str = "-win64.zip";
 #[cfg(target_os = "macos")]
-// The zip make-dmg.sh writes beside the DMG: the bundle's Contents/MacOS tree under PokopiaRecomp-<version>/, which is
-// the launcher's own folder and so the install root the update is applied to.
+// The macOS release zip (launcher/scripts/make-mac.sh): PokopiaLauncher.app at its root, whose Contents/MacOS is the
+// launcher's own folder and so the install root the update is applied to.
 const ASSET_SUFFIX: &str = "-macos-arm64.zip";
 #[cfg(not(any(windows, target_os = "macos")))]
 const ASSET_SUFFIX: &str = "-linux-x64.tar.gz";
@@ -64,6 +64,8 @@ const PACKAGE_LAUNCHER: &str = "PokopiaLauncher.exe";
 const PACKAGE_LAUNCHER: &str = "PokopiaLauncher";
 #[cfg(not(any(windows, target_os = "macos")))]
 const PACKAGE_LAUNCHER: &str = "PokopiaLauncher.AppImage";
+/// The bundle a macOS release zip carries at its root; find_package takes its Contents/MacOS as the install root.
+const PACKAGE_BUNDLE: &str = "PokopiaLauncher.app";
 
 /// Top-level names that belong to the player. make-release.ps1 refuses to ship most of them; `apply` skips them all the same.
 /// Never replaced or removed by an update: the player's save, the copies of it (`save-backups`, savebackup.rs; `rollback-backups`, rollback.rs) and settings.
@@ -583,9 +585,14 @@ pub fn extract(dir: &Path, archive: &str, out: &str, cancel: &AtomicBool) -> Res
 
 /// `staged/PokopiaRecomp-<version>`, once it has the launcher and tools/build. Asked before the install is touched.
 pub fn find_package(staged: &Path, version: &str, launcher: &str) -> Result<PathBuf, String> {
-    let root = staged.join(format!("PokopiaRecomp-{}", version));
-    if root.join(launcher).is_file() && root.join("tools").join("build").is_dir() {
-        return Ok(root);
+    // The macOS release zip carries the bundle, so the install root is its Contents/MacOS; the other hosts, and the first
+    // macOS zips, put the same tree under PokopiaRecomp-<version>/.
+    let bundle = staged.join(PACKAGE_BUNDLE).join("Contents").join("MacOS");
+    let flat = staged.join(format!("PokopiaRecomp-{}", version));
+    for root in [bundle, flat] {
+        if root.join(launcher).is_file() && root.join("tools").join("build").is_dir() {
+            return Ok(root);
+        }
     }
     Err("The downloaded package is not laid out as expected. Nothing was changed.".into())
 }
@@ -1242,8 +1249,31 @@ mod keep_tests {
     }
 
     #[test]
+    fn a_macos_bundle_package_replaces_the_install_root_in_place() {
+        // what make-mac.sh zips: PokopiaLauncher.app at the root, so the package is its Contents/MacOS
+        let tmp = std::env::temp_dir().join(format!("nxrt-apply-bundle-{}", std::process::id()));
+        let (install, staged, work) = (tmp.join("Contents").join("MacOS"), tmp.join("staged"), tmp.join("update"));
+        let package = staged.join("PokopiaLauncher.app").join("Contents").join("MacOS");
+        fs::create_dir_all(package.join("tools").join("build")).unwrap();
+        fs::create_dir_all(install.join("tools").join("build")).unwrap();
+        fs::create_dir_all(&work).unwrap();
+        fs::write(package.join("PokopiaLauncher"), b"new launcher").unwrap();
+        fs::write(package.join("tools/build/pkp_build.py"), b"new tools").unwrap();
+        let launcher = install.join("PokopiaLauncher");
+        fs::write(&launcher, b"old launcher").unwrap();
+        fs::write(install.join("tools/build/pkp_build.py"), b"old tools").unwrap();
+        let root = find_package(&staged, "0.11.0", "PokopiaLauncher").unwrap();
+        assert_eq!(root, package, "the bundle's Contents/MacOS is the package, not a folder named after the version");
+        let job = Job { root: &install, package: &root, work: &work, launcher_name: "PokopiaLauncher", launcher: &launcher, game_dll: None };
+        apply(&job, &mut |_, _, _| {}).unwrap();
+        assert_eq!(fs::read(&launcher).unwrap(), b"new launcher");
+        assert_eq!(fs::read(install.join("tools/build/pkp_build.py")).unwrap(), b"new tools");
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
     fn a_macos_package_replaces_the_install_root_in_place() {
-        // what make-dmg.sh zips: PokopiaRecomp-<version>/ with the launcher and tools/, and the install root is Contents/MacOS
+        // the first macOS zips: PokopiaRecomp-<version>/ with the launcher and tools/, still accepted beside the bundle layout
         let tmp = std::env::temp_dir().join(format!("nxrt-apply-macos-{}", std::process::id()));
         let (install, staged, work) = (tmp.join("Contents").join("MacOS"), tmp.join("staged"), tmp.join("update"));
         let package = staged.join("PokopiaRecomp-0.11.0");

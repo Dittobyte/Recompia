@@ -5,8 +5,9 @@
 - **Joy-Con 2 mouse mode** is back: press the middle mouse button in play to point and click, and placing and breaking now land on the block under the pointer (left click is the Joy-Con's R, right click its ZR, as in Pikantine). Press it again to go back to camera aim. The **Mouse Mode Key** row is back in **Settings > Mouse**. Update only: no shader rebuild, no Set up again
 
 ### macOS
-- The launcher can update itself on macOS, as it already does on Windows and Linux. The release now also ships `Recompia-<version>-macos-arm64.zip`, the launcher and `tools/` that an update replaces in place, and after the swap the app bundle is signed again with the player's own certificate when the self-sign script made one, else ad-hoc, so the updated bundle starts
-  - The DMG stays the first-install path. Gatekeeper is only asked once: files an update writes carry no download flag, so a later version opens with a double click
+- The launcher can update itself on macOS, as it already does on Windows and Linux. The release is now one zip, `Recompia-<version>-macos-arm64.zip`: `PokopiaLauncher.app` for a first install, and inside it the launcher and `tools/` that an update replaces in place. After the swap the app bundle is signed again with the player's own certificate when the self-sign script made one, else ad-hoc, so the updated bundle starts
+  - No DMG any more: the zip is the whole download, and Gatekeeper is only asked once — files an update writes carry no download flag, so a later version opens with a double click
+- The macOS package's payload (the lifter, the SDK sources, the shader harness, MoltenVK and the prompt icons) is built on a Linux runner now, and the macOS runner only compiles the launcher and the runtime and signs. The platform jobs also start together instead of waiting for the release to exist, and one final job uploads every archive and writes `SHA256SUMS.txt`
 
 ## 0.11.0
 
