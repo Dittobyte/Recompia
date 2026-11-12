@@ -2,16 +2,27 @@
 
 ## Unreleased
 
+## 0.11.2 (build O: Ocelot Hotfix a2)
+
+**Update:** press **Update**; nothing is translated again and no shader is rebuilt. On macOS, press **Set up** once after updating: `pkp` is relinked with its own Metal shader-cache identity (a relink, not a rebuild), and every start after that finds the pipelines an earlier run compiled.
+
+### Highlights
+- **Every platform in one release**: the Windows zip, the Linux package and `Recompia-<version>-macos-arm64.zip`, each with its SHA-256 in `SHA256SUMS.txt`
 - **Joy-Con 2 mouse mode** is back: press the middle mouse button in play to point and click, and placing and breaking now land on the block under the pointer (left click is the Joy-Con's R, right click its ZR, as in Pikantine). Press it again to go back to camera aim. The **Mouse Mode Key** row is back in **Settings > Mouse**. Update only: no shader rebuild, no Set up again
+- macOS: the download is one zip of a folder, not a signed `.app` in a DMG, and the launcher updates itself in place
 
 ### macOS
 - The launcher can update itself on macOS, as it already does on Windows and Linux. The release is one zip, `Recompia-<version>-macos-arm64.zip`, with `PokopiaRecomp-<version>/` at its root: the launcher, `tools/` and `libpkp_rt.dylib`, and an update replaces them in place. There is no `.app` and no signature: unpack it anywhere, start `PokopiaLauncher`, and allow it once in **System Settings > Privacy and Security** (the note in the zip says how)
   - No DMG any more: the zip is the whole download, and Gatekeeper is only asked once — files an update writes carry no download flag, so a later version opens with a double click
-- The macOS package's payload (the lifter, the SDK sources, the shader harness, MoltenVK and the prompt icons) is built on a Linux runner now, and the macOS runner only compiles the launcher and the runtime. The platform jobs also start together instead of waiting for the release to exist, and one final job uploads every archive and writes `SHA256SUMS.txt`
-- The macOS runtime and launcher are built in parallel jobs, as the Windows ones are, and sccache keeps the runtime's object files between runs, so a release spends minutes less on the builders
 - On macOS vsync is on by default: without it MoltenVK presents immediately and frames show mid-refresh, which tore and flashed partly drawn pictures on a MacBook. An existing `controls.ini` gets it switched on once (`[meta] display_rev`), and turning it off afterwards keeps it off
 - The game now has its own Metal shader cache identity (an `Info.plist` linked into `pkp`, one per game folder). Without one it shared a cache folder with every other program outside an app bundle, and a start compiled every pipeline again whenever one of those was running
 - A frame limit you set now holds through loading screens too. Loading runs unpaced on purpose (the loading code advances once per frame), so a 60 limit showed 110 fps for the first seconds of every start
+- The game's own thread synchronisation is ordered the way Apple cores need it, SHA-1 uses the ARMv8 instructions, and the runtime's write tracking follows the host's 16 KiB pages, so a texture the game rewrites is not read back stale
+
+### Release
+- The macOS package's payload (the lifter, the SDK sources, the shader harness, MoltenVK and the prompt icons) is built on a Linux runner now, and the macOS runner only compiles the launcher and the runtime. The platform jobs also start together instead of waiting for the release to exist, and one final job uploads every archive and writes `SHA256SUMS.txt`
+- The macOS runtime and launcher are built in parallel jobs, as the Windows ones are, and sccache keeps the runtime's object files between runs, so a release spends minutes less on the builders
+- The pipeline is four columns — the release, three build jobs per platform, three package jobs and one publish job — and each job names every library it compiles against, so a missing one fails the job instead of the player. A full three-platform build takes about five minutes
 
 ## 0.11.1 (build O: Ocelot Hotfix a1)
 

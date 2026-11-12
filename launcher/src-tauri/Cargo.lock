@@ -2261,7 +2261,7 @@ dependencies = [
 
 [[package]]
 name = "pokopia-launcher"
-version = "0.10.3"
+version = "0.11.2"
 dependencies = [
  "cc",
  "chrono",

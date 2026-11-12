@@ -1,6 +1,6 @@
 [package]
 name = "pokopia-launcher"
-version = "0.10.3"
+version = "0.11.2"
 description = "Launcher for the Pokopia PC port"
 edition = "2021"
 license = "GPL-3.0-or-later"
