@@ -1,8 +1,8 @@
-# release, windows, linux, macos-payload -> macos -> publish. Every build job starts at once: release creates the GitHub release
-# (title and notes from the tag's section of CHANGELOG.md) while windows, linux and macos-payload build their packages. macos
-# takes the payload the Linux job staged and adds the two files only macOS can build (the launcher and the runtime dylib), and
-# publish uploads every archive into the release and writes one SHA256SUMS.txt over them. A tag v<x.y.z> does this; a manual run
-# without release_tag only builds (artifacts).
+# The release in four columns. release creates the GitHub release (title and notes from the tag's section of CHANGELOG.md)
+# and publishes the version every other job reads; nine build jobs then run at once, three per platform — payload (the shader
+# translator), runtime (pkp_rt) and launcher (the Tauri app) — each on its own runner with only the toolchain it needs; three
+# package jobs put their platform's three artifacts together; publish uploads every archive and writes one SHA256SUMS.txt.
+# A tag v<x.y.z> does this; a manual run without release_tag only builds (artifacts).
 # Manual runs with release_tag = v<x.y.z> publish the same way and GitHub creates the tag on the commit that was built. No test
 # or pull request checks.
 # Testing channel: a tag v<x.y.z>-alpha.N, -beta.N or -rc.N (run on the `testing` branch) publishes a GitHub PRERELEASE. The launcher's
@@ -31,7 +31,7 @@ concurrency:
 env:
   LLVM_VERSION: 23.1.4
   RYUBING_COMMIT: a82350bb774f70fcbd41c9987bf67a3775409963
-  # MoltenVK, the Vulkan driver of the macOS package: the release archive the runtime links against and the bundle ships
+  # MoltenVK, the Vulkan driver of the macOS package: the release archive the runtime links against and the package ships
   MOLTENVK_VERSION: v1.4.2
   # package the third-party payload comes from (make-release.ps1): the upstream v0.1.1 repository is gone, so our own last release
   BASE_REPO: Dittobyte/Recompia
@@ -40,17 +40,19 @@ env:
   REL_TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.release_tag }}
 
 jobs:
-  # The release itself, before anything is built: the title and the notes come from CHANGELOG.md, and the three platform
-  # jobs only upload their archive into a release that already exists. Nothing has to wait for another job's release, and
-  # no two jobs can create one.
+
   release:
     # A few seconds of work (parse CHANGELOG.md, one gh call): a Linux runner starts sooner and costs half a Windows one.
     runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
       - name: Version
+        id: v
         run: |
           if [ -n "$REL_TAG" ] && [ "$GITHUB_REF_TYPE" != tag ]; then
             if printf '%s' "$REL_TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[0-9]+$'; then
@@ -61,8 +63,12 @@ jobs:
             fi
           fi
           v=${REL_TAG#v}; v=${v:-0.0.0}
+          case "$v" in *-*) pre=true ;; *) pre=false ;; esac
           echo "VERSION=$v" >> "$GITHUB_ENV"
-          case "$v" in *-*) echo "PRERELEASE=true" >> "$GITHUB_ENV" ;; *) echo "PRERELEASE=false" >> "$GITHUB_ENV" ;; esac
+          echo "PRERELEASE=$pre" >> "$GITHUB_ENV"
+          # every other job reads these: one place validates the ref and parses the tag
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$pre" >> "$GITHUB_OUTPUT"
 
       - name: Create the release
         if: env.REL_TAG != ''
@@ -123,38 +129,60 @@ jobs:
             gh release create "$REL_TAG" --target "$GITHUB_SHA" --title "$title" --notes-file build-notes.md "${args[@]}"
           fi
 
-  # The Windows package. No build job waits for another: each starts from the checkout, and publish uploads what they produced
-  # once they are all done.
-  # The Windows package in three jobs that start together: the runtime (clang-cl, the long pole), the launcher (cargo), and the
-  # package that puts them together with the shader translator and the base package. Two builds on two runners instead of one is
-  # most of the wall clock; sccache, kept in the Actions cache, carries the runtime's ~600 translation units between runs.
+  # The shader translator as a self-contained win-x64 publish: Set up runs it once per game folder to translate the shader
+  # corpus, so every package carries it. Its own job, because the clone and the publish share nothing with the two compiles.
+  windows-payload:
+    needs: release
+    outputs:
+      version: ${{ needs.release.outputs.version }}
+    runs-on: windows-2025
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Ryujinx sources cache
+        uses: actions/cache@v4
+        with:
+          path: refs/ryubing
+          key: ryujinx-${{ env.RYUBING_COMMIT }}
+
+      - name: Shader translator
+        run: |
+          if (-not (Test-Path refs/ryubing/.git)) { git clone --filter=blob:none https://git.ryujinx.app/ryubing/ryujinx.git refs/ryubing }
+          git -C refs/ryubing checkout -f $env:RYUBING_COMMIT
+          ./tools/shaders/scripts/setup_ryujinx.ps1
+          dotnet publish -c Release -r win-x64 --self-contained true tools/shaders/harness/SpirvHarness.csproj -o build/harness
+          if ($LASTEXITCODE) { exit 1 }
+          ./build/harness/spirv_harness.exe --help > $null
+          if ($LASTEXITCODE) { exit 1 }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win-payload
+          path: build/harness
+          compression-level: 6
+
+  # The Windows runtime: clang-cl against the MSVC SDK, ~600 translation units, the long pole of the platform.
   windows-runtime:
+    needs: release
     runs-on: windows-2025
     timeout-minutes: 60
     defaults:
       run:
         shell: pwsh
     env:
+      VERSION: ${{ needs.release.outputs.version }}
       SCCACHE_GHA_ENABLED: "true"
     steps:
       - uses: actions/checkout@v4
 
-      - name: Version
-        run: |
-          if ($env:REL_TAG -and $env:GITHUB_REF_TYPE -ne 'tag') {
-            if ($env:REL_TAG -match '^v\d+\.\d+\.\d+-(alpha|beta|rc)\.\d+$') {
-              if ($env:GITHUB_REF -ne 'refs/heads/testing') { throw "a Testing release_tag publishes from the testing branch only (this run: $env:GITHUB_REF)" }
-            } else {
-              if ($env:GITHUB_REF -ne 'refs/heads/main') { throw "release_tag publishes from main only (this run: $env:GITHUB_REF)" }
-              if ($env:REL_TAG -notmatch '^v\d+\.\d+\.\d+$') { throw "release_tag '$env:REL_TAG' is not v<x.y.z> or v<x.y.z>-beta.N" }
-            }
-          }
-          $v = if ($env:REL_TAG) { $env:REL_TAG -replace '^v', '' } else { '0.0.0' }
-          "VERSION=$v" >> $env:GITHUB_ENV
-          "PRERELEASE=$(if ($v -match '-') { 'true' } else { 'false' })" >> $env:GITHUB_ENV
-
-      # The pinned third-party archives (SDL3, zstd, Vulkan-Headers, volk, VMA, ImGui): CMake reuses a file whose SHA-256
-      # matches, so a hit skips the downloads entirely.
       - name: Third-party sources cache
         uses: actions/cache@v4
         with:
@@ -162,6 +190,7 @@ jobs:
           key: nxrt-deps-win-v1
 
       # The MSI is a 400 MB download and install every run; the extracted tree is the same for a given version.
+
       - name: LLVM ${{ env.LLVM_VERSION }} (cache)
         id: llvm
         uses: actions/cache@v4
@@ -207,6 +236,7 @@ jobs:
       # github.com's direct release-asset downloads answered 504 for hours on 2026-11-08 while the release API kept working. CMake's FetchContent
       # reuses a file in NXRT_DEPS_DIR (%LOCALAPPDATA%\nxrt\deps) when its SHA-256 matches, so the two release assets are put there first through the API.
       # A failure here is not fatal: CMake then downloads them itself, as before.
+
       - name: Pre-fetch release assets (API route)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -222,6 +252,7 @@ jobs:
       # The four archive dependencies (runtime/cmake/gfx_deps.cmake) come from codeload.github.com, which kept working while github.com/.../archive
       # answered 503 on 2026-11-08. Each is checked against the same SHA-256 that CMake pins, extracted, and handed to CMake as its source
       # (FETCHCONTENT_SOURCE_DIR_*). Any problem here leaves that dependency to CMake's own download, as before.
+
       - name: Pre-fetch dependency sources (codeload)
         run: |
           $root = Join-Path $PWD 'build/depsrc'
@@ -270,30 +301,19 @@ jobs:
             build/rtdll/pkp_rt.lib
           compression-level: 6
 
+  # The launcher: a Tauri app whose dependency tree is most of its build time.
   windows-launcher:
+    needs: release
     runs-on: windows-2025
     timeout-minutes: 60
     defaults:
       run:
         shell: pwsh
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Version
-        run: |
-          if ($env:REL_TAG -and $env:GITHUB_REF_TYPE -ne 'tag') {
-            if ($env:REL_TAG -match '^v\d+\.\d+\.\d+-(alpha|beta|rc)\.\d+$') {
-              if ($env:GITHUB_REF -ne 'refs/heads/testing') { throw "a Testing release_tag publishes from the testing branch only (this run: $env:GITHUB_REF)" }
-            } else {
-              if ($env:GITHUB_REF -ne 'refs/heads/main') { throw "release_tag publishes from main only (this run: $env:GITHUB_REF)" }
-              if ($env:REL_TAG -notmatch '^v\d+\.\d+\.\d+$') { throw "release_tag '$env:REL_TAG' is not v<x.y.z> or v<x.y.z>-beta.N" }
-            }
-          }
-          $v = if ($env:REL_TAG) { $env:REL_TAG -replace '^v', '' } else { '0.0.0' }
-          "VERSION=$v" >> $env:GITHUB_ENV
-          "PRERELEASE=$(if ($v -match '-') { 'true' } else { 'false' })" >> $env:GITHUB_ENV
-
-      # The launcher is a Tauri app: its dependency tree is most of the build time, and Cargo.lock changes rarely.
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -301,6 +321,7 @@ jobs:
 
       # The pinned third-party archives (SDL3, zstd, Vulkan-Headers, volk, VMA, ImGui): CMake reuses a file whose SHA-256
       # matches, so a hit skips the downloads entirely.
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -331,31 +352,20 @@ jobs:
           path: launcher/src-tauri/target/release/pokopia-launcher.exe
           compression-level: 6
 
+  # The Windows zip: the three artifacts around the base package (make-release.ps1), which carries the unchanged third-party
+  # payload — Zig, embedded Python, the FSR/Streamline DLLs, astcdec, fonts, icons and licences.
   windows-package:
-    needs: [windows-runtime, windows-launcher]
+    needs: [windows-payload, windows-runtime, windows-launcher]
     runs-on: windows-2025
-    timeout-minutes: 60
+    timeout-minutes: 40
     defaults:
       run:
         shell: pwsh
+    env:
+      VERSION: ${{ needs.windows-payload.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Version
-        run: |
-          if ($env:REL_TAG -and $env:GITHUB_REF_TYPE -ne 'tag') {
-            if ($env:REL_TAG -match '^v\d+\.\d+\.\d+-(alpha|beta|rc)\.\d+$') {
-              if ($env:GITHUB_REF -ne 'refs/heads/testing') { throw "a Testing release_tag publishes from the testing branch only (this run: $env:GITHUB_REF)" }
-            } else {
-              if ($env:GITHUB_REF -ne 'refs/heads/main') { throw "release_tag publishes from main only (this run: $env:GITHUB_REF)" }
-              if ($env:REL_TAG -notmatch '^v\d+\.\d+\.\d+$') { throw "release_tag '$env:REL_TAG' is not v<x.y.z> or v<x.y.z>-beta.N" }
-            }
-          }
-          $v = if ($env:REL_TAG) { $env:REL_TAG -replace '^v', '' } else { '0.0.0' }
-          "VERSION=$v" >> $env:GITHUB_ENV
-          "PRERELEASE=$(if ($v -match '-') { 'true' } else { 'false' })" >> $env:GITHUB_ENV
-
-      # The launcher is a Tauri app: its dependency tree is most of the build time, and Cargo.lock changes rarely.
       - name: Runtime from windows-runtime
         uses: actions/download-artifact@v4
         with:
@@ -367,25 +377,12 @@ jobs:
         with:
           name: win-launcher
           path: launcher/src-tauri/target/release
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
 
-      - name: Ryujinx sources cache
-        uses: actions/cache@v4
+      - name: Shader translator from windows-payload
+        uses: actions/download-artifact@v4
         with:
-          path: refs/ryubing
-          key: ryujinx-${{ env.RYUBING_COMMIT }}
-
-      - name: Shader translator
-        run: |
-          if (-not (Test-Path refs/ryubing/.git)) { git clone --filter=blob:none https://git.ryujinx.app/ryubing/ryujinx.git refs/ryubing }
-          git -C refs/ryubing checkout -f $env:RYUBING_COMMIT
-          ./tools/shaders/scripts/setup_ryujinx.ps1
-          dotnet publish -c Release -r win-x64 --self-contained true tools/shaders/harness/SpirvHarness.csproj -o build/harness
-          if ($LASTEXITCODE) { exit 1 }
-          ./build/harness/spirv_harness.exe --help > $null
-          if ($LASTEXITCODE) { exit 1 }
+          name: win-payload
+          path: build/harness
 
       - name: Package
         env:
@@ -401,29 +398,50 @@ jobs:
           path: build/rel/*.zip
           compression-level: 0
 
-  # The Linux package: built on Linux from this checkout, no Proton, no Wine and nothing taken from the Windows build. The
-  # launcher is the AppImage, the runtime is libpkp_rt.so (the Linux build of the same sources), the shader translator is the
-  # linux-x64 publish, and a player's Set up compiles pkp for x86_64-linux-gnu with the Zig the launcher fetches. A tag adds it
-  # to the release; manual runs without release_tag only build it (artifact).
-
-  linux:
-    # Ubuntu 22.04: the AppImage then needs glibc 2.35 (Ubuntu 22.04, Debian 12, Mint 21, SteamOS), not 24.04's 2.39
+  # The shader translator as a self-contained linux-x64 publish.
+  linux-payload:
+    needs: release
+    outputs:
+      version: ${{ needs.release.outputs.version }}
     runs-on: ubuntu-22.04
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-    timeout-minutes: 60
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
-      - name: Version
-        run: |
-          if [ -n "$REL_TAG" ]; then v=${REL_TAG#v}; else v=0.0.0; fi
-          echo "VERSION=$v" >> "$GITHUB_ENV"
-
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-dotnet@v4
         with:
-          workspaces: launcher/src-tauri
+          dotnet-version: 10.0.x
+
+      - name: Ryujinx sources cache
+        uses: actions/cache@v4
+        with:
+          path: refs/ryubing
+          key: ryujinx-${{ env.RYUBING_COMMIT }}
+
+      - name: Shader translator
+        run: |
+          [ -d refs/ryubing/.git ] || git clone --filter=blob:none https://git.ryujinx.app/ryubing/ryujinx.git refs/ryubing
+          git -C refs/ryubing checkout -f "$RYUBING_COMMIT"
+          bash tools/shaders/scripts/setup_ryujinx.sh
+          dotnet publish -c Release -r linux-x64 --self-contained true tools/shaders/harness/SpirvHarness.csproj -o build/harness
+          build/harness/spirv_harness --help > /dev/null
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-payload
+          path: build/harness
+          compression-level: 6
+
+  # The Linux runtime: libpkp_rt.so, the same sources as the other two, plus the export check the game exe links against.
+  linux-runtime:
+    needs: release
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
+      SCCACHE_GHA_ENABLED: "true"
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Third-party sources cache
         uses: actions/cache@v4
@@ -433,6 +451,7 @@ jobs:
 
       # 22.04 ships Python 3.10 and CMake 3.22; nxrecomp needs 3.11+ (find_package(Python3 3.11) in recomp/cmake/NxRecomp.cmake)
       # and the runtime needs CMake 3.25 (docs/linux-port.md §4).
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -440,10 +459,10 @@ jobs:
       - name: Packages
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libsoup-3.0-dev file \
-            g++ ninja-build pkg-config libvulkan-dev libx11-dev libxext-dev libxrandr-dev libxi-dev libxcursor-dev \
-            libxfixes-dev libxss-dev libxtst-dev libwayland-dev libxkbcommon-dev libdrm-dev libudev-dev libasound2-dev \
-            libpulse-dev libgbm-dev fonts-dejavu-core
+          sudo apt-get install -y -q --no-install-recommends g++ ninja-build pkg-config libvulkan-dev libx11-dev libxext-dev \
+            libxrandr-dev libxi-dev libxcursor-dev libxfixes-dev libxss-dev libxtst-dev libwayland-dev libwayland-bin \
+            libxkbcommon-dev libdrm-dev libudev-dev libasound2-dev libpulse-dev libgbm-dev libdbus-1-dev \
+            libgl1-mesa-dev libfribidi-dev libthai-dev fonts-dejavu-core
 
       - name: CMake
         run: |
@@ -473,12 +492,32 @@ jobs:
             grep -qx "${s#_}" build/exports.txt || { echo "::error::libpkp_rt.so does not export $s"; exit 1; }
           done < game-build/src/pkp_rt.exports
 
-      - uses: actions/setup-node@v4
+      - uses: actions/upload-artifact@v4
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: launcher/package-lock.json
+          name: linux-rt
+          path: build/rtdll/libpkp_rt.so
+          compression-level: 6
 
+  # The launcher as an AppImage, bundled with the static type2 runtime so it needs no libfuse2.
+  linux-launcher:
+    needs: release
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: launcher/src-tauri
+
+      - name: Packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libsoup-3.0-dev \
+            file g++ pkg-config
       - name: Launcher (AppImage)
         working-directory: launcher
         env:
@@ -519,23 +558,61 @@ jobs:
           chmod 755 "$ai.new" && mv "$ai.new" "$ai"
           "$ai" --appimage-offset
 
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-
-      - name: Ryujinx sources cache
-        uses: actions/cache@v4
-        with:
-          path: refs/ryubing
-          key: ryujinx-${{ env.RYUBING_COMMIT }}
-
-      - name: Shader translator
+      - name: Launcher artifact
         run: |
-          [ -d refs/ryubing/.git ] || git clone --filter=blob:none https://git.ryujinx.app/ryubing/ryujinx.git refs/ryubing
-          git -C refs/ryubing checkout -f "$RYUBING_COMMIT"
-          bash tools/shaders/scripts/setup_ryujinx.sh
-          dotnet publish -c Release -r linux-x64 --self-contained true tools/shaders/harness/SpirvHarness.csproj -o build/harness
-          build/harness/spirv_harness --help > /dev/null
+          ai=$(ls launcher/src-tauri/target/release/bundle/appimage/*.AppImage)
+          mkdir -p work/play && cp "$ai" work/play/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-launcher
+          path: |
+            work/play/*.AppImage
+          compression-level: 0
+
+  # The Linux tar.gz: the AppImage, the runtime, the build kit and the shader translator, staged from this checkout (nothing
+  # comes from another platform's build), then started once under Xvfb to prove it finds tools/.
+  linux-package:
+    needs: [linux-payload, linux-runtime, linux-launcher]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    env:
+      VERSION: ${{ needs.linux-payload.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Python packages
+        run: python3 -m pip install --upgrade pillow   # make-linux.sh draws the keyboard and mouse prompt icons with it
+
+      - name: Runtime from linux-runtime
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-rt
+          path: build/rtdll
+
+      - name: Shader translator from linux-payload
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-payload
+          path: build/harness
+
+      - name: Launcher from linux-launcher
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-launcher
+          path: work/play
+
+      - name: Restore executable bits
+        run: |
+          mkdir -p launcher/src-tauri/target/release/bundle/appimage
+          mv work/play/*.AppImage launcher/src-tauri/target/release/bundle/appimage/
+          chmod +x launcher/src-tauri/target/release/bundle/appimage/*.AppImage
+          # an artifact carries no modes, and the launcher execs this apphost itself
+          chmod +x build/harness/spirv_harness
 
       - name: Package
         run: |
@@ -554,7 +631,12 @@ jobs:
 
       - name: Smoke test (the AppImage starts and finds tools/)
         run: |
-          sudo apt-get install -y -q --no-install-recommends xvfb
+          # The AppImage leaves the graphics stack to the host on purpose (linuxdeploy excludes libEGL/libGL: they have to
+          # match the driver). A desktop has them through mesa; this runner does not, and webkit's GStreamer GL plugin is
+          # linked against libEGL, so the launcher dies at load time with "libEGL.so.1: cannot open shared object file".
+          # The host supplies the whole graphics/GL dispatch stack (glvnd + mesa), which is what a desktop has and this
+          # runner does not: webkit's GL and ANGLE paths dlopen libEGL/libGL/libGLESv1_CM/libGLESv2/libGLX.
+          sudo apt-get install -y -q --no-install-recommends xvfb libegl1 libgl1 libgles1 libgles2 libgl1-mesa-dri libvulkan1
           cd "build/rel/PokopiaRecomp-$VERSION"
           (APPIMAGE_EXTRACT_AND_RUN=1 timeout 20 xvfb-run -a ./PokopiaLauncher.AppImage > ../launch.log 2>&1; echo "exit $?" >> ../launch.log) || true
           cat ../launch.log
@@ -566,10 +648,13 @@ jobs:
           path: build/rel/*.tar.gz
           compression-level: 0
 
-  # Everything the macOS bundle carries except the two files only macOS can build (the launcher binary and the runtime dylib):
-  # the shader harness as a self-contained osx-arm64 publish, the Ryujinx sources it compiles against, MoltenVK, the lifter, the
-  # SDK sources and the prompt icons. Linux does it, so the macOS runner only compiles and signs.
+  # Everything the macOS package carries except the two files only macOS can build: the shader harness as a self-contained
+  # osx-arm64 publish, MoltenVK, the lifter, the SDK sources and the prompt icons. Linux does it, so the macOS runners only
+  # compile.
   macos-payload:
+    needs: release
+    outputs:
+      version: ${{ needs.release.outputs.version }}
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
@@ -621,13 +706,10 @@ jobs:
             work/moltenvk
           compression-level: 6
 
-  # The macOS package: the two files that need macOS (the launcher through Tauri's bundler, the runtime dylib against the SDK's
-  # frameworks) plus the signature, around the payload the Linux job staged. One zip is the whole release: the bundle for a
-  # fresh install, and inside it the Contents/MacOS tree the in-place updater replaces.
-  # The macOS package in three jobs: the runtime dylib (against the SDK frameworks, with MoltenVK from the Linux payload), the
-  # launcher (Tauri's bundler), and the package that signs, zips and checks. sccache keeps the dylib's translation units warm.
+  # The macOS runtime dylib against the SDK's frameworks. It fetches MoltenVK itself rather than waiting for the payload job,
+  # so all nine build jobs stay siblings.
   macos-runtime:
-    needs: macos-payload         # the dylib links MoltenVK, which the payload carries
+    needs: release
     runs-on: macos-latest          # arm64, the port's target (macos-14 was x64 and its image was retired on 2 November 2026)
     timeout-minutes: 60
     env:
@@ -635,22 +717,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Version
-        run: |
-          if [ -n "$REL_TAG" ]; then v=${REL_TAG#v}; else v=0.0.0; fi
-          echo "VERSION=$v" >> "$GITHUB_ENV"
-
       - name: Third-party sources cache
         uses: actions/cache@v4
         with:
           path: work/deps
           key: nxrt-deps-macos-v1
 
-      - name: Payload (built on Linux)
-        uses: actions/download-artifact@v4
+      # The dylib links MoltenVK; the cache keeps the download off every run after the first.
+      - name: MoltenVK cache
+        id: mvk
+        uses: actions/cache@v4
         with:
-          name: macos-payload
-          path: work          # restores work/payload and work/moltenvk
+          path: work/moltenvk
+          key: moltenvk-${{ env.MOLTENVK_VERSION }}-v1
+
+      - name: MoltenVK
+        if: steps.mvk.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p work/mvk-src work/moltenvk   # not work/MoltenVK: macOS volumes are case-insensitive
+          curl -fsSL --retry 3 --retry-delay 5 -o work/moltenvk.tar \
+            "https://github.com/KhronosGroup/MoltenVK/releases/download/$MOLTENVK_VERSION/MoltenVK-macos.tar"
+          test -s work/moltenvk.tar
+          tar -xf work/moltenvk.tar -C work/mvk-src
+          cp work/mvk-src/MoltenVK/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib work/mvk-src/MoltenVK/LICENSE work/moltenvk/
+          test -s work/moltenvk/libMoltenVK.dylib
 
       - name: sccache (the GitHub Actions cache)
         uses: mozilla-actions/sccache-action@v0.0.9
@@ -669,18 +759,16 @@ jobs:
           path: work/build/rtb/libpkp_rt.dylib
           compression-level: 6
 
+  # The launcher binary (no bundler: the release is a plain folder, not a .app).
   macos-launcher:
+    needs: release
     runs-on: macos-latest
     timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Version
-        run: |
-          if [ -n "$REL_TAG" ]; then v=${REL_TAG#v}; else v=0.0.0; fi
-          echo "VERSION=$v" >> "$GITHUB_ENV"
-
-      # The launcher is a Tauri app: its dependency tree is most of the build time, and Cargo.lock changes rarely.
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -710,17 +798,15 @@ jobs:
           path: work/play/PokopiaLauncher
           compression-level: 6
 
+  # The macOS zip: the payload the Linux job staged, the dylib and the launcher, in one folder — no .app, no signature.
   macos-package:
     needs: [macos-payload, macos-runtime, macos-launcher]
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 40
+    env:
+      VERSION: ${{ needs.macos-payload.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Version
-        run: |
-          if [ -n "$REL_TAG" ]; then v=${REL_TAG#v}; else v=0.0.0; fi
-          echo "VERSION=$v" >> "$GITHUB_ENV"
 
       - name: Payload (built on Linux)
         uses: actions/download-artifact@v4
@@ -741,8 +827,10 @@ jobs:
           path: work/play
 
       # an artifact is a zip: the executable bit does not survive it
+
       - name: Launcher is executable
         run: chmod +x work/play/PokopiaLauncher
+
       - name: Package (zip)
         run: launcher/scripts/make-mac.sh work/play work/payload "$VERSION"
 
@@ -756,10 +844,12 @@ jobs:
           test -x "$root/PokopiaLauncher"
           file "$root/PokopiaLauncher" | grep -q arm64
           for f in tools/build/sdk/libpkp_rt.dylib tools/build/sdk/libvulkan.1.dylib tools/build/sdk/kbm_icons \
-                   tools/build/sdk/fonts tools/harness/spirv_harness tools/build/pkp_build.py \
+                   tools/build/sdk/fonts tools/build/pkp_build.py \
                    libpkp_rt.dylib "How to open Recompia.txt"; do
             test -e "$root/$f" || { echo "missing $f in the package"; ls -R "$root" | head -60; exit 1; }
           done
+          # the launcher execs the apphost directly (host.rs), so presence is not enough
+          test -x "$root/tools/harness/spirv_harness" || { echo "the shader harness is not executable"; exit 1; }
           # the in-place updater's package: update.rs takes PokopiaRecomp-<version>/ as the install root
           unzip -Z1 "$zip" | grep -qx "PokopiaRecomp-$VERSION/tools/build/pkp_build.py" || { echo "the zip has no tools/build at the package root"; exit 1; }
           # no .app and no signature: the zip is unpacked and the launcher started from there (the note explains Open Anyway)
@@ -780,12 +870,11 @@ jobs:
             work/play/macos.sha256
           compression-level: 0
 
-  # The one place that writes into the release: it takes the archives every build job produced, uploads them, and writes one
-  # SHA256SUMS.txt over all of them. A platform job that failed leaves its archive out instead of failing this one.
-
+  # The one place that writes into the release: it takes the archives the three package jobs produced, uploads them, and
+  # writes one SHA256SUMS.txt over all of them. A platform job that failed leaves its archive out instead of failing this one.
   publish:
-    needs: [release, windows-package, linux, macos-package]
-    if: always() && (github.ref_type == 'tag' || inputs.release_tag != '')
+    needs: [windows-package, linux-package, macos-package]
+    if: always() && !cancelled() && (github.ref_type == 'tag' || inputs.release_tag != '')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -810,4 +899,3 @@ jobs:
           cat SHA256SUMS.txt
           test -s SHA256SUMS.txt || { echo "::error::no release archives were built"; exit 1; }
           gh release upload "$TAG" -R "$GITHUB_REPOSITORY" "${archives[@]}" SHA256SUMS.txt --clobber
-

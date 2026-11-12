@@ -28,6 +28,7 @@ find "$out/tools/build/recomp" -name __pycache__ -type d -exec rm -rf {} + 2>/de
 # needs neither .NET nor a checkout.
 cp "$repo/tools/shaders/ampere/extract_corpus.py" "$out/tools/"
 cp -R "$harness/." "$out/tools/harness/"
+chmod +x "$out/tools/harness/spirv_harness"   # the launcher runs the apphost itself, so the mode has to survive
 cp "$repo/game-build/src/pkp_stub.cpp" "$repo/game-build/src/pkp_rt_api.h" "$out/tools/build/sdk/"
 # macOS has no Vulkan loader of its own: MoltenVK ships with the package (with its licence) and Set up copies it next to pkp,
 # which is where volk looks for libvulkan.1.dylib.

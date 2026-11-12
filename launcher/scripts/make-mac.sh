@@ -28,6 +28,9 @@ root="$stage/PokopiaRecomp-$version"
 mkdir -p "$root/tools/build/sdk"
 cp "$here/PokopiaLauncher" "$root/"
 cp -R "$payload/." "$root/"
+# The launcher runs the apphost itself (host.rs: apphost.is_file() -> command(&apphost)), and a payload that came back through
+# an artifact has no mode: without this the shipped zip carries tools/harness/spirv_harness as 0644 and Set up fails EACCES.
+chmod +x "$root/tools/harness/spirv_harness"
 cp "$repo/work/build/rtb/libpkp_rt.dylib" "$root/libpkp_rt.dylib"
 cp "$repo/work/build/rtb/libpkp_rt.dylib" "$root/tools/build/sdk/libpkp_rt.dylib"
 # An artifact round trip leaves com.apple.provenance on the files; harmless, but no reason to ship it.

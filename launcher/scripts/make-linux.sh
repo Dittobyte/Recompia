@@ -18,7 +18,9 @@ rt="$repo/build/rtdll/libpkp_rt.so"
 appimage=$(ls "$repo"/launcher/src-tauri/target/release/bundle/appimage/*.AppImage 2>/dev/null | head -1)
 [ -n "$appimage" ] || { echo "no AppImage (npm run tauri build -- --bundles appimage)" >&2; exit 1; }
 harness="$repo/build/harness"
-[ -x "$harness/spirv_harness" ] || { echo "no shader harness at $harness (dotnet publish -r linux-x64)" >&2; exit 1; }
+# Existence, not the mode: an uploaded artifact comes back 0644 (modes are not part of the transport), so the copy below is
+# made executable instead. A win-x64 publish has spirv_harness.exe and no spirv_harness, which this still catches.
+[ -f "$harness/spirv_harness" ] || { echo "no shader harness at $harness (dotnet publish -r linux-x64)" >&2; exit 1; }
 
 rm -rf "$pkg"
 mkdir -p "$pkg/tools/build/sdk" "$pkg/tools/shaders" "$pkg/assets" "$pkg/licenses"
@@ -39,6 +41,7 @@ cp "$repo/game-build/src/pkp_stub.cpp" "$repo/game-build/src/pkp_rt_api.h" "$pkg
 # the shader pipeline: the corpus extractor and a self-contained publish of the harness (its own .NET runtime)
 cp "$repo/tools/shaders/ampere/extract_corpus.py" "$pkg/tools/shaders/"
 cp -R "$harness" "$pkg/tools/harness"
+chmod +x "$pkg/tools/harness/spirv_harness"   # the launcher runs the apphost itself, so it needs the mode
 
 # what the game reads next to pkp: the keyboard and mouse prompt icons and the shared font (pkp_build.py copies both)
 mkdir -p "$pkg/tools/build/sdk/kbm_icons" "$pkg/tools/build/sdk/fonts"
