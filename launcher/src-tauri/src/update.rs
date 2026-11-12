@@ -224,7 +224,8 @@ fn github(url: &str) -> bool {
 }
 
 /// Which releases the player follows. Stable (the default) is what the launcher has always offered: published releases, no prereleases.
-/// Testing also offers prereleases (`v0.8.1-beta.1`, built from the `testing` branch), newest first like any other release.
+/// Testing also lists every prerelease, from every test line (`-beta.N` Testing, `-alpha.N` side lines such as Mods Alpha), for the
+/// player to pick by hand in Choose a version. Testing offers no update at all (`offers_updates`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Channel {
     Stable,
@@ -236,25 +237,25 @@ impl Channel {
     pub fn parse(s: &str) -> Channel {
         if s.trim().eq_ignore_ascii_case("testing") { Channel::Testing } else { Channel::Stable }
     }
-    /// How many releases to ask GitHub for: Testing builds share the list, so it needs more room to keep the stable ones in view.
+    /// How many releases to ask GitHub for. Testing lists every prerelease, so it asks for a full page (GitHub's maximum).
     pub fn list_size(self) -> u32 {
         match self {
             Channel::Stable => 20,
-            Channel::Testing => 50,
+            Channel::Testing => 100,
         }
+    }
+    /// Whether the Update button follows this channel. Testing runs several test lines side by side (Testing betas, alpha side lines),
+    /// so "the newest newer build" would move a tester off their line onto another one: a tester picks each build by hand.
+    pub fn offers_updates(self) -> bool {
+        self == Channel::Stable
     }
 }
 
-/// An alpha (`v0.12.0-alpha.1`) is an in-house test build: its release page is shared by hand, and no channel lists or offers it.
-fn in_house(tag: &str) -> bool {
-    tag.contains("-alpha.")
-}
-
-/// The API's answer without drafts, alphas and anything that does not link to github.com. Prereleases are kept here: `for_channel`
-/// decides.
+/// The API's answer without drafts and anything that does not link to github.com. Prereleases (betas and alphas alike) are kept here:
+/// `for_channel` decides.
 pub fn parse_releases(body: &[u8]) -> Result<Vec<GhRelease>, String> {
     let all: Vec<GhRelease> = serde_json::from_slice(body).map_err(|e| e.to_string())?;
-    Ok(all.into_iter().filter(|r| !r.draft && !r.tag_name.is_empty() && !in_house(&r.tag_name) && github(&r.html_url)).collect())
+    Ok(all.into_iter().filter(|r| !r.draft && !r.tag_name.is_empty() && github(&r.html_url)).collect())
 }
 
 /// The releases a channel sees. Stable drops prereleases, so for a Stable player nothing differs from before channels existed.
@@ -1084,8 +1085,7 @@ mod channel_tests {
         assert_eq!(all.len(), 1, "a draft never shows");
         let body = format!("[{}]", [rel("v0.9.0-alpha.1", true), rel("v0.8.1-beta.1", true)].join(","));
         let all = parse_releases(body.as_bytes()).unwrap();
-        assert_eq!(all.len(), 1, "an alpha never shows: it is an in-house build");
-        assert_eq!(all[0].tag_name, "v0.8.1-beta.1");
+        assert_eq!(all.len(), 2, "an alpha is a prerelease like any other: Testing lists it");
         let all = list_of(&[("v0.8.1-beta.2", true), ("v0.8.1-beta.1", true), ("v0.8.0", false)]);
         assert_eq!(for_channel(all, Channel::Testing).len(), 3);
     }
@@ -1096,19 +1096,16 @@ mod channel_tests {
         let stable = for_channel(all.clone(), Channel::Stable);
         assert!(pick_update(&stable, "0.8.0", "-linux-x64.tar.gz").is_none(), "Stable never offers a prerelease");
         let testing = for_channel(all, Channel::Testing);
-        let (r, _, _) = pick_update(&testing, "0.8.0", "-linux-x64.tar.gz").unwrap();
-        assert_eq!(r.tag_name, "v0.8.1-beta.2");
-        assert!(pick_update(&testing, "0.8.1-beta.2", "-linux-x64.tar.gz").is_none());
         let v = view(&testing, Some("0.8.0"), "-linux-x64.tar.gz");
         assert!(v.releases.iter().any(|r| r.prerelease) && v.releases.iter().any(|r| !r.prerelease));
     }
 
     #[test]
-    fn a_testing_player_moves_on_to_the_final_release() {
-        let all = list_of(&[("v0.8.1", false), ("v0.8.1-beta.2", true)]);
+    fn testing_lists_every_test_line_and_offers_no_update() {
+        assert!(Channel::Stable.offers_updates() && !Channel::Testing.offers_updates());
+        let all = list_of(&[("v0.12.0-beta.1", true), ("v0.12.0-alpha.1", true), ("v0.11.1", false), ("v0.10.4-alpha.1", true)]);
         let testing = for_channel(all, Channel::Testing);
-        let (r, _, _) = pick_update(&testing, "0.8.1-beta.2", "-linux-x64.tar.gz").unwrap();
-        assert_eq!(r.tag_name, "v0.8.1");
+        assert_eq!(builds(&testing, "0.11.1", "-linux-x64.tar.gz").iter().filter(|b| b.prerelease).count(), 3, "every prerelease is listed, older test lines too");
     }
 
     #[test]

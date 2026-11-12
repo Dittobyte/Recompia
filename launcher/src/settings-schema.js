@@ -697,7 +697,7 @@ export const SECTIONS = [
           },
           {
             id: 'channel_note', type: 'note', when: (v) => v.channel === 'testing',
-            note: () => ({ text: t('Testing builds come first and may have bugs. As a tester you are expected to tell us what you find and share pkp.log: use Report a problem below. Your saves and settings are kept. To go back to Stable, wait until Stable has a newer version than the one you have, or install it from the releases page.') }),
+            note: () => ({ text: t('Testing builds come first and may have bugs. Testing does not update by itself: pick each build with Choose a version below. As a tester you are expected to tell us what you find and share pkp.log: use Report a problem below. Your saves and settings are kept. To go back to Stable, wait until Stable has a newer version than the one you have, or install it from the releases page.') }),
           },
           {
             id: 'testing_help', label: t('Testing help'), type: 'info', when: (v) => v.channel === 'testing',
