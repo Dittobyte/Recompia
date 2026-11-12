@@ -66,9 +66,6 @@ uint32_t g_exit_code = 4;
 void (*g_on_report)(const char*, void*) = nullptr;
 void* g_user = nullptr;
 
-LPTOP_LEVEL_EXCEPTION_FILTER g_prev_filter = nullptr;   // what was installed before us (uninstall puts it back)
-void* g_veh = nullptr;                                   // our vectored handler's handle
-
 std::atomic<bool> g_in_handler{false};          // set while the handler runs: a second exception terminates
 std::atomic<bool> g_overflow_reported{false};   // the vectored handler already reported this stack overflow
 std::atomic<uint32_t> g_reports{0};
@@ -498,10 +495,10 @@ void crash_install(const CrashOptions& opt) {
 #if !defined(_WIN32)
     symbols_snapshot_images();   // before the reporter starts: the report's symbolizer reads this table, never dyld
 #endif
-    g_prev_filter = SetUnhandledExceptionFilter(crash_filter);
+    SetUnhandledExceptionFilter(crash_filter);
     ULONG guarantee = 64 * 1024;  // stack reserved for the handlers if the thread overflows
     SetThreadStackGuarantee(&guarantee);
-    g_veh = AddVectoredExceptionHandler(0, crash_vectored);
+    AddVectoredExceptionHandler(0, crash_vectored);
     // The reporter: 1 MiB of its own stack, so the report survives a faulting thread with nothing left.
     if (HANDLE th = CreateThread(nullptr, 1u << 20, reporter_main, nullptr, 0, nullptr)) {
         CloseHandle(th);   // detached; the process is going away after the report anyway
