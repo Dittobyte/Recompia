@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Pokopia v2.0.1a resident limit and active-appearance budget.
-// Ported from the Eglantine cap's default (non-staged) behavior. The game
-// still has 64 actor slots, which is also the configured resident maximum.
+// Pokopia v2.0.1a resident limit and active-appearance budget (gameplay mod pokemon_cap_50; the registry installs it only while on).
+// Ported from the Eglantine cap's default (non-staged) behavior. The game still has 64 actor slots, which is also the configured resident
+// maximum.
 #include "core/pkp_pokemon_cap.h"
 #include "core/pkp_resident_census.h"
 
@@ -32,7 +32,6 @@ struct State {
     std::uint64_t params = 0;
     std::uint64_t active_block = 0;
     std::uint32_t requested = 31;
-    bool enabled = false;
     bool limits_reported = false;
     bool active_reported = false;
     bool warned_layout = false;
@@ -43,7 +42,6 @@ State g;
 void game_frame(::Ctx*) {
     if (!g.base) return;
     resident_census::tick();
-    if (!g.enabled) return;
 
     // Pointers are guest-mapped addresses, not native process offsets.
     const auto global = g.base + layout::kPokemonParamsRoot;
@@ -87,8 +85,7 @@ void game_frame(::Ctx*) {
         g.limits_reported = true;
     }
 
-    // The separate active-appearance budget is the critical new part of this
-    // port. The original 30-budget keeper parks excess actors out of the scene.
+    // The separate active-appearance budget: the original 30-budget keeper parks excess actors out of the scene.
     const auto block = guest::rd<std::uint64_t>(holder + kActiveField);
     if (block != g.active_block) {
         g.active_block = block;
@@ -117,12 +114,9 @@ void game_frame(::Ctx*) {
 void install(const FeatureInstall& in) {
     g = {};
     g.base = in.base;
-    resident_census::start(in.base);
-    // Retain the old switch name so existing pkp.ini files continue to work.
-    g.enabled = settings::get_bool(settings::Key::PokemonCap50);
     g.requested = static_cast<std::uint32_t>(settings::get_int(settings::Key::PokemonCapLimit));
-    NXLOG_I("pkp", "pokemon cap: %s, requested %u living (physical actor pool: 64)",
-            g.enabled ? "enabled" : "disabled", g.requested);
+    resident_census::start(in.base);
+    NXLOG_I("pkp", "pokemon cap: requested %u living (physical actor pool: 64)", g.requested);
 }
 
 void remove() {
