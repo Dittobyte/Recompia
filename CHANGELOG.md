@@ -2,16 +2,23 @@
 
 ## Unreleased
 
-- **Joy-Con 2 mouse mode** is back: press the middle mouse button in play to point and click, and placing and breaking now land on the block under the pointer (left click is the Joy-Con's R, right click its ZR, as in Pikantine). Press it again to go back to camera aim. The **Mouse Mode Key** row is back in **Settings > Mouse**. Update only: no shader rebuild, no Set up again
+### Linux
+- The game runs natively on Linux: no Proton, no Wine. The download is `PokopiaRecomp-<version>-linux-x64.tar.gz`, with the launcher as an AppImage and the runtime as `libpkp_rt.so`, the same runtime the Windows build links as `pkp_rt.dll`
+- The runtime reaches the system directly instead of through the Windows API: `runtime/src/os/` holds a POSIX layer for files, memory mappings, sockets, threads, timers, paths and processes, and SDL3 plays the audio and opens the window. `pkp` is linked from the player's own dump with the bundled Zig, as on Windows
+- `libpkp_rt.so` needs glibc 2.35 or newer (Ubuntu 22.04+, Debian 12+, Fedora 36+, SteamOS 3) and nothing else: SDL3 is linked in, and every other backend library is opened at run time, so a missing one switches that backend off instead of failing the start
+- Steam Deck: add the AppImage as a non-Steam game. An AppImage leaves the graphics stack to the host on purpose, so it needs `libEGL`, `libGL`, `libGLESv2` and `libvulkan`, which every desktop and SteamOS ship
 
 ### macOS
-- The launcher can update itself on macOS, as it already does on Windows and Linux. The release is one zip, `Recompia-<version>-macos-arm64.zip`, with `PokopiaRecomp-<version>/` at its root: the launcher, `tools/` and `libpkp_rt.dylib`, and an update replaces them in place. There is no `.app` and no signature: unpack it anywhere, start `PokopiaLauncher`, and allow it once in **System Settings > Privacy and Security** (the note in the zip says how)
-  - No DMG any more: the zip is the whole download, and Gatekeeper is only asked once — files an update writes carry no download flag, so a later version opens with a double click
-- The macOS package's payload (the lifter, the SDK sources, the shader harness, MoltenVK and the prompt icons) is built on a Linux runner now, and the macOS runner only compiles the launcher and the runtime. The platform jobs also start together instead of waiting for the release to exist, and one final job uploads every archive and writes `SHA256SUMS.txt`
-- The macOS runtime and launcher are built in parallel jobs, as the Windows ones are, and sccache keeps the runtime's object files between runs, so a release spends minutes less on the builders
-- On macOS vsync is on by default: without it MoltenVK presents immediately and frames show mid-refresh, which tore and flashed partly drawn pictures on a MacBook. An existing `controls.ini` gets it switched on once (`[meta] display_rev`), and turning it off afterwards keeps it off
-- The game now has its own Metal shader cache identity (an `Info.plist` linked into `pkp`, one per game folder). Without one it shared a cache folder with every other program outside an app bundle, and a start compiled every pipeline again whenever one of those was running
-- A frame limit you set now holds through loading screens too. Loading runs unpaced on purpose (the loading code advances once per frame), so a 60 limit showed 110 fps for the first seconds of every start
+- The game runs natively on Apple silicon: `libpkp_rt.dylib`, a `pkp` linked from the player's own dump, Metal through MoltenVK, CoreAudio for sound and SDL3 for the window
+- The download is one zip, `Recompia-<version>-macos-arm64.zip`, whose root is `PokopiaRecomp-<version>/`: `PokopiaLauncher`, `tools/` and `libpkp_rt.dylib`. There is no `.app` and no signature: unpack it anywhere, start `PokopiaLauncher`, allow it once in **System Settings > Privacy and Security**, and it updates itself in place from then on
+- Vsync is on by default: without it MoltenVK presents immediately, frames show mid-refresh, and a MacBook flashes partly drawn pictures
+- `pkp` carries its own Metal shader-cache identity (an `Info.plist` linked into it, one per game folder). Without one it shared a cache folder with every other program outside an app bundle, and a start compiled every pipeline again whenever one of those was running
+- A frame limit holds through loading screens too, the game's own thread synchronisation is ordered the way Apple's cores need it (`LDAR`/`STLR`), SHA-1 uses the ARMv8 instructions, and the runtime's write tracking follows the host's 16 KiB pages, so a texture the game rewrites is not read back stale
+- The guest address space is reserved in `pkp`'s Mach-O header as a zero-fill `__GUEST` segment: libmalloc's xzone allocator takes about 24 GiB of it at random addresses before `main` runs
+- Still not: the two in-game movies (they are VP9 in WebM and no run has reached one yet), Link Play against a peer, and a signed and notarized `.app` — the zip is unsigned and its note covers the one-time **Open Anyway**. In the world the GPU is the limit: about 25 fps on an M3 at 1080p internal
+
+### Docs
+- `docs/linux-port.md` and `docs/macos-port.md` describe both ports, and `docs/macos-optimisations.md` records what is tuned, what is not, and how to measure it
 
 ## 0.11.1 (build O: Ocelot Hotfix a1)
 
@@ -111,18 +118,6 @@ Ocelot brings Recompia's own **official relay server**, so friends anywhere in t
 - The new translation of the game code cannot be switched off in `pkp.ini`. To compare, set the environment variable `PKP_LOCALS=off` and press Set up again: that builds the game code the way 0.10.3 does
 - New lines in `pkp.log` every 10 seconds: `tcpu` (processor time by thread) and, with `present_stats = 1` under `[latency]`, `pacing: present timing` (how many refreshes each frame was shown for)
 - If something breaks, these switches in `pkp.ini` bring back the earlier behaviour one at a time, which helps to find the cause: `gpu_split_ms = 0` and `pool_reg_skip_same = false` under `[nvn]`, `poll_wait = false`, `short_sleep = sleep` and `early_wake = off` under `[kernel]`, `boundary_count = render` under `[latency]`
-
-### Linux
-- The game runs natively on x86-64 Linux. The runtime, the lifted game, the shader translator and the launcher are Linux programs, so there is no Proton, no Wine and no `pkp_rt.dll`
-  - Before: the launcher was native but Set up built a Windows `pkp.exe` with Zig and Play started it through Steam's Proton
-  - Now: `libpkp_rt.so` and `pkp` are built for `x86_64-linux-gnu`, the launcher spawns the game directly, ASTC textures are decoded by the ARM decoder linked into the runtime (no per-CPU `astcdec-*.dll`), audio plays through SDL3, and `docs/linux-port.md` has the build and the run
-  - The release ships `libpkp_rt.so` and a `linux-x64` shader translator instead of the Windows ones; the FSR 3 and DLSS upscalers stay Windows-only
-
-### macOS
-- The game runs on Apple Silicon Macs. This is the first release with a macOS build: the runtime, the lifted game and the launcher are native arm64 programs, so there is no Proton, no Vulkan driver to install and no `pkp_rt.dll`
-  - Before: the launcher and the game were Windows builds. On a Mac the launcher only started under CrossOver or Whisky, and the game stopped during start-up
-  - Now: `docs/macos-port.md` has the build and the run. The address space the game needs is reserved in the executable itself, the Win32 calls go through a POSIX shim, audio plays through CoreAudio, and the launcher's Set up extracts and translates the shaders and Play starts the game with keyboard and mouse prompts
-  - Still not: the two in-game movies are untested (they are VP9 in WebM, and the game's own movie library plus the host VP9 decoder is the path, but no run has reached one yet), a signed and notarized `.app`, and Link Play against a peer. The GPU is the limit in the world: about 25 fps on an M3 at 1080p internal
 
 ## 0.10.3 (build N: Newt Hotfix a3)
 
