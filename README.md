@@ -102,7 +102,7 @@
 ### Steam Deck and handhelds
 - Steam Deck, Legion Go S and other handhelds are recognised: controller icons stay on screen and the picture size suits the screen.
 - 16:10 screens are filled edge to edge, with no black bars.
-- Runs through Proton on SteamOS, with handheld speed-ups (about 26 to 53 fps on a Steam Deck and 55 to 75 fps on a Legion Go S, measured by players).
+- Runs natively on SteamOS, with handheld speed-ups (about 26 to 53 fps on a Steam Deck and 55 to 75 fps on a Legion Go S, measured by players).
 - The launcher runs on Linux and SteamOS too: see [Linux, SteamOS and the Steam Deck](#linux-steamos-and-the-steam-deck).
 
 ### Graphics
@@ -126,10 +126,11 @@ F1 opens the settings in game. Middle mouse toggles Joy-Con 2 mouse mode (point 
 
 ### Linux, SteamOS and the Steam Deck
 
-1. In Steam, install **Proton Experimental** (Library, Tools; on a Steam Deck switch to Desktop Mode first).
-2. Download `PokopiaRecomp-<version>-linux-x64.tar.gz` from the [latest release](https://github.com/featureJosh/pokopia-recomp/releases/latest) and extract it anywhere (for example your home folder).
-3. Run `PokopiaLauncher.AppImage` in that folder (double-click it, or `./PokopiaLauncher.AppImage` in a terminal). Pick your dump folder and press **Set up**: the first time it downloads its build tools (Python and Zig, about 100 MB), compiles the game, then builds the shader cache through Proton. You can pause and continue later.
-4. Press **Play**. The game itself runs through Steam's Proton.
+1. Download `PokopiaRecomp-<version>-linux-x64.tar.gz` from the [latest release](https://github.com/featureJosh/pokopia-recomp/releases/latest) and extract it anywhere (for example your home folder).
+2. Run `PokopiaLauncher.AppImage` in that folder (double-click it, or `./PokopiaLauncher.AppImage` in a terminal). Pick your dump folder and press **Set up**: the first time it downloads its build tools (Python and Zig, about 100 MB), compiles the game, then builds the shader cache. You can pause and continue later.
+3. Press **Play**.
+
+Nothing runs through Proton or Wine: the launcher, the game, the shader translator and the build tools are all native Linux programs.
 
 If `PokopiaLauncher.AppImage` does not start on a system without FUSE, run `./PokopiaLauncher.AppImage --appimage-extract-and-run`.
 

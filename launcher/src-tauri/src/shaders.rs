@@ -311,26 +311,37 @@ fn on_path(exe: &str) -> Vec<PathBuf> {
     std::env::var_os("PATH").map(|p| std::env::split_paths(&p).map(|d| d.join(exe)).filter(|f| f.is_file()).collect()).unwrap_or_default()
 }
 
-/// The files of tools/spirv_harness without which the translator cannot start.
-const HARNESS_FILES: &[&str] = &[
-    "spirv_harness.exe",
-    "spirv_harness.dll",
-    "spirv_harness.deps.json",
-    "spirv_harness.runtimeconfig.json",
-    "hostfxr.dll",
-    "hostpolicy.dll",
-    "coreclr.dll",
-];
+/// Where the package keeps the translator: `tools/spirv_harness` in the Windows zip, `tools/harness` in the macOS and Linux
+/// packages (the native apphost, which they make executable).
+pub fn harness_dir(tools_dir: &Path) -> PathBuf {
+    tools_dir.join(if cfg!(windows) { "spirv_harness" } else { "harness" })
+}
+
+/// The translator in `tools_dir`: `spirv_harness.exe` on Windows, the native `spirv_harness` apphost elsewhere.
+pub fn harness_exe(tools_dir: &Path) -> PathBuf {
+    harness_dir(tools_dir).join(if cfg!(windows) { "spirv_harness.exe" } else { "spirv_harness" })
+}
+
+/// The files of the translator's self-contained publish without which it cannot start at all (one empty file is a cut-off copy
+/// or extraction, #366).
+fn harness_files() -> &'static [&'static str] {
+    if cfg!(windows) {
+        &["spirv_harness.exe", "spirv_harness.dll", "spirv_harness.deps.json", "spirv_harness.runtimeconfig.json", "hostfxr.dll", "hostpolicy.dll", "coreclr.dll"]
+    } else if cfg!(target_os = "macos") {
+        &["spirv_harness", "spirv_harness.dll", "spirv_harness.deps.json", "spirv_harness.runtimeconfig.json", "libhostfxr.dylib", "libhostpolicy.dylib", "libcoreclr.dylib"]
+    } else {
+        &["spirv_harness", "spirv_harness.dll", "spirv_harness.deps.json", "spirv_harness.runtimeconfig.json", "libhostfxr.so", "libhostpolicy.so", "libcoreclr.so"]
+    }
+}
 
 /// Finds the tools in `tools_dir` (the launcher's `tools/` folder). Python: `tools/python/python.exe` (Linux:
 /// `tools/linux/python/bin/python3`), else the first python.exe (python3) on PATH that has `lz4`. Every missing piece is named
 /// in the error.
 pub fn find_tools(tools_dir: &Path) -> Result<Tools, String> {
     let mut missing = Vec::new();
-    let harness_dir = tools_dir.join("spirv_harness");
-    let harness = harness_dir.join("spirv_harness.exe");
-    // what the self-contained .NET publish needs to start at all; an empty file is a cut-off copy or extraction (#366)
-    let broken: Vec<&str> = HARNESS_FILES.iter().copied().filter(|f| fs::metadata(harness_dir.join(f)).map_or(true, |m| m.len() == 0)).collect();
+    let harness_dir = harness_dir(tools_dir);
+    let harness = harness_exe(tools_dir);
+    let broken: Vec<&str> = harness_files().iter().copied().filter(|f| fs::metadata(harness_dir.join(f)).map_or(true, |m| m.len() == 0)).collect();
     if !broken.is_empty() {
         missing.push(format!("the shader translator ({}: {} missing or empty)", harness_dir.display(), broken.join(", ")));
     }
@@ -554,7 +565,7 @@ pub fn translate_missing(game_dir: &Path, tools_dir: &Path) -> Result<usize, Str
     }
     fs::write(input.join("manifest.tsv"), text).map_err(|e| format!("cannot write {}: {}", input.display(), e))?;
     let jobs = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2);
-    let exe = tools_dir.join("spirv_harness").join("spirv_harness.exe");
+    let exe = harness_exe(tools_dir);
     let mut mode = crate::harness::Mode::Fast;
     if !crate::harness::run(&exe, &input, &stage, jobs, &mut mode, &AtomicBool::new(false), false, None, |_| {})? {
         return Err("the shader translator stopped".into());
@@ -584,7 +595,7 @@ pub fn warm_up(game_dir: &Path, tools_dir: &Path, cancel: &AtomicBool) -> Result
     if let Some(install) = tools_dir.parent() {
         crate::host::sync_runtime_files(install, game_dir)?;
     }
-    let mut cmd = std::process::Command::new(game_dir.join("pkp.exe"));
+    let mut cmd = crate::host::command(&crate::host::game_exe(game_dir));
     cmd.current_dir(game_dir).arg("--headless").args(["--max-seconds", &WARMUP_SECONDS.to_string()]).arg("--log").arg(scratch.join("warmup.log"));
     // environment variables win over pkp.ini
     cmd.env("NXRT_FS_SAVE_DIR", scratch.join("save")).env("NXRT_NVN_DUMP_MISSING", MISSING_REL).env("NXRT_AUDIO_SINK", "null");

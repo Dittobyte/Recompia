@@ -89,16 +89,12 @@ build of your own goes in the release folder next to `tools/`. The game stays th
 - **Build tools:** the first Set up downloads Python 3.13 (python-build-standalone) with the lz4 and capstone wheels, and
   Zig 0.17.0 (the version the release bundles for Windows), into `tools/linux/`, each pinned by size and SHA-256.
   `pkp_build.py` compiles with that Zig and reads free memory from `/proc/meminfo` there.
-- **Proton:** the shader translator and `pkp.exe` (the hidden first run and Play) run through Steam's Proton Experimental,
-  else the newest Proton N.N Steam installed, inside the Steam Linux Runtime its `toolmanifest.vdf` asks for, as Steam starts a
-  game, with the prefix in `~/.local/share/pokopia-recomp/proton`. `PKP_PROTON=<folder>` picks another Proton build. Without
-  Steam: `umu-run`, then `wine`. Paths handed to them are `Z:\...`. Linux translates shaders in chunks of 5000 (every run also
-  starts Proton); Pause kills the tool's process group, Proton's wine processes included; the hidden first run is stopped if it
-  is still going 4 minutes after its 60 s.
-  Every Proton run gets GPU driver shader caches of the game's own that are never trimmed
+- **Native, no Proton:** the shader translator (`tools/harness/spirv_harness`, a self-contained .NET publish for linux-x64) and
+  `pkp` (the hidden first run and Play) are Linux programs and run as such, with plain paths and no runner in front of them.
+  Pause kills the tool's process group; the hidden first run is stopped if it is still going 4 minutes after its 60 s.
+  Every run gets GPU driver shader caches of the game's own that are never trimmed
   (`~/.local/share/pokopia-recomp/shadercache/{nvidia,mesa}`), as Steam sets them up for the games it starts.
-- **The checks before Set up** read statvfs, `/proc` and `libvulkan.so.1`, and Set up refuses to start without Proton (it says
-  so before the build, not after it).
+- **The checks before Set up** read statvfs, `/proc` and `libvulkan.so.1`.
 - **Desktop:** Link Play lists addresses from getifaddrs and `/proc/net/route` (Tailscale and ZeroTier as overlays; bridges,
   veth and VPN interfaces skipped), and the firewall hint names firewalld; save import looks in `~/.local/share/eden` and
   `~/.config/Ryujinx`; files and links open with `xdg-open`; on NVIDIA the launcher sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` (a
@@ -108,7 +104,8 @@ build of your own goes in the release folder next to `tools/`. The game stays th
 - **Building** needs Rust, Node.js and the webkit2gtk-4.1, gtk3 and libsoup3 development packages. Built on Ubuntu 22.04 the
   binary and the AppImage need only glibc 2.35.
 
-Tested on Bazzite 45 (Ryzen 9 9900X, 16 GB, RTX 4070 Ti, Proton Experimental in the Steam Linux Runtime 4), end to end with a
+Tested on Bazzite 45 (Ryzen 9 9900X, 16 GB, RTX 4070 Ti, Proton Experimental in the Steam Linux Runtime 4; that run was before
+the native port, and nothing goes through Proton now), end to end with a
 2.0.1 dump: Set up built pkp.exe in 12 minutes, translated the 99,012 shaders in 17 minutes (also paused and continued in the
 middle), the hidden first run collected 212 shaders, and Play ran the game; from the native binary and from the AppImage.
 

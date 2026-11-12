@@ -26,7 +26,12 @@ pub enum Mode {
 /// The translator over `input` (a corpus folder with manifest.tsv / unique.tsv) into `stage`.
 fn command(exe: &Path, input: &Path, stage: &Path, jobs: usize, mode: Mode) -> Result<Command, String> {
     let jobs = if mode == Mode::Safe { jobs.clamp(1, SAFE_JOBS) } else { jobs.max(1) };
+<<<<<<< HEAD
     let mut cmd = Command::new(exe);
+=======
+    // the package's own build for this platform, run as it is: spirv_harness.exe on Windows, the native apphost elsewhere
+    let mut cmd = crate::host::command(exe);
+>>>>>>> 1becc3fb (Launcher: everything runs natively, and the archive step reads in parallel)
     cmd.arg("--batch").arg(input).arg("--out").arg(stage);
     cmd.args(["--jobs", &jobs.to_string(), "--no-val"]);
     cmd.env("DOTNET_gcServer", if mode == Mode::Fast { "1" } else { "0" });
