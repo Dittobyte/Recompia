@@ -24,6 +24,7 @@ SEMANTIC = ['-fno-strict-aliasing', '-ffp-contract=off']
 # x86 option: on AArch64 a 128-bit __atomic_compare_exchange is a CASP instruction pair and clang rejects the flag, so it is
 # added only when the lifted code is built for x86-64.
 ARCH_FLAGS = {'x86_64': ['-mcx16'], 'amd64': ['-mcx16']}
+# -mcpu=apple-m1 was tried for the arm64 build and measured: 41.5 fps against 42.0 in the same scene, no gain, so it is not here.
 
 
 def _arch_flags(arch):
@@ -32,6 +33,8 @@ def _arch_flags(arch):
 
 CLANG_CL_OPT = '/O1'
 CLANG_CL = ['/w', '/EHs-c-', '/GR-'] + SEMANTIC
+# -O1, measured: -O2 on the lifted code is slower (34.9 fps against 42.0 in the same world scene on an M3, interval 28.7 against
+# 23.9 ms). The lifted code is two hundred thousand small functions; -O2 makes them bigger and the instruction cache pays for it.
 CLANG = ['-O1', '-w', '-fno-exceptions', '-fno-rtti'] + SEMANTIC
 
 

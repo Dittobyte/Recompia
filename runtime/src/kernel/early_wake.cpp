@@ -79,9 +79,33 @@ bool wait_available() {
     }();
     return ok;
 }
+#elif defined(__APPLE__)
+// libSystem's ulock is Darwin's futex: __ulock_wait compares the 4-byte word and queues the waiter in one step, like
+// RtlWaitOnAddress and FUTEX_WAIT, and __ulock_wake with ULF_WAKE_ALL releases every waiter. Private API, exported by libSystem
+// since 10.12 and used by pthreads, libdispatch and Swift; there is no header for it. A short sleep that used to spin on
+// SwitchToThread (a syscall per round) now blocks, which is what the game's fence polls need: forty guest threads yielding
+// starve the render thread.
+extern "C" int __ulock_wait(uint32_t op, void* addr, uint64_t value, uint32_t timeout_us);
+extern "C" int __ulock_wake(uint32_t op, void* addr, uint64_t wake_value);
+constexpr uint32_t kUlCompareAndWait = 1;      // UL_COMPARE_AND_WAIT
+constexpr uint32_t kUlWakeAll = 0x00000100;    // ULF_WAKE_ALL
+int wait_word(const void* word, uint32_t expected, int64_t ns) {
+    // the timeout is in microseconds, 0 meaning forever; ns < 0 is the caller's "no timeout"
+    const uint32_t us = ns < 0 ? 0 : static_cast<uint32_t>(std::min<int64_t>((ns + 999) / 1000, 0xFFFFFFFFll));
+    const int r = __ulock_wait(kUlCompareAndWait, const_cast<void*>(word), expected, us);
+    return r == -1 && errno == ETIMEDOUT ? -ETIMEDOUT : 0;
+}
+void wake_word(const void* word) { __ulock_wake(kUlCompareAndWait | kUlWakeAll, const_cast<void*>(word), 0); }
+bool wait_available() {
+    static const bool ok = [] {
+        uint32_t word = 0;
+        // wakes nobody: ENOENT proves the syscall is there
+        return __ulock_wake(kUlCompareAndWait, &word, 0) == 0 || errno == ENOENT;
+    }();
+    return ok;
+}
 #else
-// macOS has no futex, and libSystem's __ulock_wait is the primitive that would stand in for it (docs/macos-optimisations.md). Short
-// sleeps keep yielding through there.
+// No futex and no ulock: short sleeps yield through (SwitchToThread), which is what every POSIX host did before.
 int wait_word(const void*, uint32_t, int64_t) { return -ETIMEDOUT; }
 void wake_word(const void*) {}
 bool wait_available() { return false; }

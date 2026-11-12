@@ -56,6 +56,9 @@ typedef struct Ctx {
     uint64_t fn;                 /* entry address of the lifted function entered most recently (crash reports) */
     const char *in_import;       /* name of the host import currently executing on this context, or NULL */
     uint64_t import_from;        /* guest return address of that import call */
+    uint32_t import_id;          /* the host import executing on this context (0 = none): the reports resolve its name on demand,
+                                    so an import call costs one store instead of a name lookup */
+    uint32_t import_pad;
 } Ctx;
 
 /* ======================================================================================================== */

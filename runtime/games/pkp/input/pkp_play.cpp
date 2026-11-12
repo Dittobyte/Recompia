@@ -105,8 +105,11 @@ void install_render(uint64_t base, const play::DisplaySettings& d, int window_w,
         float scale = 1.0f;
         if (fixed_size) scale = static_cast<float>(d.render_height) / gh;
         else if (d.render_scale <= 0) {
-            scale = std::min(static_cast<float>(window_h) / gh, static_cast<float>(window_w) / gw);
-            if (!host_is_handheld()) scale = std::max(1.0f, scale);   // see pick_size
+            // The console's resolution, not the window's: the game's targets stay the size the game picks (1080p docked, 720p
+            // handheld) and the present pass upscales to the window. Rendering them at the window's height was 1.78x the pixels
+            // in a 1440p window and measured 42 fps against 60.0 at 1080p in the same world scene on an M3 (the GPU is fill-rate
+            // bound there); the sharper render stays available with [display] render_scale or render_width/render_height.
+            scale = host_is_handheld() ? std::min(1.0f, std::min(static_cast<float>(window_h) / gh, static_cast<float>(window_w) / gw)) : 1.0f;
         }
         else scale = static_cast<float>(std::clamp(d.render_scale, 25, 400)) / 100.0f;
         gfx::tuning().render_scale.store(scale);
@@ -125,7 +128,8 @@ void install_render(uint64_t base, const play::DisplaySettings& d, int window_w,
         // by the window's height (at least 1), a percentage of the console's 1920x1080
         float scale = 1.0f;
         if (d.render_width > 0 && d.render_height > 0) scale = static_cast<float>(d.render_height) / kTableH;
-        else if (d.render_scale <= 0) scale = host_is_handheld() ? static_cast<float>(window_h) / kTableH : std::max(1.0f, static_cast<float>(window_h) / kTableH);
+        // the console's resolution (see above): the game's targets are not enlarged to the window, the present pass upscales
+        else if (d.render_scale <= 0) scale = host_is_handheld() ? std::min(1.0f, static_cast<float>(window_h) / kTableH) : 1.0f;
         else scale = static_cast<float>(std::clamp(d.render_scale, 25, 400)) / 100.0f;
         gfx::tuning().render_scale.store(scale);
         NXLOG_I(kTag, "aspect 16:9 (%s, window %dx%d): letterboxed on other window shapes", d.aspect > 0 ? "[display] aspect" : "auto", window_w, window_h);

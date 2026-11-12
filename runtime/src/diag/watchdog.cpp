@@ -5,6 +5,8 @@
 // "dump_threads" request file next to the exe.
 #include <windows.h>
 
+#include "nxrt/nxmodule.h"   // import_name: resolved for a report, never on the import path
+
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -117,6 +119,8 @@ void collect_threads(std::vector<ThreadDump>& out) {
                 d.guest_fn = d.rec.ctx->fn;
                 if (d.rec.ctx->in_import && readable(reinterpret_cast<uint64_t>(d.rec.ctx->in_import), 1))
                     d.guest_import = d.rec.ctx->in_import;
+                else if (d.rec.ctx->import_id)
+                    d.guest_import = nxrt::import_name(d.rec.ctx->import_id);   // resolved here, never on the call path
                 d.have_guest = true;
             }
             continue;  // not suspended, nothing to resume
