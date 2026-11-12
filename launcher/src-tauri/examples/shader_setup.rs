@@ -71,7 +71,15 @@ fn main() {
         std::process::exit(1)
     });
     let mut last = String::new();
-    let r = shaders::run(&job, &tools, &AtomicBool::new(false), |p| {
+    // PKP_CANCEL_AFTER=<seconds> presses Pause that long into the run: the tool is killed and what it finished is kept.
+    static CANCEL: AtomicBool = AtomicBool::new(false);
+    if let Some(s) = std::env::var_os("PKP_CANCEL_AFTER").and_then(|v| v.to_str().and_then(|v| v.parse::<u64>().ok())) {
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(s));
+            CANCEL.store(true, std::sync::atomic::Ordering::SeqCst);
+        });
+    }
+    let r = shaders::run(&job, &tools, &CANCEL, |p| {
         if p.message != last {
             println!("[{}] {}", p.phase, p.message);
             last = p.message;
