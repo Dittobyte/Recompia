@@ -123,7 +123,7 @@ void log_cfg(const Cfg& c, bool on) {
                         : on ? ", the compute writes reach the textures through the shadow"
                              : ", host-memory import, the direct path (no shadow)";
 #else
-                        : on ? ", integrated GPU with at most 8 GiB of device-local memory" : ", not Wine or a small integrated GPU";
+                        : on ? ", integrated GPU with at most 8 GiB of device-local memory" : ", not Linux or a small integrated GPU";
 #endif
         NXLOG_I(kTag, "pool_copy %s (%s%s)", on ? "on" : "off", c.mode.c_str(), why);
         if (on)
