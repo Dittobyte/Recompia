@@ -2,8 +2,8 @@
 //! What the launcher does differently on Linux (SteamOS, the Steam Deck, Bazzite, ...).
 //!
 //! The game program is `Game`: pkp.exe everywhere, or, in a Linux package that carries the Linux runtime (libpkp_rt.so next
-//! to the launcher), `pkp`, a native Linux program that pkp_build.py links with `--target linux` and that starts without
-//! Proton. What follows describes pkp.exe on Linux; the native game needs only the shader translator to go through `runner`.
+//! to the launcher) on glibc 2.38 or newer, `pkp`, a native Linux program that pkp_build.py links with `--target linux` and that
+//! starts without Proton. What follows describes pkp.exe on Linux; the native game needs only the shader translator to go through `runner`.
 //!
 //! On Windows the release's Windows tools run and pkp.exe starts directly. On Linux the launcher is a native program (Tauri
 //! draws it with WebKitGTK, so it needs no WebView2), the tools that only prepare files run as Linux programs from
@@ -95,6 +95,34 @@ pub fn windows_program(exe: &Path) -> Result<Command, String> {
 /// The Linux runtime a native Linux package carries next to the launcher (and Set up next to `pkp`).
 pub const NATIVE_RUNTIME: &str = "libpkp_rt.so";
 
+/// The oldest glibc that loads `NATIVE_RUNTIME`: the release builds it on Ubuntu 24.04, where it takes glibc 2.38 symbols
+/// (`__isoc23_*`), and pkp_build.py --target linux links `pkp` against x86_64-linux-gnu.2.38. The Linux launcher itself needs
+/// only 2.35, so an older system (Ubuntu 22.04, Debian 12) keeps pkp.exe through `runner`.
+pub const NATIVE_MIN_GLIBC: (u32, u32) = (2, 38);
+
+/// The running glibc's version, e.g. "2.39".
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+fn system_glibc() -> Option<String> {
+    // SAFETY: gnu_get_libc_version returns a static NUL-terminated string
+    let p = unsafe { libc::gnu_get_libc_version() };
+    (!p.is_null()).then(|| unsafe { std::ffi::CStr::from_ptr(p) }.to_string_lossy().into_owned())
+}
+
+/// Windows, or a C library other than glibc: no native game.
+#[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+fn system_glibc() -> Option<String> {
+    None
+}
+
+/// Whether glibc `version` ("2.39", "2.38.1") is `min` or newer; an unreadable version is not.
+fn glibc_at_least(version: Option<&str>, min: (u32, u32)) -> bool {
+    let mut parts = version.unwrap_or("").split('.').map(|s| s.parse::<u32>().ok());
+    match (parts.next().flatten(), parts.next().flatten()) {
+        (Some(major), Some(minor)) => (major, minor) >= min,
+        _ => false,
+    }
+}
+
 /// The game program of a package: pkp.exe (Windows, or through `runner` on Linux) or the native Linux `pkp`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Game {
@@ -102,9 +130,14 @@ pub struct Game {
 }
 
 impl Game {
-    /// The game of the package whose launcher is in `install_dir`: native when it is a Linux package with `NATIVE_RUNTIME`.
+    /// The game of the package whose launcher is in `install_dir`: native when it is a Linux package with `NATIVE_RUNTIME` on a
+    /// system whose glibc can load it (`NATIVE_MIN_GLIBC`).
     pub fn of(install_dir: &Path) -> Game {
-        Game { native: cfg!(not(windows)) && install_dir.join(NATIVE_RUNTIME).is_file() }
+        Game {
+            native: cfg!(not(windows))
+                && install_dir.join(NATIVE_RUNTIME).is_file()
+                && glibc_at_least(system_glibc().as_deref(), NATIVE_MIN_GLIBC),
+        }
     }
 
     /// The program's file name in the game folder.
@@ -594,4 +627,21 @@ pub fn sync_runtime_files(game: Game, src: &Path, game_dir: &Path) -> Result<(),
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn glibc_versions_against_the_native_minimum() {
+        assert!(glibc_at_least(Some("2.38"), NATIVE_MIN_GLIBC));
+        assert!(glibc_at_least(Some("2.41"), NATIVE_MIN_GLIBC));
+        assert!(glibc_at_least(Some("2.38.1"), NATIVE_MIN_GLIBC));
+        assert!(glibc_at_least(Some("3.0"), NATIVE_MIN_GLIBC));
+        assert!(!glibc_at_least(Some("2.35"), NATIVE_MIN_GLIBC));
+        assert!(!glibc_at_least(Some("2.9"), NATIVE_MIN_GLIBC));
+        assert!(!glibc_at_least(Some("garbage"), NATIVE_MIN_GLIBC));
+        assert!(!glibc_at_least(None, NATIVE_MIN_GLIBC));
+    }
 }
