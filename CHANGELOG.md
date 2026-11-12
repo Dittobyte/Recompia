@@ -8,7 +8,7 @@
   - Now: open **Layout** in the sidebar, then **Appearance > Choose picture...**; pick a PNG, JPEG or WebP, set **Dim** so the text stays easy to read, and **Reset to default** brings the built-in picture back; the picture stays on this PC and is never uploaded
   - Still not: no animated pictures, and no different picture for each page
 
-**Update:** press **Update**, then **Set up again** once. It rebuilds the game code for two new hooks, Story co-op and the shoulder camera. Your saves and shaders are kept; no shader is translated again. A later build that adds no new hooks should not ask again.
+**Update:** press **Update**, then **Set up again** once. It rebuilds the game code (the leaner translation from 0.11.0, and the hook points for Story co-op and the Modtopia mods). Your saves and shaders are kept; no shader is translated again. A later build that adds no new hooks should not ask again.
 
 ### Testers on AMD handhelds, please read
 This Testing build adds logging and a few device checks, and changes no frame-rate settings. We need your logs to learn what helps on the Steam Deck, ROG Ally, Legion Go and similar devices. Play for about twenty minutes the way you normally do, then open **Settings > Testing** and press **Copy handheld report**: it copies one short block with your device, memory, graphics driver, frame summaries and any problems, with user names, folders and addresses removed. Paste it into a bug report and tell us the device, the system (SteamOS, Bazzite and so on), the power mode, your frame cap and what you were doing. If the picture drops to about 10 fps and stays there, or the game freezes, say so and restart the device. This is a Testing build: some rough edges are expected, and your reports are how Stable gets better.
@@ -28,7 +28,7 @@ This Testing build adds logging and a few device checks, and changes no frame-ra
 
 ### Regressions and known problems
 - The Lenovo Legion Go, Go 2, ROG Xbox Ally and MSI Claw A8 now start in handheld mode (picture size, the game's lighter handheld graphics settings, controller prompts, short waits under Proton). This has not been confirmed on those devices yet; if it looks worse than before, set `[am] operation_mode = docked` or `[host] handheld = off` in `pkp.ini`
-- Everyone needs **Set up again** once for this build (two new game hooks). Tell us how long it took and on which device
+- Everyone needs **Set up again** once for this build (the new translation and hook points). Tell us how long it took and on which device
 - The Steam Controller (2026) is still not detected under Proton; use another pad there
 
 ### What to test
@@ -37,6 +37,8 @@ This Testing build adds logging and a few device checks, and changes no frame-ra
 - If the frame rate falls partway through a session and stays low: send the `pkp.log` lines that contain `frames have been slow` and the `hitch:` lines around them (each now ends with the share of time spent waiting), and say how long into the session it began
 - Launcher background (Layout > Appearance > Choose picture...): pick a PNG, JPEG or WebP, move the Dim slider, press Reset to default; tell us if the text is still easy to read
 - Shoulder camera (Settings > Gameplay: Shoulder camera: side and height): tell us what you set and what looked wrong
+- Link Play with a friend on Stable 0.11.1: one of you on this build, one on Stable. Can you join each other? Tell us which side hosted and what the screen said if not
+- The new Mods page (Modtopia mods): does it open and list your mods? Only install mods you trust
 - If Set up stops on a Steam Deck or another Linux handheld: send `shader_cache/stage/harness_error.txt` and `setup.log`
 - If you own a Steam Controller (2026): follow the 15-minute check in `docs/steam-controller-check.md` (which grip is which, whether the small View and Menu buttons are the right way round, the trackpad clicks) and send the table with the exported logs
 
@@ -98,6 +100,30 @@ This Testing build adds logging and a few device checks, and changes no frame-ra
 
 ### Gameplay mods
 - Settings > Gameplay and `pkp.log` now show which gameplay mods and experimental features are on, so you can see at a glance what a start will use
+
+## 0.11.1 (build O: Ocelot Hotfix a1)
+
+**Update:** press **Update**, then **Set up again** once (the game code is translated again for the mods' hook points, several minutes). Your shaders and saves are kept; no shader is translated again.
+
+### Highlights
+- Fixed internet Link Play: 0.11.0 sent hosts and visitors to an old address of the official relay, so no room could be opened or joined
+- Added **Modtopia mods**: Recompia now runs mods made for Modtopia, the mod loader shared with Pokopia Native
+
+### Link Play
+- Fixed the **Internet** choice reaching the official relay: the launcher now uses the relay's permanent address (the game log said "the relay does not answer")
+  - Still on 0.11.0? Type `204.216.111.91:47610` under Link Play > Advanced > Use my own relay or address
+
+### Mods
+- Added Modtopia mods: the same `.pkmod` files work in Recompia and Pokopia Native
+- Added a **Mods** page in the launcher: switch your mods on and off, change their order and settings, and remove them. Put mods into the mods folder to install them
+- Added a permission step: a mod's code runs only after you allow it on the Mods page; a new or changed mod asks again. Mods with only files need no permission
+- Added a **Set up again** prompt when your mods need new hook points (a few minutes; shaders and saves are kept)
+- Link Play: everyone in a session needs the same gameplay mods; the Link Play page lists the ones you have on
+
+### Launcher
+- Faster **Set up again** after an update: only the parts of the game code that changed compile again (one new hook point: 231 ⇒ 9 of 231 parts); the rest come from the compile cache
+  - When an update only changes the runtime, Play says it is a quick relink (about a minute) instead of a 7-minute rebuild
+  - The first rebuild after this version still compiles everything once, to fill the cache
 
 ## 0.11.0 (build O: Ocelot)
 
@@ -173,69 +199,6 @@ Ocelot brings Recompia's own **official relay server**, so friends anywhere in t
 - The new translation of the game code cannot be switched off in `pkp.ini`. To compare, set the environment variable `PKP_LOCALS=off` and press Set up again: that builds the game code the way 0.10.3 does
 - New lines in `pkp.log` every 10 seconds: `tcpu` (processor time by thread) and, with `present_stats = 1` under `[latency]`, `pacing: present timing` (how many refreshes each frame was shown for)
 - If something breaks, these switches in `pkp.ini` bring back the earlier behaviour one at a time, which helps to find the cause: `gpu_split_ms = 0` and `pool_reg_skip_same = false` under `[nvn]`, `poll_wait = false`, `short_sleep = sleep` and `early_wake = off` under `[kernel]`, `boundary_count = render` under `[latency]`
-
-### Online presence (opt-in)
-- New **Share that I am online** switch, off by default, easy to find in three places: the **Online** chip on Home, the **Online** group at the top of Settings > Game, and a new **Online** tab in the game's own Settings screen (all three are the same switch, `[pkp] online_presence` in `pkp.ini`)
-  - Before: the launcher sent nothing about you to any Recompia server
-  - Now: while it is on and the game runs, the launcher tells the Recompia online server you are playing: an optional online name (empty: anonymous), your version, Windows or Linux, and how many Pokémon have a home in your save. Your save, profile nickname and user ID are never sent. Switching it off in the game takes you off the list within a few seconds. The first time you press Play, the launcher asks once whether to switch it on; the answer is no unless you pick yes. **Reset my online ID** (Settings > Game) starts a new ID. No shader rebuild; the game's Online tab comes with this build's **Set up again**
-  - Still not: recompia.com has no page that shows who is online yet, and the online name can only be typed in the launcher
-
-### The Testing tab
-- Added a **Testing** tab to Settings, shown only on the Testing channel: send logs, read them, and switch the features still being tried on or off
-  - **Export and report** makes one zip of `pkp.log`, `pkp.log.prev`, the crash files, `setup.log` and `pkp.ini`, opens its folder (`testing-logs` next to `pkp.exe`) and the bug report form. Drag the zip into the form: the launcher has no GitHub login, so nothing is uploaded for you
-  - Names in paths, your account and server settings and IP addresses are removed before anything is written. Long logs keep their end, so the zip stays under GitHub's 25 MB limit
-  - **View logs** shows the end of each file in the launcher, with a filter and a Copy button
-  - **Experimental features** has **Mouse in the game's menus** and the **Taller view** on 16:10 screens, both off by default. The gameplay options (Camera aim, Running jump, Sort, Search, Quit Game) are off by default in this Testing build; switch them on here
-- The touch screen **Menu button** is automatic: on when the machine has a touch screen, so a handheld keeps its way into the menu
-
-### Link Play
-- Updated the co-op module to pokopia-native 1.4.0. It still plays with pokopia-native 1.3.0 to 1.4.0 and with earlier builds of this game: the way games talk to each other did not change
-- Added **automatic port forwarding** when you host over the internet without a relay
-  - Before: your router had to forward port 47600 (TCP and UDP) by hand
-  - Now: while you host, the game asks your router to forward it (UPnP, NAT-PMP or PCP) and gives it back when you stop. **Ask the router to open the port** on the Link Play page's Host view (`[net] port_forward`) turns it off
-  - Still not: a router with UPnP switched off, or an internet provider that shares one address among many homes, can't be helped by this; `pkp.log` says which, in a `nat:` line. A relay you run on this PC still needs its own port forwarded. Quitting the game while hosting leaves the forwarded port until its one-hour lease runs out
-- `pkp.log` no longer contains your whole room code, only its first group, so a log is safe to attach to a bug report. The launcher still shows the whole code
-
-### Game
-- NVIDIA graphics cards no longer risk a crash (device lost) in six of the game's compute shaders when a loop count is not the game's: the count is held to the size of the table the loop walks (on other cards, to 16384). From pokopia-native 1.4.0; `[nvn] loop_guard = off` turns it off
-  - The lighting shader now has the guard in all four of its variants, not one. Two of the unguarded ones ran in a game that fell from 95 to 3 fps after 8 minutes on an RTX 3060 (#309)
-- **Story co-op** (experimental, `[pkp] link_story_coop`): the host's own story no longer stops while friends are visiting. Before, any Link Play session turned the host's story talks into "Bring <host> here to say hi!" and paused its requests. From pokopia-native 1.4.0
-
-### Launcher
-- Added **Copy handheld report** to Settings > Testing (Testing channel only)
-  - Before: a tester on an AMD handheld had to send the whole `pkp.log`, which holds names and paths, and say by hand what mattered
-  - Now: one press copies a short block with only the useful lines of `pkp.log` (handheld detection, graphics card and driver, memory, the frame summaries and any graphics reset or crash), with user names, home folders, addresses and room codes removed, ready to paste into a bug report. Add your device, system, power mode and what you were doing
-  - Still not: it does not send anything and does not replace **Export and report** when a full log is asked for
-- Added **arrow-key** navigation to the launcher, for a handheld whose d-pad reaches it as keys
-  - Before: Steam's default layout for a non-Steam shortcut sends the d-pad as arrow keys, and the launcher ignored them
-  - Now: the arrow keys move between controls, Enter presses, Escape goes back (closes a question, or returns Home), the same as the pad
-  - Text boxes, sliders and drop-downs keep the arrows they need
-- New **Show on Discord while playing** in the launcher's Settings: shows "Playing Recompia" and how long you have played on your Discord profile while the game runs. Off by default; Discord must be open. Update only: no shader rebuild, no Set up again
-
-### Gameplay
-- Fixed **camera aim** staying off after you used the Joy-Con 2 mouse mode once (#367)
-  - Before: turning mouse mode off left the game stuck half in it, so camera aim never came back until a restart
-  - Now: pressing the mouse mode key again fully leaves mouse mode and camera aim works again right away
-- Fixed the Joy-Con 2 mouse mode hitting the wrong block (#367)
-  - Before: clicking broke or placed a block off to the side of the one under the pointer
-  - Now: your character turns to the block under the pointer before swinging, so the click lands on it
-
-### Controls
-- Fixed the **Mouse Mode Key** row in **Settings > Mouse** (#367)
-  - Before: pressing a key on the row did nothing, and after one change the row got stuck at the end of its bar
-  - Now: press left or right on the row (or click it), the row says "Press the new key", then press any key, mouse button or wheel notch. Esc cancels. It works every time, and F1 can't be picked by mistake
-- Added **Controller Button** and **Presses** rows to the game's own Settings > **Controller** tab: remap any controller button without the F1 page
-  - Before: giving a rear grip, a trackpad click or another controller button a Switch button was only possible in Settings (F1) > Controller, or in `controls.ini`
-  - Now: on Settings > Controller, press left or right on **Controller Button** to pick a button (for example Right grip R4), then on **Presses** pick what it presses on the Switch pad (Default, Nothing, A, B ...). Save as with any other row; Cancel keeps the old layout. A button the file maps to several buttons at once shows **Custom** and is left as it is
-  - Still not: it shows one button at a time; the F1 page still lists them all
-- Added two more bindable controller buttons: the **Steam button** and the **extra button** (the Steam Controller (2026)'s and the Steam Deck's quick-access "...", an Xbox Share, a PlayStation 5 microphone button) (Settings F1 > Controller > Pad buttons, or `guide` and `misc1` in `[padmap]` of `controls.ini`)
-  - Before: they pressed nothing and could not be given a Switch button
-  - Now: each has a row and can press any Switch button; with the Steam icons on, a prompt for a button you gave them shows an **S** or three dots. They press nothing until you pick one
-  - Still not: with Steam running, Steam may keep these two buttons for itself (start the game outside Steam to use them); the Steam Controller (2026)'s trigger clicks are not here, because the controller library in this build does not report them
-- Changed the **Steam Controller** button icons to fit the new Steam Controller (2026)
-  - Before: the icons were the original 2015 controller's: its small buttons were the `<` and `>` arrows and it had two rear grips, so R4 and R5 (or L4 and L5) both showed "RG" (or "LG")
-  - Now: View and Menu show the same symbols as on a Steam Deck, and each rear grip has its own icon: **L4**, **L5**, **R4** and **R5**
-  - Still not: it needs the new `prompt_icons.pak` that comes with the build; the Steam button, the quick-access (...) button and the trigger clicks have no prompt icon yet
 
 ## 0.10.3 (build N: Newt Hotfix a3)
 
