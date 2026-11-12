@@ -96,4 +96,14 @@ export const api = {
   linkProbe: (args) => invoke('link_probe', args),   // { addr } -> { kind: answered | refused | timed_out | bad_address, ms?, message? }
   setupFacts: () => invoke('setup_facts'),           // -> { firewalld: { state, zones, ports } }
   tailscalePeers: () => invoke('tailscale_peers'),   // -> { found, error?, self, peers: [{ name, dns_name, ips, online, hosting }] }
+
+  // Mods (Modtopia)
+  modsList: () => invoke('mods_list'),
+  modsSetEnabled: (args) => invoke('mods_set_enabled', args),   // { id, on, allow }
+  modsMove: (args) => invoke('mods_move', args),   // { id, delta }
+  modsSetSetting: (args) => invoke('mods_set_setting', args),   // { id, key, number | text }
+  modsRemove: (args) => invoke('mods_remove', args),   // { id }
+  modsCatalog: (args) => invoke('mods_catalog', args),   // { refresh }
+  modsInstall: (args) => invoke('mods_install', args),   // { id }
+  openModsDir: () => invoke('open_mods_dir'),
 };

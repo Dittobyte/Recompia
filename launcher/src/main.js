@@ -19,6 +19,7 @@ import { loadLayout, applyLayout } from './layout-apply.js';
 import { loadBackground, applyBackground } from './background-apply.js';
 import * as home from './pages/home.js';
 import * as linkplay from './pages/linkplay.js';
+import * as mods from './pages/mods.js';
 import * as news from './pages/news.js';
 import * as settings from './pages/settings.js';
 import * as setup from './pages/setup.js';
@@ -27,6 +28,7 @@ import * as setup from './pages/setup.js';
 const PAGES = {
   home: { mod: home, nav: t('Home'), icon: 'house', art: 'sharp' },
   linkplay: { mod: linkplay, nav: t('Link Play'), icon: 'users' },
+  mods: { mod: mods, nav: t('Mods'), icon: 'puzzle' },
   news: { mod: news, nav: t("What's New"), icon: 'newspaper' },
   settings: { mod: settings, nav: t('Settings'), icon: 'settings' },
   setup: { mod: setup },
