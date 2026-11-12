@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fixed **Set up** failing with "No such file or directory: ...\.lean-flows\...pkl" after the launcher was closed during an earlier Set up: that build kept running in the background and cleared the files of the new one. Set up's tools now end when the launcher closes (on Windows and Linux), and a new Set up no longer mistakes an unrelated program for a build still running. Update only: no shader rebuild, no Set up again
 - Fixed the Linux launcher still showing **Set up** after setup had finished: it now reads the runtime API from the native game and library, so matching files unlock **Play**. Mismatched releases still require repair. Update only: no shader rebuild, no Set up again
 
 - Fixed objects and effects staying invisible for a long time the first time they appear, until a restart, on graphics cards without pipeline libraries (such as the RX 580): the pipelines a visible object waits for are now built before the ones prepared ahead, on more threads on those cards (#515). Update only: no shader rebuild, no Set up again

@@ -369,7 +369,7 @@ pub(crate) fn run_tool(mut cmd: Command, cancel: &AtomicBool, idle: bool, log: O
         }
     };
     say(&format!("run: {} {}", name, cmd.get_args().map(|a| a.to_string_lossy().to_string()).collect::<Vec<_>>().join(" ")));
-    let mut child: Child = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(|e| format!("could not start {}: {}", name, e))?;
+    let mut child: Child = crate::proc_tree::spawn(cmd.stdout(Stdio::piped()).stderr(Stdio::piped())).map_err(|e| format!("could not start {}: {}", name, e))?;
     let (tx, rx) = mpsc::channel::<String>();
     let out = child.stdout.take().unwrap();
     let tx2 = tx.clone();

@@ -161,6 +161,52 @@ def _release_lock(path):
         pass
 
 
+def _build_alive(pid):
+    """Whether process `pid` is a live build: this Python, still running. Windows reuses process ids soon, so a lock left by a
+    crashed build may name an unrelated process; the image path tells them apart. os.kill(pid, 0) is no test on Windows:
+    signal 0 is CTRL_C_EVENT there, sent to a console process group."""
+    if os.name != 'nt':
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+    import ctypes
+    from ctypes import wintypes
+    k = ctypes.WinDLL('kernel32', use_last_error=True)
+    k.OpenProcess.restype = wintypes.HANDLE
+    k.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    k.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+    k.QueryFullProcessImageNameW.argtypes = (wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD))
+    k.CloseHandle.argtypes = (wintypes.HANDLE,)
+    h = k.OpenProcess(0x1000, False, pid)              # PROCESS_QUERY_LIMITED_INFORMATION
+    if not h:       # gone; or a protected system process (limited query is open even to another user's elevated ones)
+        return False
+    try:
+        code = wintypes.DWORD()
+        if not k.GetExitCodeProcess(h, ctypes.byref(code)) or code.value != 259:     # STILL_ACTIVE
+            return False
+        buf = ctypes.create_unicode_buffer(32768)
+        n = wintypes.DWORD(len(buf))
+        if not k.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(n)):
+            return True
+        return os.path.normcase(buf.value) == os.path.normcase(os.path.abspath(sys.executable))
+    finally:
+        k.CloseHandle(h)
+
+
+def _end_group_on_sigterm():
+    """The launcher has SIGTERM sent here when it goes away (PR_SET_PDEATHSIG, Linux). End the whole build then, the lifter's
+    workers and the compilers too, so none keeps writing into build/ under the next Set up. Only when this script leads its
+    own process group, as the launcher starts it; run from a shell it keeps Python's default."""
+    import signal
+    if os.name == 'nt' or os.getpgid(0) != os.getpid():
+        return
+    signal.signal(signal.SIGTERM, lambda *_: os.killpg(0, signal.SIGKILL))
+
+
 def say(kind, *parts):
     print('@' + kind + ' ' + ' '.join(str(p) for p in parts), flush=True)
 
@@ -917,15 +963,10 @@ def main():
             pid = int(open(lock_file).read().strip() or 0)
         except (OSError, ValueError):
             pid = 0
-        if pid and pid != os.getpid():
-            try:
-                os.kill(pid, 0)          # a live build still holds it
-                raise Fail('Another Set up is building this game folder already (process %d).' % pid)
-            except ProcessLookupError:
-                pass
-            except PermissionError:
-                raise Fail('Another Set up is building this game folder already (process %d).' % pid)
+        if pid and pid != os.getpid() and _build_alive(pid):
+            raise Fail('Another Set up is building this game folder already (process %d).' % pid)
     open(lock_file, 'w').write(str(os.getpid()))
+    _end_group_on_sigterm()
     t0 = time.time()
     times = {}
     try:
