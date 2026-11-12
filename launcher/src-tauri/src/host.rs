@@ -411,7 +411,7 @@ pub fn native_set_up(
     if !apphost.is_file() {
         runner.arg(&t.harness);
     }
-    let mut child = runner
+    runner
         .arg("--batch")
         .arg(&corpus)
         .arg("--out")
@@ -419,9 +419,8 @@ pub fn native_set_up(
         .args(["--jobs", "6", "--host", harness_host(), "--no-val"])   // as the Windows setup
         .env("DOTNET_gcServer", "0")
         .env("DOTNET_GCHeapHardLimit", "0x60000000")
-        .stdout(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("could not run the shader translator: {}", e))?;
+        .stdout(std::process::Stdio::piped());
+    let mut child = crate::proc_tree::spawn(&mut runner).map_err(|e| format!("could not run the shader translator: {}", e))?;
     // The harness prints "  <n>/<total>  <s> s" every 500 blocks: that is the progress (counting .spv files stalls while a
     // second run overwrites the ones a stopped run left behind).
     let now = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));

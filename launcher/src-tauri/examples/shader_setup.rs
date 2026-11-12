@@ -31,6 +31,8 @@ mod ini;
 #[allow(dead_code, clippy::all)]
 #[path = "../src/paths.rs"]
 mod paths;
+#[path = "../src/proc_tree.rs"]
+mod proc_tree;
 #[allow(dead_code)]
 #[path = "../src/runtime_api.rs"]
 mod runtime_api;

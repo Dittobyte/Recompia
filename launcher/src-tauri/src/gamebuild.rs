@@ -218,7 +218,7 @@ pub fn run(job: &Job, tools: &Tools, cancel: &AtomicBool, mut report: impl FnMut
         }
     };
     say(&format!("run: {} {}", tools.python.display(), cmd.get_args().map(|a| a.to_string_lossy().to_string()).collect::<Vec<_>>().join(" ")));
-    let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(|e| format!("could not start the game build ({}): {}", tools.python.display(), e))?;
+    let mut child = crate::proc_tree::spawn(cmd.stdout(Stdio::piped()).stderr(Stdio::piped())).map_err(|e| format!("could not start the game build ({}): {}", tools.python.display(), e))?;
     let out = child.stdout.take().unwrap();
     let err = child.stderr.take().unwrap();
     let (tx, rx) = std::sync::mpsc::channel::<String>();

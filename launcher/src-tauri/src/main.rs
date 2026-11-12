@@ -35,6 +35,7 @@ mod open;
 mod paths;
 mod play;
 mod presence;
+mod proc_tree;
 mod preflight;
 mod prompts;
 mod profile_cmds;
