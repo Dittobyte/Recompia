@@ -2,10 +2,21 @@
 
 ## Unreleased
 
+- New **Item editor (experimental)** in Settings > Gameplay, off by default: it adds an **Items** tab to the game's Settings screen where you change how many of an item in your bag you hold (up to the game's stack limit). It does not add new items and is off during Link Play. Back up your save first. Update only: no shader rebuild, no Set up again
+- New **Aspect Ratio** setting in the game's Settings > Display and in the launcher (Auto, 16:9, 16:10, 21:9, 32:9; applies after a restart): 16:9 now keeps the game in 16:9 on a 16:10 or ultrawide screen. The toggle that only chose black bars over stretching is now called **Letterbox** (#564). Update only: no shader rebuild, no Set up again
+
+### Mods
+- Added a **Mods** tab to the game's own Settings: pick a mod, switch it on or off (applies at the next start), see its state and change its settings, which reach the mod at once
+- Mods can now take screenshots (without the game's overlay menus in them) and react to keyboard keys
+- Mods can tint the final picture (colour presets, colorblind filters), show a picture beside their messages, and make HTTPS requests to the sites their own description names (no redirects, cookies or sign-in)
+- Changing mods that need other hook points now translates only the game part they touch: a plan with main-only points no longer redoes the other three parts (on PC: about 4.5 minutes for main-only points, under a minute for points outside main)
+
 ### Linux
 - The game runs natively on Linux: no Proton, no Wine. The download is `PokopiaRecomp-<version>-linux-x64.tar.gz`, with the launcher as an AppImage and the runtime as `libpkp_rt.so`, the same runtime the Windows build links as `pkp_rt.dll`
 - The runtime reaches the system directly instead of through the Windows API: `runtime/src/os/` holds a POSIX layer for files, memory mappings, sockets, threads, timers, paths and processes, and SDL3 plays the audio and opens the window. `pkp` is linked from the player's own dump with the bundled Zig, as on Windows
 - `libpkp_rt.so` needs glibc 2.35 or newer (Ubuntu 22.04+, Debian 12+, Fedora 36+, SteamOS 3) and nothing else: SDL3 is linked in, and every other backend library is opened at run time, so a missing one switches that backend off instead of failing the start
+- The defaults that fix a Linux kernel or Mesa behaviour now ask the kernel, not Wine: a kernel submission's pool walk, the lazy and shadow pool imports, the submit thread and its batching, the short sleep's timed address wait, the graphics pipeline library upgrade, the loop guard and the pipeline cache save all apply to the native build, which is what the Proton build had
+- Write tracking arms a whole range with one `mprotect` instead of one per 4 KiB page (a 10 MiB arm measured 3132 us -> 34 us), and the timed address wait is a futex, so the game's ~100 us GPU-fence polls no longer keep two cores busy
 - Steam Deck: add the AppImage as a non-Steam game. An AppImage leaves the graphics stack to the host on purpose, so it needs `libEGL`, `libGL`, `libGLESv2` and `libvulkan`, which every desktop and SteamOS ship
 - Still not: **FSR 3 and DLSS**. Both are Windows-only SDKs and the native build turns them off, where the Proton build had them; FSR 1 and NIS are plain compute shaders and still run. Also Link Play against a peer, and a real gamepad
 
