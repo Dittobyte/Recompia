@@ -66,13 +66,6 @@ AutoDecision g_auto;
 
 bool auto_copy() {
     if (host_is_linux()) return true;
-#if defined(__APPLE__)
-    // On by default, whatever the device supports. MoltenVK 1.4 does implement VK_EXT_external_memory_host (the log says
-    // "host-memory import available") and importing is far cheaper than mirroring 25-40 MB a frame, but with the direct path
-    // the compute-written data never reaches the textures: the world renders black and the character white. The copy is what
-    // makes those writes land, so it stays until that path is fixed. [nvn] pool_copy = off still selects the direct path.
-    return true;
-#endif
     if (!active()) return false;     // an early stats call must not latch auto off
     gfx::Device& d = device();
     std::lock_guard<std::mutex> lk(g_auto_mu);

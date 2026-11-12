@@ -884,6 +884,11 @@ VkPipeline build_graphics_pipeline(const GraphicsKey& key, const ProgLayout& lay
 
     VkPipelineMultisampleStateCreateInfo ms = {VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
     ms.rasterizationSamples = static_cast<VkSampleCountFlagBits>(key.samples ? key.samples : 1);
+    {   // one line per sample count the game actually builds pipelines for: MSAA multiplies the fill cost, worth knowing
+        static std::once_flag seen[8];
+        const uint32_t n = key.samples & 7u;
+        std::call_once(seen[n], [n] { NXLOG_I(kTag, "pipelines built with %u samples", n ? n : 1u); });
+    }
     ms.alphaToCoverageEnable = key.alpha_to_coverage ? VK_TRUE : VK_FALSE;
 
     VkPipelineDepthStencilStateCreateInfo ds = {VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};

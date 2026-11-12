@@ -194,6 +194,7 @@ LogLevel log_parse_level(const char* s, LogLevel fallback) {
     if (v == "info") return LogLevel::Info;
     if (v == "debug") return LogLevel::Debug;
     if (v == "trace") return LogLevel::Trace;
+    if (v == "off" || v == "none" || v == "silent") return LogLevel::Off;
     if (v.size() == 1 && v[0] >= '0' && v[0] <= '4') return static_cast<LogLevel>(v[0] - '0');
     return fallback;
 }

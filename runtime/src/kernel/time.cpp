@@ -2,6 +2,12 @@
 // High-resolution sleep (the system tick is in core/clock.cpp). Pattern from smo-recomp runtime/os/os_threads.c sleep_ns.
 #include <windows.h>
 
+#if defined(__APPLE__)
+#include <mach/mach_time.h>
+#elif defined(__linux__)
+#include <time.h>
+#endif
+
 #include <algorithm>
 #include <atomic>
 #include <string>
@@ -56,8 +62,10 @@ const ShortCfg& short_cfg() {
         const bool hosted = linux_kernel && (m == "sleep" || m == "wait" || (m == "auto" && host_is_handheld()));   // not yielded through
 #else
         // No ntdll on the POSIX hosts, so NtDelayExecution (short_sleep = sleep) has no meaning there and the address wait is the only
-        // short sleep that is not a yield: the futex in early_wake.cpp. auto keeps the Windows rule, wait on a handheld (a Steam Deck or
-        // a Legion Go S polls its GPU fences and shares one power budget with the GPU), yield elsewhere.
+        // short sleep that is not a yield: the futex on Linux and the ulock on macOS, both in early_wake.cpp. auto uses it on every
+        // host that has one: a 100 us poll costs a SwitchToThread syscall per round when it yields, and with forty guest threads
+        // polling GPU fences the yields take the cores the render thread needs (45 fps before, 58 after on an M3). yield stays
+        // available as an explicit choice.
         const bool hosted = m == "wait" || (m == "auto" && host_is_handheld());
 #endif
         if (hosted && m != "sleep" && detail::address_wait_available()) {
@@ -149,6 +157,40 @@ bool wait_sleep(int64_t t0, int64_t ns, const uint32_t* token, const std::atomic
 
 // The calling thread's high-resolution waitable timer for ns (> 0); Sleep() in whole milliseconds without one.
 void timer_wait(int64_t ns) {
+#if defined(__APPLE__) || defined(__linux__)
+    // A direct precise sleep, not the waitable-timer shim: that one wakes a worker thread on a condition variable, the worker
+    // signals an event, and this thread then has to be scheduled to return from its wait. Two context switches per call make a
+    // 1 ms guest sleep cost about 1.4 ms, and Pokopia's frame loop sleeps out most of its frame in 1 ms steps, so the frame
+    // inherited the error (24 ms instead of the 16.7 ms it paces for). mach_wait_until and clock_nanosleep take an absolute
+    // monotonic deadline and return within tens of microseconds of it.
+#if defined(__APPLE__)
+    static const mach_timebase_info_data_t tb = [] {
+        mach_timebase_info_data_t t{};
+        mach_timebase_info(&t);
+        return t;
+    }();
+    if (!tb.numer) {
+        Sleep(static_cast<DWORD>((ns + 999999) / 1000000));
+        return;
+    }
+    const uint64_t ticks = static_cast<uint64_t>(ns) * tb.denom / tb.numer;
+    // A spin over the last microseconds of a short wait was tried and rejected: the kernel's wake latency (about 50 us on an M3)
+    // is longer than the margin, so the wake lands after the deadline anyway, and the title scene measured 53.1 fps against 57.9
+    // without it. The guest polls its fences about 16,500 times a second at 230 us a round; each round overshoots by 50 us, which
+    // is 21% and not reachable from here without spinning through the wait itself.
+    mach_wait_until(mach_absolute_time() + ticks);
+#else
+    timespec ts{};
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    ts.tv_sec += static_cast<time_t>(ns / 1000000000);
+    ts.tv_nsec += static_cast<long>(ns % 1000000000);
+    if (ts.tv_nsec >= 1000000000L) {
+        ts.tv_nsec -= 1000000000L;
+        ++ts.tv_sec;
+    }
+    clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, nullptr);
+#endif
+#else
     static thread_local HANDLE timer = nullptr;
     static thread_local bool no_timer = false;
     if (!timer && !no_timer) {
@@ -161,6 +203,7 @@ void timer_wait(int64_t ns) {
         Sleep(static_cast<DWORD>((ns + 999999) / 1000000));
     else
         WaitForSingleObject(timer, INFINITE);
+#endif
 }
 
 void sleep_once(int64_t ns) {
