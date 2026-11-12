@@ -130,6 +130,32 @@ int region_split_at(uintptr_t a) {
     return i + 1;
 }
 
+// Merges the neighbours in [first, last] that describe the same thing now: one state, one protection, one mapping, one section
+// slice. Splitting a region at both ends of every protect call otherwise leaves one entry per call behind, and every later call
+// walks the table: the write tracker arms and disarms the same pages thousands of times a second. The caller holds g_reg_mu.
+//
+// `last` is region_split_at()'s answer for the end of the range, which is -1 when the range runs past the final region; the
+// merge then walks to the end of the table. The region before `first` is considered too: restoring the protection a page
+// already had splits it off and leaves the entry before it describing the same thing, so a repeated arm/disarm of the same
+// pages would otherwise leave one entry per page.
+void region_coalesce(size_t first, int last) {
+    if (g_regions.size() < 2) return;
+    const size_t end = last < 0 ? g_regions.size() : static_cast<size_t>(last);
+    for (size_t i = first > 0 ? first - 1 : 0; i < end && i + 1 < g_regions.size();) {
+        Region& x = g_regions[i];
+        const Region& y = g_regions[i + 1];
+        const bool same = x.base + x.size == y.base && x.state == y.state && x.protect == y.protect && x.own_mapping == y.own_mapping &&
+                          x.section_view == y.section_view && x.section == y.section && (!x.section_view || x.section_off + x.size == y.section_off);
+        if (!same) {
+            ++i;
+            continue;
+        }
+        if (y.section_view && y.section) release(y.section);   // the merged entry keeps x's reference
+        x.size += y.size;
+        g_regions.erase(g_regions.begin() + static_cast<std::ptrdiff_t>(i + 1));
+    }
+}
+
 // ---- protection translation -------------------------------------------------------------------------------------
 // PAGE_EXECUTE* loses PROT_EXEC: guest code is never executed (D7), and an executable anonymous mapping on arm64
 // macOS needs MAP_JIT plus the allow-jit entitlement.
@@ -159,27 +185,45 @@ DWORD protect_of_posix(int prot, bool writable_copy) {
 // page cannot get a protection of its own on a 16 KiB host page, and applying guest runs one by one lets a later
 // read-only run take write access away from a page that is read-write in the guest: on macOS that write dies with SIGBUS
 // (a protection fault, not a segfault), which is how the first sdk bring-up failed. The caller holds g_reg_mu.
-int host_page_protect(uintptr_t h) {
+//
+// *i is where the walk left off: the first region that can still overlap a later page. Both lists are sorted, so a range is
+// read in one forward pass over the table rather than once per page (the old form scanned every region for every page, and
+// write tracking applies a range thousands of times a second).
+int host_page_protect(uintptr_t h, size_t* i) {
     const uintptr_t end = h + host_page();
     int p = PROT_NONE;
-    for (const Region& r : g_regions) {
+    for (size_t k = *i; k < g_regions.size(); ++k) {
+        const Region& r = g_regions[k];
         if (r.base >= end) break;
         if (r.base + r.size <= h) continue;
-        if (r.state != MEM_COMMIT) continue;
-        p |= prot_of(r.protect);
+        if (r.state == MEM_COMMIT) p |= prot_of(r.protect);
     }
+    while (*i < g_regions.size() && g_regions[*i].base + g_regions[*i].size <= h) ++*i;
     return p;
 }
 
 // Applies the guest-granular table to the host pages covering [base, base+size). Call after the table was updated; the
 // pages outside [base, base+size) that share a host page with it are recomputed too. The caller holds g_reg_mu.
+//
+// One mprotect per run of pages that end up with the same protection, not one per page. This is the hot path of the write
+// tracker: arming a 10 MiB pool-copy range used to be 2,560 syscalls, each splitting a VMA and flushing the TLB of every
+// thread, and it cost 32 ms of a frame on a Steam Deck (a report against the native Linux build). A run is now one call.
 bool apply_host_protect(uintptr_t base, uintptr_t size) {
     if (size == 0) return true;
+    const uintptr_t page = host_page();
     const uintptr_t a = round_down(base), b = round_up(base + size);
-    for (uintptr_t h = a; h < b; h += host_page()) {
-        if (::mprotect(reinterpret_cast<void*>(h), host_page(), host_page_protect(h)) != 0) return false;
+    size_t i = 0;
+    while (i < g_regions.size() && g_regions[i].base + g_regions[i].size <= a) ++i;
+    uintptr_t run = a;
+    int run_prot = host_page_protect(a, &i);
+    for (uintptr_t h = a + page; h < b; h += page) {
+        const int p = host_page_protect(h, &i);
+        if (p == run_prot) continue;
+        if (::mprotect(reinterpret_cast<void*>(run), h - run, run_prot) != 0) return false;
+        run = h;
+        run_prot = p;
     }
-    return true;
+    return ::mprotect(reinterpret_cast<void*>(run), b - run, run_prot) == 0;
 }
 
 // ---- the free/occupied question for a fixed reservation -----------------------------------------------------------
@@ -352,7 +396,6 @@ LPVOID VirtualAlloc(LPVOID addr, SIZE_T size, DWORD type, DWORD protect) {
         // so committing only applies the protection; a plain reservation needs the mprotect as well.
         const int lo = region_split_at(want);
         const int hi = region_split_at(want + bytes);
-        (void)hi;
         for (int k = lo; k >= 0 && k < static_cast<int>(g_regions.size()); ++k) {
             Region& r = g_regions[static_cast<size_t>(k)];
             if (r.base >= want + bytes) break;
@@ -360,6 +403,7 @@ LPVOID VirtualAlloc(LPVOID addr, SIZE_T size, DWORD type, DWORD protect) {
             r.state = MEM_COMMIT;
             r.protect = protect;
         }
+        if (lo >= 0) region_coalesce(static_cast<size_t>(lo), hi);
         if (!apply_host_protect(want, bytes)) {
             SetLastError(ERROR_NOT_ENOUGH_MEMORY);
             return nullptr;
@@ -417,7 +461,6 @@ BOOL VirtualFree(LPVOID addr, SIZE_T size, DWORD type) {
         }
         const int lo = region_split_at(a);
         const int hi = region_split_at(a + size);
-        (void)hi;
         for (int k = lo; k >= 0 && k < static_cast<int>(g_regions.size()); ++k) {
             Region& q = g_regions[static_cast<size_t>(k)];
             if (q.base >= a + size) break;
@@ -425,6 +468,7 @@ BOOL VirtualFree(LPVOID addr, SIZE_T size, DWORD type) {
             q.state = MEM_RESERVE;
             q.protect = PAGE_NOACCESS;
         }
+        if (lo >= 0) region_coalesce(static_cast<size_t>(lo), hi);
         apply_host_protect(a, size);
         return TRUE;
     }
@@ -446,14 +490,15 @@ BOOL VirtualProtect(LPVOID addr, SIZE_T size, DWORD protect, PDWORD old_protect)
         return FALSE;
     }
     if (old_protect) *old_protect = g_regions[static_cast<size_t>(i)].protect;
-    region_split_at(a);
-    region_split_at(a + size);
-    for (Region& r : g_regions) {
+    const int lo = region_split_at(a);
+    const int hi = region_split_at(a + size);
+    for (int k = lo; k >= 0 && k < static_cast<int>(g_regions.size()); ++k) {
+        Region& r = g_regions[static_cast<size_t>(k)];
         if (r.base >= a + size) break;
-        if (r.base + r.size <= a) continue;
         r.protect = protect;
         if (r.state == MEM_RESERVE && (protect & 0xFF) != PAGE_NOACCESS) r.state = MEM_COMMIT;
     }
+    if (lo >= 0) region_coalesce(static_cast<size_t>(lo), hi);
     // One pass over the host pages: a guest run that shares a 16 KiB host page with another must not undo it.
     if (!apply_host_protect(a, size)) {
         SetLastError(ERROR_INVALID_PARAMETER);
