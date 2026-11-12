@@ -417,6 +417,11 @@ bool Device::init(const DeviceDesc& desc, std::string* error) {
         const char* const* pe = platform::vulkan_instance_extensions(&cnt);
         for (uint32_t i = 0; pe && i < cnt; ++i) inst_exts.push_back(pe[i]);
     }
+    // macOS: MoltenVK is a portability (non-conformant) driver. A portability implementation lists no device unless the instance asks
+    // for portability devices, and it keeps VK_KHR_portability_subset off the device until this is set. KosmicKrisp is conformant and
+    // is listed either way; without the flag a Vulkan Loader (the LunarG SDK, the loader bundled in the app) hides MoltenVK entirely.
+    const bool x_portability = has_iext(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+    if (x_portability) inst_exts.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
     const bool x_colorspace = !headless && has_iext(VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME);   // HDR10 / scRGB entries in the surface format list
     if (x_colorspace) inst_exts.push_back(VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME);
     if (has_iext(VK_EXT_DEBUG_UTILS_EXTENSION_NAME)) {
@@ -453,6 +458,7 @@ bool Device::init(const DeviceDesc& desc, std::string* error) {
     ici.ppEnabledLayerNames = inst_layers.data();
     ici.enabledExtensionCount = static_cast<uint32_t>(inst_exts.size());
     ici.ppEnabledExtensionNames = inst_exts.data();
+    if (x_portability) ici.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
     ici.pNext = vfeat_ok ? static_cast<void*>(&vfeat) : (debug_utils_ ? static_cast<void*>(&dbg) : nullptr);
     VkResult r = vkCreateInstance(&ici, nullptr, &instance_);
     if (r != VK_SUCCESS) return fail("vkCreateInstance failed (" + std::to_string(r) + ")");
@@ -653,6 +659,12 @@ bool Device::init(const DeviceDesc& desc, std::string* error) {
     if (x_ll2) dev_exts.push_back(VK_NV_LOW_LATENCY_2_EXTENSION_NAME);
     const bool x_aal = !headless && add_ext(VK_AMD_ANTI_LAG_EXTENSION_NAME, &aal);
     const bool pw_exposed = has_dext("VK_KHR_present_wait"), pid_exposed = has_dext(VK_KHR_PRESENT_ID_EXTENSION_NAME);   // offered by the device (log line only)
+    // A portability driver (MoltenVK) must have VK_KHR_portability_subset enabled when it offers it: the spec requires it, and
+    // MoltenVK refuses vkCreateDevice (VK_ERROR_EXTENSION_NOT_PRESENT) otherwise. The name is spelled out: its macros live in
+    // vulkan_beta.h, behind VK_ENABLE_BETA_EXTENSIONS, and enabling the extension needs none of its structs.
+    static constexpr const char* kPortabilitySubset = "VK_KHR_portability_subset";
+    const bool x_portability_subset = has_dext(kPortabilitySubset);
+    if (x_portability_subset) dev_exts.push_back(kPortabilitySubset);
     features_.external_memory_host = has_dext(VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME);
     if (features_.external_memory_host) dev_exts.push_back(VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME);
     if (has_dext(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME)) { dev_exts.push_back(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME); features_.push_descriptor = true; }

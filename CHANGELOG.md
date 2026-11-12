@@ -8,6 +8,9 @@
 - The launcher can update itself on macOS, as it already does on Windows and Linux. The release is now one zip, `Recompia-<version>-macos-arm64.zip`: `PokopiaLauncher.app` for a first install, and inside it the launcher and `tools/` that an update replaces in place. After the swap the app bundle is signed again with the player's own certificate when the self-sign script made one, else ad-hoc, so the updated bundle starts
   - No DMG any more: the zip is the whole download, and Gatekeeper is only asked once — files an update writes carry no download flag, so a later version opens with a double click
 - The macOS package's payload (the lifter, the SDK sources, the shader harness, MoltenVK and the prompt icons) is built on a Linux runner now, and the macOS runner only compiles the launcher and the runtime and signs. The platform jobs also start together instead of waiting for the release to exist, and one final job uploads every archive and writes `SHA256SUMS.txt`
+- On macOS vsync is on by default: without it MoltenVK presents immediately and frames show mid-refresh, which tore and flashed partly drawn pictures on a MacBook. An existing `controls.ini` gets it switched on once (`[meta] display_rev`), and turning it off afterwards keeps it off
+- The game now has its own Metal shader cache identity (an `Info.plist` linked into `pkp`, one per game folder). Without one it shared a cache folder with every other program outside an app bundle, and a start compiled every pipeline again whenever one of those was running
+- A frame limit you set now holds through loading screens too. Loading runs unpaced on purpose (the loading code advances once per frame), so a 60 limit showed 110 fps for the first seconds of every start
 
 ## 0.11.0
 

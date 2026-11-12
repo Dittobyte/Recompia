@@ -56,6 +56,11 @@ LINUX = sys.platform.startswith('linux')
 ZIG = (os.path.join(HERE, 'zig', 'zig.exe') if os.name == 'nt'
        else os.environ.get('PKP_ZIG') or os.path.join(os.path.dirname(HERE), 'linux', 'zig', 'zig'))
 FORMAT = 3          # bump when the build layout or the stamp changes: older builds (partial or done) are then started over
+# macOS: pkp's own program identity, the CFBundleIdentifier an Info.plist linked into the executable gives it (write_identity).
+# Metal keeps compiled shaders in a cache per identity, and a binary without one shares its folder with every other program
+# outside an app bundle. IDENTITY is in the build stamp: a change links pkp again.
+APP_ID = 'org.pkp-recomp.game'
+IDENTITY = 1
 # the lifter as game-build/scripts/make-release.ps1 ships it: paths under RECOMP, the same in the zip (tools/build/recomp/...)
 # and in the repo (recomp/...)
 LIFTER = ['nxrecomp', 'include/nxrecomp', 'games/pkp/CMakeLists.txt', 'games/pkp/config.py']
@@ -189,6 +194,7 @@ def tool_stamp():
     """The part of the build stamp this package decides: a release that changes any of it rebuilds pkp.exe."""
     return {'lifter': tree_hash(RECOMP, LIFTER), 'sites': tree_hash(RECOMP, sorted(SITES.values())), 'sdk': tree_hash(SDK, SDK_FILES),
             'runtime': runtime_abi(), 'cxxflags': CXXFLAGS, 'modules': [list(m) for m in MODULES],
+            'identity': IDENTITY if DARWIN else 0,
             'modheader': hashlib.sha256(modheader.render(GAME.modules).encode()).hexdigest()}
 
 
@@ -624,6 +630,31 @@ def archive(runner, obj, lib, stamp, env):
     write_json(stamp_p, stamp)
 
 
+def write_identity(lib, game):
+    """macOS: the Info.plist that gives pkp an identity of its own, returned as the path to link into __TEXT,__info_plist.
+
+    Metal keeps compiled shaders in a cache per program identity: a folder of numbered files (functions.data, functions1.data ...)
+    under DARWIN_USER_CACHE_DIR, where a process takes the first file no other running process of that identity holds and looks
+    only in that file. A binary without an identity shares its folder with every other program outside an app bundle, so whenever
+    one of those runs the game gets a different file than the one Set up filled and compiles every pipeline again while it loads
+    (KosmicKrisp's VkPipelineCache keeps only MSL source, and MoltenVK's cache does not cover Metal's own compilation). The
+    identifier is per game folder, so two installs never fight over one cache file."""
+    ident = '%s.%s' % (APP_ID, hashlib.sha256(os.path.abspath(game).encode('utf-8')).hexdigest()[:12])
+    path = os.path.join(lib, 'gen', 'Info.plist')
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+                '<plist version="1.0">\n<dict>\n'
+                '    <key>CFBundleIdentifier</key><string>%s</string>\n'
+                '    <key>CFBundleName</key><string>Pokopia Recomp</string>\n'
+                '    <key>CFBundleExecutable</key><string>pkp</string>\n'
+                '    <key>CFBundlePackageType</key><string>APPL</string>\n'
+                '    <key>CFBundleShortVersionString</key><string>%s</string>\n'
+                '</dict>\n</plist>\n' % (ident, os.environ.get('PKP_VERSION', '0')))
+    return path
+
+
 def link(runner, lib, game, env):
     libs = [os.path.join(lib, 'pkp_%s.a' % m[0]) for m in MODULES]
     exe = 'pkp' if (DARWIN or LINUX) else 'pkp.exe'
@@ -631,8 +662,10 @@ def link(runner, lib, game, env):
     modheader.write(GAME.modules, os.path.join(lib, 'gen', 'nx_modules.gen.h'))     # the module list pkp_stub.cpp includes
     if DARWIN:
         # Apple clang, the runtime dylib next to the exe (@rpath), and the guest segment in the Mach-O header afterwards.
+        # __info_plist is the executable's own identity (write_identity): Metal's shader cache is keyed on it.
         cmd = list(CLANGXX) + CXXFLAGS + ['-I', SDK, '-I', os.path.join(lib, 'gen'), os.path.join(SDK, 'pkp_stub.cpp')] + libs + [
             os.path.join(SDK, RUNTIME_LIB), '-o', tmp, '-Wl,-stack_size,0x8000000', '-Wl,-rpath,@executable_path',
+            '-Wl,-sectcreate,__TEXT,__info_plist,' + write_identity(lib, game),
             # guest_segment.py adds a load command for __GUEST after the link, which needs room in the header.
             '-Wl,-headerpad,0x4000']
         rc, tail = runner.run(cmd, env=env, cwd=SDK)

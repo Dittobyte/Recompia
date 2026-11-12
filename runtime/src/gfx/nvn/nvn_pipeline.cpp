@@ -228,6 +228,17 @@ void ensure_cache() {
     static constexpr const char* kDefaultPipelineCache = "pipeline_cache.bin";
     if (g_cache_tried) return;
     g_cache_tried = true;
+#if defined(__APPLE__)
+    // MoltenVK compiles under the lock of the VkPipelineCache a pipeline is made with, so with several build threads one slow
+    // pipeline holds the others up; without a cache it keeps its own per-pipeline caches, and Metal's own shader cache still holds
+    // the compiled code (the executable's __info_plist identity, pkp_build.py write_identity). auto (the default) keeps the cache:
+    // it is what makes a start fast on this port. off: build every pipeline without one.
+    if (config_get_str("nvn", "pipeline_cache_moltenvk", "auto") == "off") {
+        NXLOG_I(kTag, "pipeline_cache_moltenvk = off: pipelines are built without a VkPipelineCache");
+        g_cache_ready.store(true, std::memory_order_release);
+        return;
+    }
+#endif
     // On by default on every host, macOS included. It was off on macOS for a while: with pipeline_cache.bin present the game
     // stopped after NVN init, before its first frame. That A/B ran while the pool shadow copy wrote past its buffer and
     // corrupted the driver's heap (nvn_pool_copy.cpp), and with that fixed the cache loads and the game runs; leaving it off

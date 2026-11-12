@@ -992,7 +992,13 @@ int64_t g_wr_pages[6] = {}, g_wr_calls[6] = {};
 
 MirrorMode mirror_mode() {
     static const MirrorMode m = [] {
+        // Apple silicon has one memory for the CPU and the GPU, so a device-local copy of a pool page is a copy of the same memory: it
+        // buys nothing and costs a copy per draw. Off by default there; [nvn] pool_mirror = on still turns it on.
+#if defined(__APPLE__)
+        const std::string v = config_get_str("nvn", "pool_mirror", "off");
+#else
         const std::string v = config_get_str("nvn", "pool_mirror", "on");
+#endif
         if (v == "on" || v == "1" || v == "true") return MirrorMode::On;
         return MirrorMode::Off;
     }();
