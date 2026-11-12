@@ -1,7 +1,8 @@
 // Mods: the player's Modtopia mods (Installed) and the Modtopia mod hub's list (Browse). The core behind them, the trust rule and the
 // hook plan are in Rust (mods.rs, mods_catalog.rs, mods_install.rs); what a row or a card says and the questions are ../mods-model.js.
 // Every change answers with the new list, which is drawn whole; the plan it wrote may need Set up again, which the store's readiness
-// says (kind 'mods') and this page offers with the same Set up as Home.
+// says (kind 'mods') and this page offers with the same Set up as Home. A mod or setting the launcher keeps on (mods_lock.rs, Community
+// Achievements and its sharing) shows locked, with Unlock behind its question and Lock to keep it on again.
 import './mods.css';
 import { api } from '../api.js';
 import { t } from '../i18n.js';
@@ -9,7 +10,7 @@ import { fromBackend } from '../backend-text.js';
 import { confirm, errText, esc, field, icon, row, segmented, select, slider, toast, toggle } from '../ui.js';
 import { store } from '../store.js';
 import { gamePhase } from '../action.js';
-import { allowQuestion, badges, byLine, canMove, cardAction, detailsView, filterByGroup, groupChips, installQuestion, isSlider, isTested, keepGroup, settingValue } from '../mods-model.js';
+import { allowQuestion, badges, byLine, canMove, cardAction, detailsView, filterByGroup, groupChips, installQuestion, isSlider, isTested, keepGroup, lockAction, settingValue, unlockQuestion } from '../mods-model.js';
 
 const gameActive = (s) => ['starting', 'running', 'finishing'].includes(gamePhase(s.game));
 
@@ -58,17 +59,25 @@ export async function render(el, ctx) {
       <p class="faint mods-note">${esc(t('Once each time the launcher starts, from the mod hub. Mods you switched off stay off.'))}</p></div>`;
   }
 
+  /** Unlock or Lock for a row the launcher locks (what: 'mod' or 'sharing'); '' for any other. */
+  function lockButton(x, what) {
+    const act = lockAction(x);
+    if (!act) return '';
+    const text = act === 'unlock' ? t('Unlock') : t('Lock');
+    return `<button class="btn quiet sm" data-act="${act}" data-id="${what}" ${busy ? 'disabled' : ''}>${icon(act === 'unlock' ? 'lock-open' : 'lock')}${esc(text)}</button>`;
+  }
+
   function settingControl(m, s, i, mi) {
     const id = `mod-${mi}-set-${i}`;
     const attrs = `data-mod="${esc(m.id)}" data-key="${esc(s.key)}"`;
-    const opts = { label: s.label, disabled: busy };
+    const opts = { label: s.label, disabled: busy || s.locked };
     let html;
     if (s.kind === 'bool') html = toggle(id, s.number !== 0, opts);
     else if (s.kind === 'choice') html = select(id, s.choices.map((c, k) => [String(k), c]), String(s.number), opts);
     else if (isSlider(s)) html = slider(id, s.min, s.max, s.number, { ...opts, step: s.step > 0 ? s.step : 'any' });
     else html = field(id, s.text, '', { ...opts, mono: s.kind === 'key' });
     // the data attributes go on the control itself, so a change event names its mod and setting
-    html = html.replace(`id="${id}"`, `id="${id}" ${attrs}`);
+    html = html.replace(`id="${id}"`, `id="${id}" ${attrs}`) + lockButton(s, 'sharing');
     const label = s.restart ? `${s.label} ${t('(after a restart of the game)')}` : s.label;
     return row(label, html);
   }
@@ -76,24 +85,26 @@ export async function render(el, ctx) {
   function modHtml(m, mi, list) {
     const msg = m.message ? `<div class="banner ${m.state === 'error' ? 'danger' : 'warn'} mod-msg">${icon(m.state === 'error' ? 'circle-x' : 'circle-alert')}<div class="grow selectable">${esc(m.message)}</div></div>` : '';
     const sets = m.settings.length ? `<div class="mod-settings">${m.settings.map((s, i) => settingControl(m, s, i, mi)).join('')}</div>` : '';
-    const dis = busy ? 'disabled' : '';
+    const lock = m.locked ? `<p class="faint mods-note">${esc(t('Locked: the launcher keeps it on, so your achievements and stats are recorded. Unlock it to switch it off or remove it.'))}</p>` : '';
     return `<section class="mod glass" data-id="${esc(m.id)}">
       <div class="mod-head">
         <div class="grow">
           <h2 class="mod-name"><span class="clip">${esc(m.name || m.id)}</span> <span class="faint num">${esc(m.version)}</span></h2>
           <p class="mod-by">${esc(byLine(m))}</p>
         </div>
-        ${toggle(`mod-on-${mi}`, m.enabled, { label: t('{name} on', { name: m.name || m.id }), disabled: busy }).replace(`id="mod-on-${mi}"`, `id="mod-on-${mi}" data-on="${esc(m.id)}"`)}
+        ${toggle(`mod-on-${mi}`, m.enabled, { label: t('{name} on', { name: m.name || m.id }), disabled: busy || (m.locked && m.enabled) }).replace(`id="mod-on-${mi}"`, `id="mod-on-${mi}" data-on="${esc(m.id)}"`)}
       </div>
       <div class="cluster">${badges(m).map(chip).join('')}</div>
       ${m.description ? `<p class="mod-desc">${esc(m.description)}</p>` : ''}
       ${msg}
+      ${lock}
       ${sets}
       <div class="cluster mod-actions">
         <button class="btn quiet sm" data-act="up" data-id="${esc(m.id)}" aria-label="${esc(t('Load {name} earlier', { name: m.name || m.id }))}" ${canMove(list, mi, -1) && !busy ? '' : 'disabled'}>${icon('arrow-up')}${esc(t('Earlier'))}</button>
         <button class="btn quiet sm" data-act="down" data-id="${esc(m.id)}" aria-label="${esc(t('Load {name} later', { name: m.name || m.id }))}" ${canMove(list, mi, 1) && !busy ? '' : 'disabled'}>${icon('arrow-down')}${esc(t('Later'))}</button>
         <span class="grow"></span>
-        <button class="btn quiet sm" data-act="remove" data-id="${esc(m.id)}" ${dis}>${icon('trash-2')}${esc(t('Remove'))}</button>
+        ${lockButton(m, 'mod')}
+        <button class="btn quiet sm" data-act="remove" data-id="${esc(m.id)}" ${busy || m.locked ? 'disabled' : ''}>${icon('trash-2')}${esc(t('Remove'))}</button>
       </div>
     </section>`;
   }
@@ -276,6 +287,15 @@ export async function render(el, ctx) {
     if (yes) await apply(() => api.modsRemove({ id }), t('{name} was removed', { name: m.name || m.id }));
   }
 
+  /** Unlock asks first (what turning it off costs the player); Lock keeps it at once (mods_set_lock installs or switches it back on). */
+  async function setLock(what, locked) {
+    if (!locked) {
+      const q = unlockQuestion(what);
+      if (!await confirm({ title: q.title, html: questionHtml(q), ok: q.ok, danger: true })) return;
+    }
+    await apply(() => api.modsSetLock({ what, locked }), locked ? t('Locked again') : t('Unlocked'));
+  }
+
   // --- events
 
   el.addEventListener('change', (e) => {
@@ -302,6 +322,8 @@ export async function render(el, ctx) {
       case 'up': return apply(() => api.modsMove({ id, delta: -1 }));
       case 'down': return apply(() => api.modsMove({ id, delta: 1 }));
       case 'remove': return remove(id);
+      case 'unlock': return setLock(id, false);
+      case 'lock': return setLock(id, true);
       case 'install': return install(id);
       case 'details': return details(id);
       case 'group': group = id; return draw();

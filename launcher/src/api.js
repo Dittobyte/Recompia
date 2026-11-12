@@ -96,6 +96,8 @@ export const api = {
   modsCatalog: (args) => invoke('mods_catalog', args),   // { refresh }
   modsInstall: (args) => invoke('mods_install', args),   // { id }
   modsAutoUpdate: () => invoke('mods_auto_update'),   // [{ name, from, to }] updated, once per session, only with the launcher preference on
+  modsKeepLocked: () => invoke('mods_keep_locked'),   // ['install' | 'switch_on' | 'share_on'] done, once at launcher start
+  modsSetLock: (args) => invoke('mods_set_lock', args),   // { what: 'mod' | 'sharing', locked }
   openModsDir: () => invoke('open_mods_dir'),
   // Achievements (the community tracker)
   achievementsView: (args) => invoke('achievements_view', args),   // { refresh }

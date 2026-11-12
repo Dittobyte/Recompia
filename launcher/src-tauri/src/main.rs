@@ -26,6 +26,7 @@ mod mods;
 mod mods_catalog;
 mod mods_cmds;
 mod mods_install;
+mod mods_lock;
 mod mods_update;
 mod nsp;
 mod launch;
@@ -189,6 +190,8 @@ fn main() {
             mods_cmds::mods_catalog,
             mods_cmds::mods_install,
             mods_cmds::mods_auto_update,
+            mods_cmds::mods_keep_locked,
+            mods_cmds::mods_set_lock,
             mods_cmds::open_mods_dir,
             achievements_cmds::achievements_view,
         ])

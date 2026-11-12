@@ -2,13 +2,13 @@
 // `change` / `input` events (delegate on the page root). Inside row() they are named by the row's label.
 import {
   ArrowDown, ArrowLeft, ArrowUp, Check, ChevronDown, ChevronRight, CircleAlert, CircleCheck, CircleX, Copy, Download, ExternalLink, Eye, EyeOff, FileArchive, FileText,
-  Folder, FolderOpen, Gamepad2, Globe, HardDrive, House, Info, Keyboard, Link, LoaderCircle, Minus, Mouse, Newspaper, Palette, Pause,
+  Folder, FolderOpen, Gamepad2, Globe, HardDrive, House, Info, Keyboard, Link, LoaderCircle, Lock, LockOpen, Minus, Mouse, Newspaper, Palette, Pause,
   Pencil, Play, Plus, Puzzle, RefreshCw, RotateCcw, Save, Settings, Square, Trash2, TriangleAlert, Trophy, Upload, UserCheck, Users, Wrench, X,
 } from 'lucide';
 
 const ICONS = {
   ArrowDown, ArrowLeft, ArrowUp, Check, ChevronDown, ChevronRight, CircleAlert, CircleCheck, CircleX, Copy, Download, ExternalLink, Eye, EyeOff, FileArchive, FileText,
-  Folder, FolderOpen, Gamepad2, Globe, HardDrive, House, Info, Keyboard, Link, LoaderCircle, Minus, Mouse, Newspaper, Palette, Pause,
+  Folder, FolderOpen, Gamepad2, Globe, HardDrive, House, Info, Keyboard, Link, LoaderCircle, Lock, LockOpen, Minus, Mouse, Newspaper, Palette, Pause,
   Pencil, Play, Plus, Puzzle, RefreshCw, RotateCcw, Save, Settings, Square, Trash2, TriangleAlert, Trophy, Upload, UserCheck, Users, Wrench, X,
 };
 

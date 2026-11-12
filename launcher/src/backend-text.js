@@ -77,6 +77,8 @@ const TEXTS = [
   msg('There is no mod {1} in the mods folder.'),
   msg("Could not save the mods' list in the mods folder."),
   msg("This mod's code is not allowed yet."),
+  msg('Community Achievements is locked: unlock it first to switch it off or remove it.'),
+  msg('Sharing of Community Achievements is locked: unlock it first to switch it off.'),
   msg('Could not record your yes for {1}.'),
   msg('Could not change {1} of {2}.'),
   msg('Could not delete {1}: {2}'),

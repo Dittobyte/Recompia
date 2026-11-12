@@ -145,6 +145,10 @@ pub struct SettingView {
     pub text: String,
     /// bool 0/1, the number, or the choice's index
     pub number: f64,
+    /// kept on by the launcher until the player unlocks it (mods_lock.rs): it cannot be switched off
+    pub locked: bool,
+    /// one the launcher can lock: the page offers Unlock or Lock
+    pub lockable: bool,
 }
 
 fn setting_view(s: SettingInfo) -> SettingView {
@@ -156,7 +160,7 @@ fn setting_view(s: SettingInfo) -> SettingView {
         ffi::SET_TEXT => "text",
         _ => "text",
     };
-    SettingView { key: s.key, label: s.label, description: s.description, kind, restart: s.restart, min: s.min, max: s.max, step: s.step, choices: s.choices, text: s.text, number: s.number }
+    SettingView { key: s.key, label: s.label, description: s.description, kind, restart: s.restart, min: s.min, max: s.max, step: s.step, choices: s.choices, text: s.text, number: s.number, locked: false, lockable: false }
 }
 
 /// One installed mod, as the Mods page shows it.
@@ -187,6 +191,10 @@ pub struct ModView {
     pub message: String,
     pub hook_points: i32,
     pub settings: Vec<SettingView>,
+    /// kept installed and on by the launcher until the player unlocks it (mods_lock.rs): it cannot be switched off or removed
+    pub locked: bool,
+    /// one the launcher can lock: the page offers Unlock or Lock
+    pub lockable: bool,
 }
 
 /// The Mods page's list.
@@ -200,6 +208,8 @@ pub struct ModsView {
     pub gameplay: Vec<String>,
     /// hook points the mods that are on need
     pub points: i32,
+    /// what the launcher locks now (mods_lock.rs `mark`; None until marked), so a page can offer Lock for a mod that is not installed
+    pub locks: Option<crate::mods_lock::Locks>,
 }
 
 fn view_of(core: &Core, game_dir: &Path) -> ModsView {
@@ -229,9 +239,11 @@ fn view_of(core: &Core, game_dir: &Path) -> ModsView {
             enabled: m.enabled,
             message: m.message,
             hook_points: m.hook_points,
+            locked: false,
+            lockable: false,
         })
         .collect();
-    ModsView { dir: crate::dump::fwd(&mods_dir(game_dir)), mods, gameplay: core.gameplay_mods(), points: core.plan_count() }
+    ModsView { dir: crate::dump::fwd(&mods_dir(game_dir)), mods, gameplay: core.gameplay_mods(), points: core.plan_count(), locks: None }
 }
 
 /// The installed mods, after writing their plan (a mod dropped in by hand changes it as much as a click does).

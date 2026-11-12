@@ -1,5 +1,5 @@
 // Tests for the pure part of the Mods page (src/mods-model.js). Run: node launcher/scripts/test-mods-model.mjs
-import { allowQuestion, badges, byLine, canMove, cardAction, detailsView, filterByGroup, groupChips, installQuestion, isSlider, isTested, keepGroup, settingValue, sizeText, updatedLine } from '../src/mods-model.js';
+import { allowQuestion, badges, byLine, canMove, cardAction, detailsView, filterByGroup, groupChips, installQuestion, isSlider, isTested, keepGroup, keptLine, lockAction, settingValue, sizeText, unlockQuestion, updatedLine } from '../src/mods-model.js';
 
 let bad = 0;
 const check = (ok, what) => { if (!ok) { console.log(`FAIL ${what}`); bad++; } };
@@ -9,6 +9,7 @@ const texts = (m) => badges(m).map((b) => b.text);
 check(texts(mod).join() === 'Not allowed yet,Changes gameplay,Goes online', 'badges of a gameplay mod with new code that goes online');
 check(texts({ ...mod, gameplay: false, network: '', needs_yes: false }).join() === 'Looks only', 'a plain look-only mod');
 check(texts({ ...mod, state: 'error' })[0] === 'Problem', 'a broken mod says so first');
+check(texts({ ...mod, needs_yes: false, locked: true })[0] === 'Locked', 'a locked mod says so');
 
 check(byLine(mod) === 'By A, B. Licence: MIT.', 'by line from the core');
 check(byLine({ authors: ['A', 'B'], license: '' }) === 'By A, B. Licence: not stated.', 'by line from the catalog, licence missing');
@@ -58,6 +59,17 @@ check(d.links.map((l) => l.label).join() === 'Mod page,Source', 'details: links'
 const plain = detailsView({ name: 'P', version: '1.0.0', authors: [], license: '', summary: 'Only the summary.', tested: [], size: 0, gameplay: false, network: false, page: '', source: '' }, '2.0.1');
 check(plain.description === 'Only the summary.' && plain.settings.length === 0 && plain.links.length === 0, 'details: no description falls back to the summary');
 check(plain.facts.join() === 'The hub has not marked it as tested on game version 2.0.1.', 'details: not tested says so, no size, no extras');
+
+// locks (mods_lock.rs marks the list)
+check(lockAction({ lockable: true, locked: true }) === 'unlock' && lockAction({ lockable: true, locked: false }) === 'lock', 'a lockable row offers unlock or lock');
+check(lockAction({ lockable: false, locked: false }) === '' && lockAction(null) === '', 'any other row offers nothing');
+const um = unlockQuestion('mod');
+check(um.ok === 'Unlock' && /no longer recorded/.test(um.lines[0]) && /installs it again/.test(um.lines[1]), 'unlocking the mod warns that nothing is recorded');
+const us = unlockQuestion('sharing');
+check(us.title === 'Unlock sharing?' && /community stats/.test(us.lines[0]) && /still recorded on this PC/.test(us.lines[0]), 'unlocking sharing warns about the stats');
+check(keptLine([]) === '' && keptLine(undefined) === '', 'nothing kept: no line');
+check(/installed and switched on/.test(keptLine(['install'])), 'install line');
+check(/switched on again/.test(keptLine(['switch_on', 'share_on'])) && /^Sharing/.test(keptLine(['share_on'])), 'switch and sharing lines');
 
 console.log(bad ? `TEST FAILED (${bad})` : 'mods model tests passed');
 process.exit(bad ? 1 : 0);
