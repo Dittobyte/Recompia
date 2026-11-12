@@ -97,4 +97,6 @@ export const api = {
   modsInstall: (args) => invoke('mods_install', args),   // { id }
   modsAutoUpdate: () => invoke('mods_auto_update'),   // [{ name, from, to }] updated, once per session, only with the launcher preference on
   openModsDir: () => invoke('open_mods_dir'),
+  // Achievements (the community tracker)
+  achievementsView: (args) => invoke('achievements_view', args),   // { refresh }
 };

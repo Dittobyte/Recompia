@@ -12,6 +12,9 @@
 - Mods can tint the final picture (colour presets, colorblind filters), show a picture beside their messages, and make HTTPS requests to the sites their own description names (no redirects, cookies or sign-in)
 - Changing mods that need other hook points now translates only the game part they touch: a plan with main-only points no longer redoes the other three parts (on PC: about 4.5 minutes for main-only points, under a minute for points outside main)
 
+### Launcher
+- New **Achievements** page: the Modtopia community tracker in the launcher, with the achievements grouped as the hub lists them, how many players have each one, the rarest right now, and which ones you earned (from the Community Achievements mod). It also shows whether the mod is installed, on and sharing, and can switch it or its sharing on. The launcher only reads the counts and sends nothing. Update only: no shader rebuild, no Set up again
+
 ## 0.11.1 (build O: Ocelot Hotfix a1)
 
 **Update:** press **Update**, then **Set up again** once (the game code is translated again for the mods' hook points, several minutes). Your shaders and saves are kept; no shader is translated again.
