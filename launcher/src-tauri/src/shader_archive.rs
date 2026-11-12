@@ -26,14 +26,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 pub const ARCHIVE_REL: &str = "shader_cache/spirv.archive";
 /// Where loose files live (shaders.rs SPIRV_REL).
 const SPIRV_REL: &str = "shader_cache/spirv";
-/// zstd level. Decompression speed is the same at every level, so the game reads the archive as fast at 12 as at 6 (the preload pack:
-/// ~3.8x). Higher levels only cost the launcher time when it writes.
-pub const LEVEL: i32 = 12;
+/// zstd level. Decompression speed is the same at every level, so the game reads the archive as fast at 6 as at 12; the level only
+/// costs the launcher time when it writes, and time there is the player's (a Steam Deck or a laptop far more than a desktop). Measured
+/// on 166 MB of the 2.0.1 corpus, one thread: level 12 and 9 both give 3.968x, level 6 gives 3.932x at 121 MB/s against 29 MB/s, level 3
+/// gives 3.760x at 230 MB/s. Level 6 is 0.9 % bigger than 12 for 4x the speed, so that is the level.
+pub const LEVEL: i32 = 6;
 /// A segment is closed at this much SPIR-V (or SEGMENT_MAX shaders): big enough that the game opens a few dozen files, small enough that
 /// a pause loses little work.
 const SEGMENT_RAW: u64 = 512 << 20;
 const SEGMENT_MAX: usize = 4000;
-/// Before anything is measured, "Make smaller" promises what the preload pack measured at level 6 (~3.8x): never more than it gets.
+/// Before anything is measured, "Make smaller" promises what level 6 measures on the 2.0.1 corpus (3.93x): never more than it gets.
 pub const RATIO_GUESS: f64 = 3.8;
 
 const MAGIC: &[u8; 8] = b"NXSPACK1";
@@ -171,10 +173,21 @@ fn write_segment(dir: &Path, items: &[(String, Vec<u8>)]) -> Result<u64, String>
     fs::create_dir_all(dir).map_err(|e| format!("cannot create {}: {}", dir.display(), e))?;
     let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2).clamp(1, 16);
     let per = items.len().div_ceil(threads).max(1);
-    let frames: Vec<Result<Vec<u8>, String>> = std::thread::scope(|s| {
-        let parts: Vec<_> = items.chunks(per).map(|part| s.spawn(move || part.iter().map(|(_, raw)| zstd::bulk::compress(raw, LEVEL).map_err(|e| e.to_string())).collect::<Vec<_>>())).collect();
+    let mut frames: Vec<Result<Vec<u8>, String>> = std::thread::scope(|s| {
+        // One compressor per thread, reused for its whole part: `zstd::bulk::compress` builds a context, and its match-finder
+        // tables, for every call, which on 99,012 blocks of 263 KB is real work spent on setup rather than compression.
+        let parts: Vec<_> = items.chunks(per).map(|part| s.spawn(move || {
+            match zstd::bulk::Compressor::new(LEVEL) {
+                Ok(mut c) => part.iter().map(|(_, raw)| c.compress(raw).map_err(|e| e.to_string())).collect::<Vec<_>>(),
+                Err(e) => vec![Err(e.to_string()); part.len()],
+            }
+        })).collect();
         parts.into_iter().flat_map(|p| p.join().unwrap_or_else(|_| vec![Err("a compression thread failed".into())])).collect()
     });
+    // Every item needs its frame, or the zip below would quietly drop the tail of the segment.
+    if frames.len() < items.len() {
+        frames.resize_with(items.len(), || Err("a compression thread failed".into()));
+    }
     let next = segments(dir).last().map_or(1, |(n, _)| n + 1);
     let fin = dir.join(format!("{:06}.pack", next));
     let tmp = dir.join(format!("{:06}.pack.tmp", next));

@@ -4,6 +4,13 @@
 
 **Update:** press **Update**, then **Finish update** once. This is the last update that makes you wait like this: it builds the game code one more time in full, already with the faster build (about half the time it took before). Your shaders and saves are kept; no shader is translated again.
 
+### Launcher
+- **Set up translates shaders much faster, and a slow machine gains the most.** The translator used to be started once per 1,000 blocks: 99 runs, each paying its own process start and its own warm-up of the JIT and the thread pool, and each losing whatever it had finished if you paused. It now takes 7,000 blocks at a time and writes every result as the block finishes, so a pause keeps the work done and resuming starts where it stopped
+- The packed shader cache is written at zstd level 6 instead of 12. On the 2.0.1 corpus level 12 gives 3.968x and level 6 gives 3.932x, so the cache is 1 % bigger and compresses about four times faster. Reading is the same speed at every level, so the game loads it exactly as before
+- The compressors are reused for a whole batch instead of being rebuilt for every shader, the translator reads its corpus through one open file handle instead of opening, seeking and closing the pack twice per block, and it patches each block's capabilities in place instead of copying it into a second buffer
+- Measured on the 2.0.1 corpus (99,012 blocks) on a 24-thread machine: the translation phase went from 8.8 s to 6.2 s per 1,000 blocks, and a full Set up from 925 s to 653 s. The rest of the gain is on slower machines: each of those 99 restarts also re-warmed the JIT and the thread pool, and the packed cache was compressed four times slower than it needs to be
+
+
 New in this Testing build: **seamless co-op** (experimental). In a Link Play session every player plays their own story in the host's world, with their own requests, talks and progress, kept in their own save. Turn on **Visitors can talk to story characters** on the launcher's Link Play page; every player of the session needs it on and needs this build.
 
 Coming from 0.13.0-beta.1, this is the first update that prepares in the background: press **Update** and keep playing.

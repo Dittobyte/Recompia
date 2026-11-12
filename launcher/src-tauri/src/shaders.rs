@@ -40,9 +40,11 @@ pub const RUNTIME_REL: &str = "shader_cache/runtime";
 /// Run-time blocks a translator fix changes whose old translation is in the shader archive (it cannot be deleted one by one there):
 /// one hash per line. translate_missing translates them again, as if they had no translation, and empties the list.
 const RETRANSLATE_REL: &str = "shader_cache/runtime/retranslate.txt";
-/// Blocks per translator run. Windows runs more, smaller chunks so a pause or a crash loses less; the POSIX hosts run fewer, larger
-/// ones (a native process start is cheap, and each chunk re-reads the corpus index).
-const CHUNK: usize = if cfg!(windows) { 1000 } else { 5000 };
+/// Blocks per translator run. Every run pays its own process start (the .NET start and a cold JIT everywhere) and its own commit,
+/// so a chunk of 1,000 cost about 7 s of overhead on a 24-thread Windows PC: 99 runs of 12 s for what one run of 413 s does. 7,000
+/// blocks is about 1.8 GB of SPIR-V (preflight CHUNK_BYTES) and 15 runs, and a stopped run no longer loses its work (the harness
+/// writes a results row per block as it goes), so a bigger chunk costs nothing when the player pauses.
+const CHUNK: usize = 7000;
 /// Workers for the extractor. It maps each asset file into memory and decompresses it, so one worker per CPU thread can
 /// thrash a machine's memory and disk (issue #194: 15 workers on a hard drive); a few already saturate the disk. The
 /// translator (spirv_harness) keeps the full `job.jobs`.
@@ -455,7 +457,10 @@ fn first_col(row: &str) -> &str {
 /// what make a block count as done, so they go last). Returns the number of rows.
 fn commit_stage(stage: &Path, spirv: &Path) -> Result<usize, String> {
     let results = spirv.join("results.tsv");
-    let (rheader, rrows) = read_tsv(&stage.join("results.tsv"))?;
+    let (rheader, mut rrows) = read_tsv(&stage.join("results.tsv"))?;
+    // A run that was killed can leave its last row half written. A row without every column is not a translation: drop it.
+    let cols = rheader.split('\t').count();
+    rrows.retain(|r| r.split('\t').count() == cols);
     for r in &rrows {
         let h = first_col(r);
         let src = stage.join(format!("{}.spv", h));
@@ -737,14 +742,24 @@ pub fn run(job: &Job, tools: &Tools, cancel: &AtomicBool, mut report: impl FnMut
                 report(p("translate", base + n, total, format!("Translating shaders: {} of {}", base + n, total)));
             }
         })?;
-        if !ok {
+        // A run that was stopped still leaves every block it finished (the harness writes a row per block as it goes), so what it
+        // got through is committed before setup reports the pause: resuming starts where it stopped. A run that never started has
+        // no table to commit.
+        let started = stage.join("results.tsv").is_file();
+        if !ok && !started {
             return Ok(false);
         }
-        commit_stage(&stage, &spirv)?;
+        let kept = commit_stage(&stage, &spirv)?;
         if compact {
             // into the archive at once: the loose files of a chunk never pile up (peak disk use stays near the compressed size)
             let hashes: Vec<String> = chunk.iter().map(|r| first_col(r).to_string()).collect();
             crate::shader_archive::compact(&job.game_dir, Some(&hashes), &AtomicBool::new(false), |_, _| {})?;
+        }
+        if !ok {
+            if let Some(l) = &job.log {
+                l(&format!("paused: {} shaders translated before the pause are kept", kept));
+            }
+            return Ok(false);
         }
         finished += chunk.len() as u64;
         report(p("translate", finished, total, format!("Translating shaders: {} of {}", finished, total)));
