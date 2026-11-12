@@ -1,16 +1,10 @@
 # Builds the macOS port on Apple Silicon and runs the headless graphics smoke test (docs/macos-port.md M6).
 # The game itself needs a dump and is not part of this: the demo (apps/gfx_demo.cpp) renders its own scene through the same
 # NVN/Vulkan back end on MoltenVK, so it proves the build, the runtime, the address-space layout and the graphics path.
+# Pushes to main and manual runs only (the repo owner's call, PROJECT.md 6.2): a macOS job on every pull request is not worth it.
 name: macOS
 
 on:
-  pull_request:
-    paths:
-      - 'runtime/**'
-      - 'recomp/**'
-      - 'game-build/**'
-      - 'launcher/**'
-      - '.github/workflows/macos.yml'
   push:
     branches: [main]
     paths:
