@@ -14,6 +14,7 @@ import { isFirstRun } from './action.js';
 import { startGamepadNav } from './gamepad-nav.js';
 import * as home from './pages/home.js';
 import * as linkplay from './pages/linkplay.js';
+import * as achievements from './pages/achievements.js';
 import * as mods from './pages/mods.js';
 import * as news from './pages/news.js';
 import * as settings from './pages/settings.js';
@@ -24,6 +25,7 @@ const PAGES = {
   home: { mod: home, nav: t('Home'), icon: 'house', art: 'sharp' },
   linkplay: { mod: linkplay, nav: t('Link Play'), icon: 'users' },
   mods: { mod: mods, nav: t('Mods'), icon: 'puzzle' },
+  achievements: { mod: achievements, nav: t('Achievements'), icon: 'trophy' },
   news: { mod: news, nav: t("What's New"), icon: 'newspaper' },
   settings: { mod: settings, nav: t('Settings'), icon: 'settings' },
   setup: { mod: setup },

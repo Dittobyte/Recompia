@@ -12,6 +12,8 @@ mod dump;
 mod dump_cmds;
 mod error;
 mod events;
+mod achievements;
+mod achievements_cmds;
 mod fsutil;
 mod gamebuild;
 mod guard;
@@ -188,6 +190,7 @@ fn main() {
             mods_cmds::mods_install,
             mods_cmds::mods_auto_update,
             mods_cmds::open_mods_dir,
+            achievements_cmds::achievements_view,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the launcher");
