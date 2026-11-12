@@ -7,6 +7,7 @@ import { t } from './i18n.js';
 export function badges(mod) {
   const out = [];
   if (mod.state === 'error') out.push({ text: t('Problem'), kind: 'danger' });
+  if (mod.locked) out.push({ text: t('Locked'), kind: 'ok' });
   if (mod.needs_yes) out.push({ text: t('Not allowed yet'), kind: 'warn' });
   out.push(mod.gameplay ? { text: t('Changes gameplay'), kind: 'warn' } : { text: t('Looks only'), kind: '' });
   if (mod.network) out.push({ text: t('Goes online'), kind: '' });
@@ -113,3 +114,34 @@ export const isSlider = (s) => s.kind === 'number' && s.max > s.min;
 
 /** Whether the mod at index i of the list can go up (-1) or down (+1). */
 export const canMove = (list, i, delta) => i + delta >= 0 && i + delta < list.length;
+
+// --- the locks (mods_lock.rs): the launcher keeps Community Achievements installed and on, and its sharing on, until the player unlocks
+
+/** The lock button a mod or a setting row offers: 'unlock', 'lock' or '' (nothing the launcher locks). */
+export const lockAction = (x) => (!x?.lockable ? '' : x.locked ? 'unlock' : 'lock');
+
+/** The question before an unlock: { title, lines, ok }. `what`: 'mod' (switch off or remove it) or 'sharing' (switch sharing off). */
+export function unlockQuestion(what) {
+  if (what === 'sharing') {
+    return {
+      title: t('Unlock sharing?'),
+      lines: [t('Switching sharing off stops your achievements from being counted in the community stats. They are still recorded on this PC.'),
+        t('Lock it again at any time to switch sharing back on.')],
+      ok: t('Unlock'),
+    };
+  }
+  return {
+    title: t('Unlock Community Achievements?'),
+    lines: [t('Turning the Community Achievements mod off or removing it means your achievements and stats are no longer recorded.'),
+      t('Lock it again at any time: the launcher switches it back on, and installs it again if it was removed.')],
+    ok: t('Unlock'),
+  };
+}
+
+/** The one line after the launcher kept the locks at its start (mods_keep_locked: ['install' | 'switch_on' | 'share_on']); '' for none. */
+export function keptLine(done) {
+  if (!done?.length) return '';
+  if (done.includes('install')) return t('Community Achievements was installed and switched on. It is locked: unlock it on the Mods page to switch it off.');
+  if (done.includes('switch_on')) return t('Community Achievements was switched on again. It is locked: unlock it on the Mods page to switch it off.');
+  return t('Sharing of Community Achievements was switched on again. It is locked: unlock it on the Mods page to switch it off.');
+}

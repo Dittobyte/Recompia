@@ -17,6 +17,9 @@
 //                      the session's mods fingerprint (services ldnapi::set_coop_mods), so two hosts refuse the same mismatches.
 //   loader()           the core itself, for a mod list and mod settings (modtopia/modtopia_host.h: mt_loader_count, mt_setting_*, ...).
 //   started_without()  true when this start runs without mods ([mods] off), so a mod list can say why it is empty.
+//   locked(id)         the launcher keeps this mod on ([mods] locked, ids): a mod list must not switch it off.
+//   setting_locked(id, key)  the launcher keeps this setting of a mod on ([mods] locked_settings, `id:key`): a mod list must not change it.
+//                      Both lists are the launcher's (it writes them into the ini); this host names no mod. Read at start.
 #pragma once
 #include <string>
 #include <vector>
@@ -34,5 +37,7 @@ void frame();
 std::vector<std::string> gameplay_mods();   // empty when no gameplay mod is on (or before start)
 MtLoader* loader();                         // nullptr when no mods folder was found, or this start runs without mods (or before start)
 bool started_without();                     // this start runs without mods ([mods] off)
+bool locked(const char* id);
+bool setting_locked(const char* id, const char* key);
 
 }  // namespace nxrt::mods

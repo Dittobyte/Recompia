@@ -75,6 +75,10 @@ pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config, without_mods: bool)
     if !exe.is_file() {
         return Err(format!("pkp.exe was not found in {}. Put the launcher next to pkp.exe or set the game folder in Settings.", crate::dump::fwd(game_dir)));
     }
+    // the in-game Mods tab shows the launcher's locks (pkp.ini [mods]); a pkp.ini that cannot be written does not stop the start
+    if let Err(e) = crate::mods_lock::mirror(game_dir, crate::mods_lock::Locks::of(cfg)) {
+        eprintln!("mods: the locks were not written to pkp.ini: {e}");
+    }
 
     let app2 = app.clone();
     let dir = game_dir.to_path_buf();
