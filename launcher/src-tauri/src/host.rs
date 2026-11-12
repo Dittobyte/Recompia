@@ -285,9 +285,12 @@ pub fn native_setup_tools(game_dir: &Path) -> Result<SetupTools, String> {
         .unwrap_or_else(|| PathBuf::from("python3"));
     let extract = std::env::var_os("PKP_EXTRACT_CORPUS")
         .map(PathBuf::from)
+        // tools/shaders/ is the Linux package's layout (make-linux.sh, checked by release.yml) and the Windows one;
+        // tools/ itself is the macOS payload's (make-payload.sh)
+        .or_else(|| local("shaders/extract_corpus.py"))
         .or_else(|| local("extract_corpus.py"))
         .or_else(|| find_up("tools/shaders/ampere/extract_corpus.py"))
-        .ok_or("extract_corpus.py was not found (set PKP_EXTRACT_CORPUS, or put it in <game>/tools)")?;
+        .ok_or("extract_corpus.py was not found (set PKP_EXTRACT_CORPUS, or put it in <game>/tools/shaders)")?;
     let harness = std::env::var_os("PKP_SPIRV_HARNESS")
         .map(PathBuf::from)
         .or_else(|| local("harness/spirv_harness.dll"))
