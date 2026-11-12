@@ -11,9 +11,6 @@ import { store } from '../store.js';
 import { gamePhase } from '../action.js';
 import { allowQuestion, badges, byLine, canMove, cardAction, installQuestion, isSlider, settingValue } from '../mods-model.js';
 
-// The Browse tab (the Modtopia mod hub's list and installs) is off for 0.11.1 by the repo owner's call; true brings it back.
-const BROWSE = false;
-
 const gameActive = (s) => ['starting', 'running', 'finishing'].includes(gamePhase(s.game));
 
 const chip = (b) => `<span class="chip ${b.kind}">${esc(b.text)}</span>`;
@@ -27,12 +24,12 @@ export async function render(el, ctx) {
   let catalog = null;     // mods_catalog
   let catalogError = '';
   let busy = false;       // a change or an install is on its way: every control waits
-  let autoUpdate = false; // launcher.json mods_auto_update (the hub feature is off with BROWSE, so is its switch)
+  let autoUpdate = false; // launcher.json mods_auto_update (the switch for the hub's updates)
 
   el.innerHTML = `<div class="page mods">
     <div class="mods-head">
       <h1>${esc(t('Mods'))}</h1>
-      ${BROWSE ? segmented('mods-tab', [['installed', t('Installed')], ['browse', t('Browse')]], tab, { label: t('Mods') }) : ''}
+      ${segmented('mods-tab', [['installed', t('Installed')], ['browse', t('Browse')]], tab, { label: t('Mods') })}
     </div>
     <div class="mods-part" id="mods-banners"></div>
     <div class="mods-part" id="mods-prefs"></div>
@@ -55,7 +52,7 @@ export async function render(el, ctx) {
 
   /** The launcher's own preference for the hub's mods (the update itself runs at launcher start, mods_update.rs). */
   function prefsHtml() {
-    if (!BROWSE || tab !== 'installed') return '';
+    if (tab !== 'installed') return '';
     return `<div class="mods-pref glass">${row(t('Update mods by themselves'), toggle('mods-auto-update', autoUpdate, { label: t('Update mods by themselves') }))}
       <p class="faint mods-note">${esc(t('Once each time the launcher starts, from the mod hub. Mods you switched off stay off.'))}</p></div>`;
   }
@@ -106,7 +103,7 @@ export async function render(el, ctx) {
     if (!view) return `<div class="empty">${icon('loader-circle', 'spin')}</div>`;
     if (!view.mods.length) {
       return `<div class="empty glass">${icon('puzzle')}<strong>${esc(t('No mods yet'))}</strong>
-        <span>${esc(BROWSE ? t('Find mods under Browse, or put them into the mods folder.') : t('Put mods into the mods folder.'))}</span></div>${folder}`;
+        <span>${esc(t('Find mods under Browse, or put them into the mods folder.'))}</span></div>${folder}`;
     }
     const order = view.mods.length > 1 ? `<p class="faint mods-note">${esc(t('Mods load from the top down: on the same game file, the one further down wins.'))}</p>` : '';
     return `${order}${view.mods.map((m, i) => modHtml(m, i, view.mods)).join('')}${folder}`;
@@ -294,7 +291,7 @@ export async function render(el, ctx) {
     if (['app', 'game', 'task', 'setup'].includes(why)) part('mods-banners').innerHTML = bannersHtml();
   });
 
-  if (BROWSE) api.getConfig().then((c) => { autoUpdate = !!c?.mods_auto_update; draw(); }).catch((e) => console.warn('get_config', e));
+  api.getConfig().then((c) => { autoUpdate = !!c?.mods_auto_update; draw(); }).catch((e) => console.warn('get_config', e));
   draw();
   await loadList();
 }
