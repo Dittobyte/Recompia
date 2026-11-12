@@ -2,7 +2,8 @@
 //! The player's Modtopia mods in the game folder: the list the Mods page shows, its changes, and the hook plan Set up builds from.
 //!
 //! The Modtopia core owns the folders and files (contract 2: `<game>/mods/` with `modtopia.toml` and `.modtopia/`, `<game>/config/<id>.toml`,
-//! `<game>/modtopia/mappings/`); this module reaches them only through it (modtopia_ffi.rs), never by editing them itself. Each call opens
+//! `<game>/modtopia/mappings/`); this module reaches them only through it (modtopia_ffi.rs), never by editing them itself (the launcher's own
+//! `mods/README.txt` is the one file it writes, `ensure_mods_dir`). Each call opens
 //! a fresh scan, so a mod dropped into the folder by hand shows at the next look.
 //!
 //! Code the player has not allowed never runs: a code mod whose file is new or changed since the last yes (the core's MT_MOD_NEW_CODE) is
@@ -21,6 +22,29 @@ include!(concat!(env!("OUT_DIR"), "/modtopia_mappings.rs"));
 
 pub fn mods_dir(game_dir: &Path) -> PathBuf {
     game_dir.join("mods")
+}
+
+/// The one-screen help in `mods/`: what goes in, that code runs with the player's rights, where the switches are. English only; a plain
+/// text file for someone who opens the folder in Explorer.
+const README_NAME: &str = "README.txt";
+const README: &str = concat!(
+    "Put Modtopia mods here: .pkmod files, mod folders, or LayeredFS folders and zips.\r\n\r\n",
+    "Use the launcher's Mods page to switch them on and off, put them in order, change their settings and find new ones. The game reads this folder each time it starts.\r\n\r\n",
+    "A mod with code runs on this PC with your rights, like any program you install: only use mods from people you trust.\r\n",
+);
+
+/// The mods folder, made when missing, with README.txt when that is missing (never overwritten: the player may have changed or deleted it
+/// on purpose, and a README that cannot be written does not stop the folder from being used).
+pub fn ensure_mods_dir(game_dir: &Path) -> Result<PathBuf, String> {
+    let dir = mods_dir(game_dir);
+    fs::create_dir_all(&dir).map_err(|e| format!("Cannot create {}: {}", dir.display(), e))?;
+    let readme = dir.join(README_NAME);
+    if !readme.exists() {
+        if let Err(e) = fs::write(&readme, README) {
+            eprintln!("mods: {} not written: {}", readme.display(), e);
+        }
+    }
+    Ok(dir)
 }
 
 fn mappings_dir(game_dir: &Path) -> PathBuf {
@@ -369,6 +393,23 @@ mod tests {
         for bad in ["", ".", "..", ".modtopia", "a/b", "a\\b", "C:x", "../x"] {
             assert!(!plain_name(bad), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn the_mods_folder_gets_a_readme_that_is_never_overwritten() {
+        let dir = std::env::temp_dir().join(format!("recompia-mods-readme-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let readme = ensure_mods_dir(&dir).unwrap().join(README_NAME);
+        let first = fs::read_to_string(&readme).unwrap();
+        assert!(first.contains("Mods page") && first.contains("your rights"));
+        fs::write(&readme, "mine").unwrap();
+        ensure_mods_dir(&dir).unwrap();
+        assert_eq!(fs::read_to_string(&readme).unwrap(), "mine", "an existing README is left as it is");
+        fs::remove_file(&readme).unwrap();
+        ensure_mods_dir(&dir).unwrap();
+        assert_eq!(fs::read_to_string(&readme).unwrap(), first, "a missing one is written again");
+        assert!(list(&dir).unwrap().mods.is_empty(), "the README is not a mod");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -21,8 +21,7 @@ pub fn put_in_place(game_dir: &Path, entry: &Entry, trust: bool) -> Result<(), S
     if !mods_catalog::download_ok(dl) {
         return Err(format!("{} cannot be installed: its download is not on the mod hub's server.", entry.name));
     }
-    let dir = mods::mods_dir(game_dir);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Cannot create {}: {}", dir.display(), e))?;
+    let dir = mods::ensure_mods_dir(game_dir)?;
     let before = mods::installed(game_dir, &entry.id);
     let pin = Pinned { file: &dl.file, url: &dl.url, size: dl.size, sha256: &dl.sha256 };
     download::fetch(&download::agent(false), &pin, &dir, &AtomicBool::new(false), &mut |_| {})?;

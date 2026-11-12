@@ -103,10 +103,9 @@ pub async fn mods_auto_update(app: AppHandle) -> Result<Vec<Updated>, String> {
     off_thread(move || mods_update::run(&dir, &app.mod_catalog(), &catalog_cache(&app))).await
 }
 
-/// Opens the mods folder (made when missing, so the player can drop mods into it).
+/// Opens the mods folder (made when missing, with its README.txt, so the player can drop mods into it).
 #[tauri::command]
 pub fn open_mods_dir(app: AppHandle) -> Result<(), String> {
-    let dir = mods::mods_dir(&game_dir(&app));
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Cannot create {}: {}", dir.display(), e))?;
+    let dir = mods::ensure_mods_dir(&game_dir(&app))?;
     play::open_with_shell(&dir)
 }
