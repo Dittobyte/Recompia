@@ -218,6 +218,21 @@ void log_mods(MtLoader* L) {
     NXLOG_I(kTag, "mods: Link Play: every player in a session needs these gameplay mods: %s", list.c_str());
 }
 
+// A comma- or blank-separated ini list (the launcher writes `a, b`).
+std::vector<std::string> ini_list(const char* key) {
+    std::vector<std::string> out;
+    std::string item;
+    for (const char ch : config_get_str("mods", key, "") + ",") {
+        if (ch == ',' || ch == ' ' || ch == '\t') {
+            if (!item.empty()) out.push_back(std::move(item));
+            item.clear();
+        } else {
+            item += ch;
+        }
+    }
+    return out;
+}
+
 void on_save_committed() {
     detail::Host& h = host();
     std::lock_guard<std::mutex> lk(h.events_mu);
@@ -238,6 +253,8 @@ void start(const StartOptions& opt) {
         notices::post("mods", "Started without mods: they are back at the next start", 10);
         return;
     }
+    h.locked = ini_list("locked");
+    h.locked_settings = ini_list("locked_settings");
     std::error_code ec;
     const stdfs::path mods_dir = stdfs::absolute(stdfs::u8path(gi.mods->mods_dir), ec);
     if (ec || !stdfs::is_directory(mods_dir, ec)) {
@@ -304,5 +321,16 @@ std::vector<std::string> gameplay_mods() {
 
 MtLoader* loader() { return host().L; }
 bool started_without() { return host().off; }
+
+bool locked(const char* id) {
+    const std::vector<std::string>& l = host().locked;
+    return id && std::find(l.begin(), l.end(), id) != l.end();
+}
+
+bool setting_locked(const char* id, const char* key) {
+    if (!id || !key) return false;
+    const std::vector<std::string>& l = host().locked_settings;
+    return std::find(l.begin(), l.end(), std::string(id) + ":" + key) != l.end();
+}
 
 }  // namespace nxrt::mods
