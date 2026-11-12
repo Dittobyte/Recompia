@@ -13,6 +13,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <filesystem>
@@ -124,15 +125,20 @@ nxrt::GaugeCounter g_const_bytes{"nvn.const_buffers.bytes"};     // bytes of the
 // (cs set) builds a compute pipeline into g_compute; with no layout (the game set the program, nothing dispatched yet) the thread derives it.
 // Layouts: ProgLayout objects live in g_layouts (a std::map, node based) until pipeline_shutdown, which stops these threads (aw_stop) before
 // it clears g_layouts, so a job's layout pointer outlives the job.
+// Two queues: g_aw_hot holds the jobs something on screen waits for (a skipped draw, a skipped dispatch), g_aw_cold the compute programs
+// built ahead of their first dispatch. A thread takes a cold job only when no hot one is queued: with one queue, the compute programs a
+// scene sets came first and a skipped draw's build could wait the whole session (issue 515: RX 580, no pipeline libraries, 38345 draws
+// skipped and 0 of their pipelines built in 30 s while 128 compute programs were built ahead).
 struct AsyncJob {
     GraphicsKey key;
     const ProgLayout* layout = nullptr;
     std::shared_ptr<PipeUpgrade> up;
     const ShaderInfo* cs = nullptr;                  // a compute job
 };
+enum class AwLane { HotFront, Hot, Cold };
 std::mutex g_aw_mu;
 std::condition_variable g_aw_cv;
-std::deque<AsyncJob> g_aw_q;
+std::deque<AsyncJob> g_aw_hot, g_aw_cold;
 std::vector<BigThread> g_aw_threads;
 bool g_aw_stop = false;                              // stays set after pipeline_shutdown: later requests build at the draw / dispatch
 std::atomic<uint64_t> g_aw_built{0}, g_aw_failed{0}, g_aw_skipped{0};
@@ -146,10 +152,11 @@ void aw_main() {
         AsyncJob j;
         {
             std::unique_lock<std::mutex> lk(g_aw_mu);
-            g_aw_cv.wait(lk, [] { return g_aw_stop || !g_aw_q.empty(); });
+            g_aw_cv.wait(lk, [] { return g_aw_stop || !g_aw_hot.empty() || !g_aw_cold.empty(); });
             if (g_aw_stop) return;
-            j = std::move(g_aw_q.front());
-            g_aw_q.pop_front();
+            auto& q = g_aw_hot.empty() ? g_aw_cold : g_aw_hot;
+            j = std::move(q.front());
+            q.pop_front();
         }
         if (j.cs) {
             const ShaderInfo* st6[6] = {nullptr, nullptr, nullptr, nullptr, nullptr, j.cs};
@@ -168,20 +175,41 @@ void aw_main() {
     }
 }
 
-// Any thread. False once the threads were stopped (the caller builds it itself). front = ahead of everything queued.
-bool aw_push(AsyncJob&& j, bool front) {
+// [nvn] async_whole_threads: `auto` (default) is 1 with pipeline libraries, where only the few pipelines they cannot link come here. Without
+// them every new pipeline in play does (issue 515), and the pipeline-library threads (gpl_threads + gpl_upgrade_threads) do not run, so
+// this takes their share: hw/6 clamped to 1-4, plus 1, at most 4. A number: that many, 1-4.
+int aw_thread_count(bool* from_auto) {
+    const std::string v = nxrt::config_get_str("nvn", "async_whole_threads", "auto");
+    *from_auto = v.empty() || v == "auto";
+    if (!*from_auto) return static_cast<int>(std::clamp<int64_t>(std::strtoll(v.c_str(), nullptr, 10), 1, 4));
+    if (gpl_active()) return 1;
+    const unsigned hw = std::max(1u, std::thread::hardware_concurrency());
+    return static_cast<int>(std::min<int64_t>(std::clamp<int64_t>(hw / 6, 1, 4) + 1, 4));
+}
+
+// Any thread. False once the threads were stopped (the caller builds it itself). HotFront: ahead of every queued job.
+bool aw_push(AsyncJob&& j, AwLane lane) {
+    // gpl_active (pipeline library init, its own lock) before g_aw_mu: the first push of a session may make that call
+    static const int n_threads = [] {
+        bool from_auto = false;
+        const int n = aw_thread_count(&from_auto);
+        NXLOG_I(kTag, "async pipelines: %d background thread%s for pipelines that would be built at a draw or a dispatch (%s)", n,
+                n == 1 ? "" : "s", !from_auto ? "[nvn] async_whole_threads" : gpl_active() ? "auto, pipeline libraries on" : "auto, no pipeline libraries");
+        return n;
+    }();
     std::lock_guard<std::mutex> lk(g_aw_mu);
     if (g_aw_stop) return false;
     if (g_aw_threads.empty()) {
-        const int n = static_cast<int>(std::clamp<int64_t>(nxrt::config_get_int("nvn", "async_whole_threads", 1), 1, 4));
-        for (int i = 0; i < n; ++i) {
+        for (int i = 0; i < n_threads; ++i) {
             g_aw_threads.emplace_back();
             g_aw_threads.back().start("nvn-async-pipe", 16, aw_main);   // pipeline builds run the Metal shader compiler (deep)
         }
-        NXLOG_I(kTag, "async pipelines: %d background thread%s for pipelines that would be built at a draw or a dispatch", n, n == 1 ? "" : "s");
     }
-    if (front) g_aw_q.push_front(std::move(j));
-    else g_aw_q.push_back(std::move(j));
+    switch (lane) {
+        case AwLane::HotFront: g_aw_hot.push_front(std::move(j)); break;
+        case AwLane::Hot: g_aw_hot.push_back(std::move(j)); break;
+        case AwLane::Cold: g_aw_cold.push_back(std::move(j)); break;
+    }
     g_aw_cv.notify_one();
     return true;
 }
@@ -193,7 +221,7 @@ std::shared_ptr<PipeUpgrade> aw_queue(const GraphicsKey& key, const ProgLayout& 
     j.layout = &layout;
     j.up = std::make_shared<PipeUpgrade>();
     auto up = j.up;
-    return aw_push(std::move(j), false) ? up : nullptr;
+    return aw_push(std::move(j), AwLane::Hot) ? up : nullptr;
 }
 
 // Before the device is torn down: after prewarm_shutdown, before gpl_stop (pipeline_shutdown). A running build finishes first (join).
@@ -202,7 +230,8 @@ void aw_stop() {
     {
         std::lock_guard<std::mutex> lk(g_aw_mu);
         g_aw_stop = true;
-        g_aw_q.clear();               // graphics entries keep state 0 (nothing to destroy); compute entries left at 0 are built at the dispatch
+        g_aw_hot.clear();             // graphics entries keep state 0 (nothing to destroy); compute entries left at 0 are built at the dispatch
+        g_aw_cold.clear();
         t.swap(g_aw_threads);
     }
     g_aw_cv.notify_all();
@@ -1165,7 +1194,7 @@ bool compute_queue_front(const ShaderInfo* cs, const ProgLayout& layout) {
     AsyncJob j;
     j.cs = cs;
     j.layout = &layout;
-    return aw_push(std::move(j), true);
+    return aw_push(std::move(j), AwLane::HotFront);
 }
 
 void compute_program_set(const ShaderInfo* cs) {
@@ -1178,7 +1207,7 @@ void compute_program_set(const ShaderInfo* cs) {
     }
     AsyncJob j;
     j.cs = cs;                                    // layout derived on the async thread (prog_layout takes its own lock)
-    aw_push(std::move(j), false);
+    aw_push(std::move(j), AwLane::Cold);
 }
 
 bool compute_build_ahead(const ShaderInfo* cs, uint64_t layout_key) {
