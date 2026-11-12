@@ -18,6 +18,7 @@
 - The launcher's **Mods** page now has **Browse** on, with the Modtopia mod hub's list: filter by group, open **Details** (the whole description, the settings a mod adds, game versions, download size and links), see which mods are **Tested** on this game version, and install or update one with a single question. **Update mods by themselves** (off unless you switch it on) is on the Installed tab too. The mods folder gets a short README.txt
 
 ### Launcher
+- Alpha builds (in-house tests, shared by link) are no longer listed or offered on any channel
 - New **Achievements** page: the Modtopia community tracker in the launcher, with the achievements grouped as the hub lists them, how many players have each one, the rarest right now, and which ones you earned (from the Community Achievements mod). It also shows whether the mod is installed, on and sharing, and can switch it or its sharing on. The launcher only reads the counts and sends nothing. Update only: no shader rebuild, no Set up again
 
 ## 0.11.1 (build O: Ocelot Hotfix a1)

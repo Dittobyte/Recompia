@@ -238,10 +238,16 @@ impl Channel {
     }
 }
 
-/// The API's answer without drafts and anything that does not link to github.com. Prereleases are kept here: `for_channel` decides.
+/// An alpha (`v0.12.0-alpha.1`) is an in-house test build: its release page is shared by hand, and no channel lists or offers it.
+fn in_house(tag: &str) -> bool {
+    tag.contains("-alpha.")
+}
+
+/// The API's answer without drafts, alphas and anything that does not link to github.com. Prereleases are kept here: `for_channel`
+/// decides.
 pub fn parse_releases(body: &[u8]) -> Result<Vec<GhRelease>, String> {
     let all: Vec<GhRelease> = serde_json::from_slice(body).map_err(|e| e.to_string())?;
-    Ok(all.into_iter().filter(|r| !r.draft && !r.tag_name.is_empty() && github(&r.html_url)).collect())
+    Ok(all.into_iter().filter(|r| !r.draft && !r.tag_name.is_empty() && !in_house(&r.tag_name) && github(&r.html_url)).collect())
 }
 
 /// The releases a channel sees. Stable drops prereleases, so for a Stable player nothing differs from before channels existed.
@@ -1041,6 +1047,10 @@ mod channel_tests {
         body = body.replacen(r#""draft":false,"prerelease":true"#, r#""draft":true,"prerelease":true"#, 1);
         let all = parse_releases(body.as_bytes()).unwrap();
         assert_eq!(all.len(), 1, "a draft never shows");
+        let body = format!("[{}]", [rel("v0.9.0-alpha.1", true), rel("v0.8.1-beta.1", true)].join(","));
+        let all = parse_releases(body.as_bytes()).unwrap();
+        assert_eq!(all.len(), 1, "an alpha never shows: it is an in-house build");
+        assert_eq!(all[0].tag_name, "v0.8.1-beta.1");
         let all = list_of(&[("v0.8.1-beta.2", true), ("v0.8.1-beta.1", true), ("v0.8.0", false)]);
         assert_eq!(for_channel(all, Channel::Testing).len(), 3);
     }
