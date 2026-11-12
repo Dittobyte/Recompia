@@ -462,6 +462,12 @@ bool lazy_import_cells(PoolGpu* g, PoolChunk& x, uint64_t xo, uint64_t xs) {
     const size_t c0 = static_cast<size_t>(xo / g->stride);
     bool ok = g->copy && pcopy_alloc(g, x, xo, xs, "copy cell", true);
     if (ok && retry) import_recovered(g, x, fails, since, "copy cell", c0, g->cell_ext.size());
+    if (!ok && g->copy && !device().features().external_memory_host) {
+        // No import to fall back to (and no vkGetMemoryHostPointerPropertiesEXT to call, #589): the cell fails and is tried again as a shadow.
+        x.off = xo;
+        x.size = xs;
+        return import_failed(g, x, VK_ERROR_FEATURE_NOT_PRESENT, "copy cell", c0, g->cell_ext.size());
+    }
     if (!ok) {
         if (g->copy) pcopy_track_stop(g);                          // an import must not see pages the copy tracker made read-only
         std::lock_guard<std::mutex> ilk(tex_arm_import_mutex());   // no arm of the worker in between

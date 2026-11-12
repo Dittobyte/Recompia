@@ -7,6 +7,7 @@
 - Fixed the **Nearest**, **FSR 1** and **NIS** upscalers with **Scene Resolution** below 100% doing nothing, the 3D scene staying as blurry as Off: they now act on the game's own stretch of the scene, so Nearest shows hard pixels and FSR 1 / NIS a sharper picture while the menus and HUD stay sharp (#571). Update only: no shader rebuild, no Set up again
 - Fixed **Set up** failing every time at "Linking pkp.exe" (`undefined symbol`) after a power cut or a forced shutdown during an earlier Set up: the cut could keep a compiled file's name and size but not its contents, and every later Set up took it as finished. Set up now writes each file to the disk before it counts it as done, and compiles again any compiled file it finds damaged, so the next Set up finishes. Update only: no shader rebuild, no Set up again
 - Fixed **Set up** on Linux stopping with "extract_corpus.py was not found": the launcher looked for the shader extractor in `tools/` while the Linux package ships it in `tools/shaders/`. Update only: no shader rebuild, no Set up again
+- Fixed a black screen on GPUs that cannot share memory with the game directly (such as the Qualcomm Adreno X1-85 in Snapdragon X laptops): the game's graphics memory now goes through copies there, as it already does on Linux (#589). Update only: no shader rebuild, no Set up again
 
 ### Mods
 - Added a **Mods** tab to the game's own Settings: pick a mod, switch it on or off (applies at the next start), see its state and change its settings, which reach the mod at once

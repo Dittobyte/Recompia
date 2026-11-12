@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// [nvn] pool_copy = auto (default: Linux, or an integrated GPU with <=8 GiB of device-local memory) | on | off: memory pools as copies
+// [nvn] pool_copy = auto (default: Linux, an integrated GPU with <=8 GiB of device-local memory, or no host-memory import) | on | off: memory pools as copies
 // (shadows) instead of imports. On Linux (Proton or native) every vkQueueSubmit costs more the more userptr memory is imported (amdgpu
 // revalidates every userptr BO of the submission's BO list): with whole pools imported (3.8 GiB) the game froze inside vkQueueSubmit, and
 // the lazy pool's ~2 GiB of live imports still cost ~17.8 ms per batch submission on the Deck. Here a pool keeps the lazy pool's cell
@@ -56,10 +56,13 @@ constexpr uint64_t kSpanGrain = 64 * 1024;  // a span's start and end are multip
 
 // Native Windows keeps ordinary pool imports forever. On an integrated GPU with a small device-local heap those imports share RAM with
 // everything else and eventually make queue submissions fail with VK_ERROR_OUT_OF_DEVICE_MEMORY. Use the bounded shadow cache there too.
+// A device without VK_EXT_external_memory_host cannot import a pool at all (every pool failed and bound the dummy buffer: a black screen
+// on the Qualcomm Adreno X1-85, #589); shadows need no import, so they are the only working path there.
 struct AutoDecision {
     gfx::Device* device = nullptr;
     VkPhysicalDevice physical = VK_NULL_HANDLE;
     bool on = false;
+    const char* why = "";
 };
 std::mutex g_auto_mu;
 AutoDecision g_auto;
@@ -78,17 +81,30 @@ bool auto_copy() {
     std::lock_guard<std::mutex> lk(g_auto_mu);
     if (g_auto.device == &d && g_auto.physical == d.physical()) return g_auto.on;
     bool on = false;
-    if (d.properties().deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+    const char* why = ", not Linux or a small integrated GPU";
+    if (!d.features().external_memory_host) {
+        on = true;
+        why = ", the GPU cannot import host memory (no VK_EXT_external_memory_host)";
+    } else if (d.properties().deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
         VkPhysicalDeviceMemoryProperties mp = {};
         vkGetPhysicalDeviceMemoryProperties(d.physical(), &mp);
         uint64_t local = 0;
         for (uint32_t i = 0; i < mp.memoryHeapCount; ++i)
             if (mp.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) local = std::max<uint64_t>(local, mp.memoryHeaps[i].size);
         on = local && local <= (8ull << 30);
+        if (on) why = ", integrated GPU with at most 8 GiB of device-local memory";
     }
-    g_auto = AutoDecision{&d, d.physical(), on};
+    g_auto = AutoDecision{&d, d.physical(), on, why};
     return on;
 }
+
+#if !defined(__APPLE__)
+// The reason auto_copy gave on native Windows (log_cfg runs after it, once a device exists).
+const char* auto_why() {
+    std::lock_guard<std::mutex> lk(g_auto_mu);
+    return g_auto.why;
+}
+#endif
 
 struct Cfg {
     bool automatic = true;
@@ -124,7 +140,7 @@ void log_cfg(const Cfg& c, bool on) {
                         : on ? ", the compute writes reach the textures through the shadow"
                              : ", host-memory import, the direct path (no shadow)";
 #else
-                        : on ? ", integrated GPU with at most 8 GiB of device-local memory" : ", not Linux or a small integrated GPU";
+                        : auto_why();
 #endif
         NXLOG_I(kTag, "pool_copy %s (%s%s)", on ? "on" : "off", c.mode.c_str(), why);
         if (on)
