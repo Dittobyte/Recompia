@@ -171,8 +171,8 @@ pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config) -> Result<(), Strin
     Ok(())
 }
 
-/// How Play starts pkp.exe: in its folder, through Proton on Linux (host.rs). Every path (exefs, romfs, shader cache) comes
-/// from pkp.ini next to it.
+/// How Play starts the game: `pkp` in its folder on macOS and Linux, `pkp.exe` on Windows (host.rs). Every path (exefs, romfs, shader
+/// cache) comes from pkp.ini next to it.
 fn game_command(exe: &Path, dir: &Path, clock: Option<crate::events::ClockOverride>) -> Result<std::process::Command, String> {
     if !crate::host::native_game() {
         crate::host::sync_runtime_files(&crate::paths::exe_dir(), dir)?;   // pkp_rt.dll and the ASTC decoders: Windows files

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Checks before Set up starts: free disk space, write access to the game folder (writecheck.rs), Vulkan, RAM, and a warning
-//! for the Intel Core CPUs that crash under long heavy loads; on Linux also Proton, which runs the shader translator and the
-//! game. Every check except the disk space, the write access and Proton is a warning the player can continue past.
-//! `evaluate` is a pure function of `Facts` (tests below); `probe` fills `Facts` from Windows or Linux.
+//! for the Intel Core CPUs that crash under long heavy loads. Every check except the disk space and the write access is a
+//! warning the player can continue past.
+//! `evaluate` is a pure function of `Facts` (tests below); `probe` fills `Facts` from Windows, Linux or macOS.
 //!
 //! The Intel check and the "gentle" job count follow pokopia-native (MIT), nxs2.py `intel_microcode_warning` and
 //! `gentle_jobs` @7c3655d: 13th/14th generation desktop CPUs need Intel's 0x12B microcode (a BIOS update) or sustained
@@ -94,8 +94,9 @@ pub struct Facts {
     pub microcode: Option<u32>,
     /// the translated shaders will be packed (Remaining::compact): what the disk message says stays
     pub compact: bool,
-    /// Linux and macOS: the game is a native build — no Vulkan driver check, no /proc (host.rs native_game)
-    pub native: bool,
+    /// macOS: the game runs natively on Metal, so there is no Vulkan driver to check and no /proc to read the RAM from. Linux runs
+    /// the game natively too, but on Vulkan and with /proc: it keeps both checks.
+    pub macos: bool,
 }
 
 /// What of setup is still to do, as far as the disk goes.
@@ -203,12 +204,12 @@ pub fn evaluate(f: &Facts) -> Report {
     }
 
     let mut suggest_gentle = false;
-    if f.native {
+    if f.macos {
         push(
             "native",
             Level::Ok,
             "Native build",
-            "The game runs natively on this Mac: no Vulkan driver, no Proton and no RAM probe are needed.".into(),
+            "The game runs natively on this Mac, on Metal through MoltenVK: there is no Vulkan driver to install and no Proton to run it with.".into(),
         );
     } else {
     match &f.vulkan {
@@ -306,9 +307,10 @@ pub fn microcode_of(raw: &[u8]) -> Option<u32> {
 /// Everything `evaluate` needs, from this PC.
 pub fn probe(game_dir: &Path, r: &Remaining) -> Facts {
     let need = disk_needed(r);
-    // macOS runs the game natively: there is no Vulkan driver to find, no Proton to run it with and no /proc to read the RAM from.
-    let native = crate::host::native_game();
-    let (brand, microcode) = if native { (None, None) } else { sys::cpu() };
+    // macOS runs the game natively on Metal: there is no Vulkan driver to find and no /proc to read the RAM from. Linux runs it
+    // natively too, but on Vulkan and with /proc, so it keeps both checks.
+    let macos = cfg!(target_os = "macos");
+    let (brand, microcode) = sys::cpu();
     Facts {
         free_bytes: sys::free_bytes(game_dir),
         need_bytes: need,
@@ -316,11 +318,11 @@ pub fn probe(game_dir: &Path, r: &Remaining) -> Facts {
         drive: drive_of(game_dir),
         game_dir: game_dir.to_string_lossy().into_owned(),
         write: writecheck::check(game_dir),
-        vulkan: if native { Vulkan::Gpus(Vec::new()) } else { sys::vulkan() },
-        ram_total: if native { None } else { sys::ram_total() },
+        vulkan: if macos { Vulkan::Gpus(Vec::new()) } else { sys::vulkan() },
+        ram_total: if macos { None } else { sys::ram_total() },
         cpu_brand: brand,
         microcode,
-        native,
+        macos,
     }
 }
 

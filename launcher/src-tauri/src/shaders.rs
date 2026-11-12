@@ -12,7 +12,8 @@
 //! `corpus/unique.tsv`, rewritten per chunk) into `shader_cache/stage`, and a chunk counts only once its `.spv` files are
 //! moved into `spirv/` and its rows appended to `spirv/results.tsv`. A block with a row there is never translated again.
 //! `shader_cache/setup.json` records what is done. The tools run at below-normal priority.
-//! On Linux the extractor runs with the Linux Python and the translator (a Windows program) through Proton (host.rs).
+//! On Linux and macOS the tools run natively: the extractor with the host's Python, the translator as the host's own self-contained
+//! publish (host.rs).
 //! Compact storage (shader_archive.rs): when the cache has a shader archive, or a new setup asks for one (`Job::compact`), every chunk is
 //! moved into the archive as soon as it is committed, so the loose files never pile up. A cache of loose files stays loose until the
 //! player makes it smaller (main.rs compact_shaders).
@@ -39,7 +40,8 @@ pub const RUNTIME_REL: &str = "shader_cache/runtime";
 /// Run-time blocks a translator fix changes whose old translation is in the shader archive (it cannot be deleted one by one there):
 /// one hash per line. translate_missing translates them again, as if they had no translation, and empties the list.
 const RETRANSLATE_REL: &str = "shader_cache/runtime/retranslate.txt";
-/// Blocks per translator run. Under Proton every run also starts Proton (a few seconds), so Linux runs fewer, larger chunks.
+/// Blocks per translator run. Windows runs more, smaller chunks so a pause or a crash loses less; the POSIX hosts run fewer, larger
+/// ones (a native process start is cheap, and each chunk re-reads the corpus index).
 const CHUNK: usize = if cfg!(windows) { 1000 } else { 5000 };
 /// Workers for the extractor. It maps each asset file into memory and decompresses it, so one worker per CPU thread can
 /// thrash a machine's memory and disk (issue #194: 15 workers on a hard drive); a few already saturate the disk. The
@@ -405,8 +407,7 @@ pub(crate) fn run_tool(mut cmd: Command, cancel: &AtomicBool, idle: bool, log: O
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => {
-                // stdout closed: the process is ending. Polled, so Pause and the time limit still apply while it does (Proton's
-                // wrapper waits for every wine process of the prefix)
+                // stdout closed: the process is ending. Polled, so Pause and the time limit still apply while it does
                 if let Some(st) = child.try_wait().map_err(|e| e.to_string())? {
                     if cancel.load(Ordering::SeqCst) {
                         say(&format!("stopped: {} (paused by the player)", name));
