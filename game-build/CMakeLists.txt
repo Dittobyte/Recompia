@@ -161,7 +161,8 @@ if(PKP_RT_DLL)
         target_include_directories(pkp PRIVATE "${PKP_GEN_INCLUDE}")
         target_link_libraries(pkp PRIVATE ${PKP_MODULE_LIBS} pkp_rt)
         set_target_properties(pkp PROPERTIES BUILD_RPATH "$ORIGIN" INSTALL_RPATH "$ORIGIN")
-        # The main thread's stack: lifted code nests deeply (the Windows /STACK:134217728 equivalent).
+        # The main thread's stack: lifted code nests deeply (the Windows /STACK:134217728 equivalent). glibc ignores this PT_GNU_STACK
+        # size for the main thread; the runtime raises RLIMIT_STACK to 128 MiB before main (os_posix.cpp raise_main_stack).
         target_link_options(pkp PRIVATE "-Wl,-z,stack-size=134217728")
         add_custom_command(TARGET pkp POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${PKP_RUNTIME_DIR}/assets/fonts/DejaVuSans.ttf" "$<TARGET_FILE_DIR:pkp>/fonts/DejaVuSans.ttf")
@@ -208,7 +209,8 @@ elseif(APPLE)
     # Mach-O LC_MAIN header, which is what the kernel gives the main thread (128 MiB, the same number as the Windows flag).
     target_link_options(pkp PRIVATE "-Wl,-stack_size,0x8000000")
 else()
-    # Linux: the size goes into the PT_GNU_STACK header, which is what the kernel gives the main thread (128 MiB).
+    # Linux: glibc ignores the PT_GNU_STACK size for the main thread; the runtime raises RLIMIT_STACK to 128 MiB before main
+    # (os_posix.cpp raise_main_stack). The size is still written for a loader that reads it.
     target_link_options(pkp PRIVATE "-Wl,-z,stack-size=134217728")
 endif()
 
