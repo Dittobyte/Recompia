@@ -30,10 +30,15 @@ pub fn releases_of(app: &AppHandle, refresh: bool) -> Vec<update::GhRelease> {
     releases_for(app, refresh, update::Channel::parse(&load_config(app).channel))
 }
 
+/// The version the Update button compares with: None on a channel that offers no updates (Testing, update.rs Channel::offers_updates).
+fn update_current(app: &AppHandle) -> Option<String> {
+    update_version(app).filter(|_| update::Channel::parse(&load_config(app).channel).offers_updates())
+}
+
 /// Patch notes for the launcher and the update for this build, if there is one. Never fails: an empty list at worst.
 #[tauri::command]
 pub async fn get_releases(app: AppHandle, refresh: Option<bool>) -> update::Releases {
-    tauri::async_runtime::spawn_blocking(move || update::view_here(&releases_of(&app, refresh.unwrap_or(false)), update_version(&app).as_deref())).await.unwrap_or_default()
+    tauri::async_runtime::spawn_blocking(move || update::view_here(&releases_of(&app, refresh.unwrap_or(false)), update_current(&app).as_deref())).await.unwrap_or_default()
 }
 
 /// A build the player picked (update.rs target_for_tag) instead of the newest newer one. `accepted`: the player confirmed the warning for
@@ -59,7 +64,10 @@ pub fn run_update(app: &AppHandle, st: &update::UpdateState, wanted: Option<Want
     let version = update_version(app).ok_or("This build does not update itself.")?;
     // the newest newer build, or the one the player picked
     let (target, older) = match &wanted {
-        None => (update::target_here(&releases_of(app, false), &version).ok_or("No update is available right now.")?, false),
+        None => {
+            update_current(app).ok_or("The Testing channel has no automatic update. Pick a build in Settings > About > Choose a version.")?;
+            (update::target_here(&releases_of(app, false), &version).ok_or("No update is available right now.")?, false)
+        }
         Some(w) => {
             let t = update::target_for_tag_here(&releases_for(app, false, w.channel), &w.tag).ok_or("That build cannot be installed on this system.")?;
             (t, update::check_pick(&version, &w.tag, w.accepted)?)
