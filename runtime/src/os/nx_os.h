@@ -1246,7 +1246,7 @@ NX_OS_INLINE DWORD GetModuleFileNameW(HMODULE mod, LPWSTR out, DWORD cap) {
 }
 NX_OS_INLINE HMODULE GetModuleHandleW(LPCWSTR name) {
     if (!name || !*name) return GetModuleHandleA(nullptr);
-    (void)name;   // every caller probes for ntdll.dll (Wine detection): report absence
+    (void)name;   // there is no ntdll here: the callers that ask for it want its functions (NtDelayExecution, NtQuerySystemInformation, RtlWaitOnAddress), so report absence
     SetLastError(ERROR_MOD_NOT_FOUND);
     return nullptr;
 }

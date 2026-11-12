@@ -106,14 +106,6 @@ bool host_is_linux() {
 #endif
 }
 
-bool host_is_wine() {
-    static const bool wine = [] {
-        HMODULE nt = GetModuleHandleW(L"ntdll.dll");
-        return nt && GetProcAddress(nt, "wine_get_version");
-    }();
-    return wine;
-}
-
 // ---- Steam's on-screen keyboard -------------------------------------------------------------------------------------------------------
 
 namespace {
@@ -142,19 +134,16 @@ bool run_with_url(const wchar_t* exe, const std::string& url) {
 }
 
 // Hands a steam:// URL to the Steam client. Under Proton, the prefix's steam.exe is Proton's helper, which forwards steam:// arguments to
-// the native client (steam_helper: steam-runtime-steam-remote, else steam); on Windows it is Steam itself. Plain Wine without Proton:
+// the native client (steam_helper: steam-runtime-steam-remote, else steam); on Windows it is Steam itself. A prefix without that helper has
 // winebrowser (xdg-open, which reaches Steam through its x-scheme-handler/steam). Last: ShellExecute.
 void send_to_steam(const std::string& url) {
-    static const wchar_t* const kSteamExe[] = {L"C:\\Program Files (x86)\\Steam\\steam.exe", L"C:\\windows\\system32\\steam.exe"};
+    static const wchar_t* const kSteamExe[] = {L"C:\\Program Files (x86)\\Steam\\steam.exe", L"C:\\windows\\system32\\steam.exe",
+                                               L"C:\\windows\\system32\\winebrowser.exe"};
     for (const wchar_t* exe : kSteamExe) {
         if (file_exists(exe) && run_with_url(exe, url)) {
             NXLOG_I("host", "Steam keyboard: %s (through %ls)", url.c_str(), exe);
             return;
         }
-    }
-    if (host_is_wine() && run_with_url(L"C:\\windows\\system32\\winebrowser.exe", url)) {
-        NXLOG_I("host", "Steam keyboard: %s (through winebrowser)", url.c_str());
-        return;
     }
     const INT_PTR r = reinterpret_cast<INT_PTR>(ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
     if (r > 32) NXLOG_I("host", "Steam keyboard: %s (ShellExecute)", url.c_str());
