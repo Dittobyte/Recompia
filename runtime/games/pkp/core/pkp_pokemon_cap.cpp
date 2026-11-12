@@ -9,13 +9,13 @@
 #include <cstdint>
 
 #include "core/pkp_guest.h"
+#include "core/pkp_layout.h"
 #include "core/pkp_settings.h"
 #include "nxrt/log.h"
 
 namespace nxrt::games::pkp {
 namespace {
 
-constexpr std::uint64_t kPokemonParamsRoot = 0x36ca678;  // global in main: -> holder; holder+0x20 -> resident parameter object
 constexpr std::uint64_t kParamsLink = 0x20;
 constexpr std::uint64_t kLivingOffset = 0x4bc;
 constexpr std::uint64_t kObjectsOffset = 0x4c0;
@@ -44,7 +44,7 @@ void game_frame(::Ctx*) {
     resident_census::tick();
 
     // Pointers are guest-mapped addresses, not native process offsets.
-    const auto global = g.base + kPokemonParamsRoot;
+    const auto global = g.base + layout::kPokemonParamsRoot;
     if (!guest::ok(global, sizeof(std::uint64_t))) return;
     const auto holder = guest::rd<std::uint64_t>(global);
     if (!guest::ok(holder, kParamsLink + sizeof(std::uint64_t))) return;
