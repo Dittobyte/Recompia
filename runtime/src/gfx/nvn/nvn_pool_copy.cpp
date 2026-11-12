@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// [nvn] pool_copy = auto (default: Wine, or an integrated GPU with <=8 GiB of device-local memory) | on | off: memory pools as copies (shadows)
-// instead of imports. Under Proton every vkQueueSubmit costs more the more userptr memory is imported (amdgpu revalidates every userptr BO of the
-// submission's BO list): with whole pools imported (3.8 GiB) the game froze inside vkQueueSubmit, and the lazy pool's ~2 GiB of live imports
-// still cost ~17.8 ms per batch submission on the Deck. Here a pool keeps the lazy pool's cell structure (nvn_gpu_pool.cpp: cells, ext,
-// cell_ext, spans, idle drop), but each cell holds a host-visible Vulkan buffer of its own (MemoryUse::Shadow, handed out by
-// nvn_pool_stock.cpp) instead of an import of the guest pages, so no submission carries a userptr BO.
+// [nvn] pool_copy = auto (default: Linux, or an integrated GPU with <=8 GiB of device-local memory) | on | off: memory pools as copies
+// (shadows) instead of imports. On Linux (Proton or native) every vkQueueSubmit costs more the more userptr memory is imported (amdgpu
+// revalidates every userptr BO of the submission's BO list): with whole pools imported (3.8 GiB) the game froze inside vkQueueSubmit, and
+// the lazy pool's ~2 GiB of live imports still cost ~17.8 ms per batch submission on the Deck. Here a pool keeps the lazy pool's cell
+// structure (nvn_gpu_pool.cpp: cells, ext, cell_ext, spans, idle drop), but each cell holds a host-visible Vulkan buffer of its own
+// (MemoryUse::Shadow, handed out by nvn_pool_stock.cpp) instead of an import of the guest pages, so no submission carries a userptr BO.
 //
 // The rules that keep the shadow right:
 //  * touch (resolve_in_pool, render thread): every resolve copies the pages of the range it binds from guest memory into the shadow, unless
@@ -40,6 +40,7 @@
 #include "nxrt/gauge.h"
 #include "nxrt/host_device.h"
 #include "nxrt/log.h"
+#include "nxrt/memory.h"
 #include "nxrt/write_watch.h"
 #include "nvn_gpu_internal.h"
 #include "nvn_pool_copy_impl.h"
@@ -63,7 +64,14 @@ std::mutex g_auto_mu;
 AutoDecision g_auto;
 
 bool auto_copy() {
-    if (host_is_wine()) return true;
+    if (host_is_linux()) return true;
+#if defined(__APPLE__)
+    // On by default, whatever the device supports. MoltenVK 1.4 does implement VK_EXT_external_memory_host (the log says
+    // "host-memory import available") and importing is far cheaper than mirroring 25-40 MB a frame, but with the direct path
+    // the compute-written data never reaches the textures: the world renders black and the character white. The copy is what
+    // makes those writes land, so it stays until that path is fixed. [nvn] pool_copy = off still selects the direct path.
+    return true;
+#endif
     if (!active()) return false;     // an early stats call must not latch auto off
     gfx::Device& d = device();
     std::lock_guard<std::mutex> lk(g_auto_mu);
@@ -109,7 +117,14 @@ const Cfg& cfg() {
 void log_cfg(const Cfg& c, bool on) {
     static std::once_flag once;
     std::call_once(once, [&] {
-        const char* why = !c.automatic ? "" : (host_is_wine() ? ", Wine" : (on ? ", integrated GPU with at most 8 GiB of device-local memory" : ", not Wine or a small integrated GPU"));
+        const char* why = !c.automatic ? ""
+                        : host_is_linux() ? ", Linux"
+#if defined(__APPLE__)
+                        : on ? ", the compute writes reach the textures through the shadow"
+                             : ", host-memory import, the direct path (no shadow)";
+#else
+                        : on ? ", integrated GPU with at most 8 GiB of device-local memory" : ", not Linux or a small integrated GPU";
+#endif
         NXLOG_I(kTag, "pool_copy %s (%s%s)", on ? "on" : "off", c.mode.c_str(), why);
         if (on)
             NXLOG_I(kTag, "pool_copy: shadows in cells of %llu MiB, dropped after %u idle presents, cap %llu MiB; pool_lazy, pool_lazy_chunk_mb, "
@@ -178,20 +193,30 @@ CopyGauges g_copy_gauges;
 
 // memcpy that survives an access violation (a guest page decommitted under it). No C++ objects here (SEH).
 bool seh_copy(void* d, const void* s, size_t n) {
+#if defined(_WIN32)
     __try {
         std::memcpy(d, s, n);
     } __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
         return false;
     }
     return true;
+#else
+    return nxos_guard([&] { std::memcpy(d, s, n); });   // the shim's __try: a fault inside returns 0
+#endif
 }
 
 bool seh_same(const void* a, const void* b, size_t n) {      // as seh_copy; false on a fault
+#if defined(_WIN32)
     __try {
         return std::memcmp(a, b, n) == 0;
     } __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
         return false;
     }
+#else
+    bool same = false;
+    if (!nxos_guard([&] { same = std::memcmp(a, b, n) == 0; })) return false;
+    return same;
+#endif
 }
 
 void reg_remove(PoolChunk* c) {
@@ -254,7 +279,7 @@ uint64_t guarded_copy(uint8_t* d, const uint8_t* s, uint64_t n, bool in) {
 bool pool_copy_on() {
     const Cfg& c = cfg();
     const bool on = c.automatic ? auto_copy() : c.on;
-    if (!c.automatic || host_is_wine() || active()) log_cfg(c, on);   // native Windows: wait for a device before deciding or logging auto
+    if (!c.automatic || host_is_linux() || active()) log_cfg(c, on);   // native Windows: wait for a device before deciding or logging auto
     return on;
 }
 uint64_t pool_copy_cell() { return cfg().cell; }
@@ -490,7 +515,11 @@ void pcopy_touch(PoolGpu* g, PoolChunk* c, uint64_t off, uint64_t size) {
             ptrack_before_copy(trk, pbase + p, q - p, frame, &c->page_gen[static_cast<size_t>(p)]);
             if (flight) std::fill(c->page_gen.begin() + static_cast<std::ptrdiff_t>(p), c->page_gen.begin() + static_cast<std::ptrdiff_t>(q), 0u);
         }
-        const uint64_t bad = pcopy::guarded_copy(dst + p * kPage, src + p * kPage, (q - p) * kPage, true);
+        // A chunk's size is not always a page multiple (a span's stride, the last cell of a pool), so the last page of
+        // the range stops at the chunk: a full page there wrote up to 4095 bytes past the shadow's buffer, into the
+        // driver's heap, and the next free aborted the process (HOST EXCEPTION 0xE0000004, libsystem_malloc, ~CmdList).
+        const uint64_t bytes_here = std::min<uint64_t>((q - p) * kPage, c->size - p * kPage);
+        const uint64_t bad = pcopy::guarded_copy(dst + p * kPage, src + p * kPage, bytes_here, true);
         if (bad) pcopy::shared().unreadable.fetch_add(bad, std::memory_order_relaxed);
         if (rt)
             for (uint64_t i = p; i < q; ++i) c->page_copied[static_cast<size_t>(i)] = (flight ? cur : through) + 1;   // never 0: a copy exists

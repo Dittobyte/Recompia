@@ -5,6 +5,7 @@
 #include <atomic>
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <chrono>
 #include <cstdlib>

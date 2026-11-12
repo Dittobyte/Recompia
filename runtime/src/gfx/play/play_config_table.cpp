@@ -221,6 +221,8 @@ bool read_picture_preset(const std::string&, const std::string& v, Settings* s, 
 const SettingDef kTable[] = {
     {ROW("meta", "defaults_rev", Int), WHOLE(defaults_rev), .lo = 0, .hi = 1000,
      .doc = "The factory-defaults revision the file was written with (the game writes it; a file without it counts as 0). An older file gets the newer factory bindings and values at the next start."},
+    {ROW("meta", "display_rev", Int), WHOLE(display_rev), .lo = 0, .hi = 1000,
+     .doc = "The display-defaults revision the file was written with (the game writes it; a file without it counts as 0). macOS turns vsync on for an older file."},
 
     {ROW("mouse", "yaw", Real), REAL(mouse.yaw_rad), .doc = "Horizontal mouse sensitivity in radians per count."},
     {ROW("mouse", "pitch", Real), REAL(mouse.pitch_rad), .doc = "Vertical mouse sensitivity in radians per count."},

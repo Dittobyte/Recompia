@@ -21,6 +21,29 @@
 - Alpha builds (in-house tests, shared by link) are no longer listed or offered on any channel
 - New **Achievements** page: the Modtopia community tracker in the launcher, with the achievements grouped as the hub lists them, how many players have each one, the rarest right now, and which ones you earned (from the Community Achievements mod). It also shows whether the mod is installed, on and sharing, and can switch it or its sharing on. The launcher only reads the counts and sends nothing. Update only: no shader rebuild, no Set up again
 
+### Linux
+- The game runs natively on Linux: no Proton, no Wine. The download is `PokopiaRecomp-<version>-linux-x64.tar.gz`, with the launcher as an AppImage and the runtime as `libpkp_rt.so`, the same runtime the Windows build links as `pkp_rt.dll`
+- The runtime reaches the system directly instead of through the Windows API: `runtime/src/os/` holds a POSIX layer for files, memory mappings, sockets, threads, timers, paths and processes, and SDL3 plays the audio and opens the window. `pkp` is linked from the player's own dump with the bundled Zig, as on Windows
+- `libpkp_rt.so` needs glibc 2.35 or newer (Ubuntu 22.04+, Debian 12+, Fedora 36+, SteamOS 3) and nothing else: SDL3 is linked in, and every other backend library is opened at run time, so a missing one switches that backend off instead of failing the start
+- The defaults that fix a Linux kernel or Mesa behaviour now ask the kernel, not Wine: a kernel submission's pool walk, the lazy and shadow pool imports, the submit thread and its batching, the short sleep's timed address wait, the graphics pipeline library upgrade, the loop guard and the pipeline cache save all apply to the native build, which is what the Proton build had
+- Write tracking arms a whole range with one `mprotect` instead of one per 4 KiB page (a 10 MiB arm measured 3132 us -> 34 us), and the timed address wait is a futex, so the game's ~100 us GPU-fence polls no longer keep two cores busy
+- Steam Deck: add the AppImage as a non-Steam game. An AppImage leaves the graphics stack to the host on purpose, so it needs `libEGL`, `libGL`, `libGLESv2` and `libvulkan`, which every desktop and SteamOS ship
+- Mods reach the internet as they do on Windows: the host HTTP client loads the system's libcurl at the first request (every desktop distribution ships it, and macOS keeps it in the dyld shared cache), so an HTTPS request to a site the mod's description names is answered. The rules are the Windows ones: https anywhere, plain http only to localhost, no redirect, cookie or sign-in, TLS 1.2 or later, a 256 KiB answer cap and a time limit per step. Nothing links libcurl, so a host without it refuses the request (`MT_ERR_STATE` to the mod) instead of failing the start
+- Still not: **FSR 3 and DLSS**. Both are Windows-only SDKs and the native build turns them off, where the Proton build had them; FSR 1 and NIS are plain compute shaders and still run. Also Link Play against a peer and a real gamepad
+
+### macOS
+- The game runs natively on Apple silicon: `libpkp_rt.dylib`, a `pkp` linked from the player's own dump, Metal through MoltenVK, CoreAudio for sound and SDL3 for the window
+- The download is one zip, `Recompia-<version>-macos-arm64.zip`, whose root is `PokopiaRecomp-<version>/`: `PokopiaLauncher`, `tools/` and `libpkp_rt.dylib`. There is no `.app` and no signature: unpack it anywhere, start `PokopiaLauncher`, allow it once in **System Settings > Privacy and Security**, and it updates itself in place from then on
+- Vsync is on by default: without it MoltenVK presents immediately, frames show mid-refresh, and a MacBook flashes partly drawn pictures
+- `pkp` carries its own Metal shader-cache identity (an `Info.plist` linked into it, one per game folder). Without one it shared a cache folder with every other program outside an app bundle, and a start compiled every pipeline again whenever one of those was running
+- A frame limit holds through loading screens too, the game's own thread synchronisation is ordered the way Apple's cores need it (`LDAR`/`STLR`), SHA-1 uses the ARMv8 instructions, and the runtime's write tracking follows the host's 16 KiB pages, so a texture the game rewrites is not read back stale
+- The guest address space is reserved in `pkp`'s Mach-O header as a zero-fill `__GUEST` segment: libmalloc's xzone allocator takes about 24 GiB of it at random addresses before `main` runs
+- Mods reach the internet here too: the host HTTP client is the same libcurl one the Linux build uses, and macOS keeps libcurl in the dyld shared cache, so nothing is bundled for it
+- Still not: the two in-game movies (they are VP9 in WebM and no run has reached one yet), Link Play against a peer, and a signed and notarized `.app` — the zip is unsigned and its note covers the one-time **Open Anyway**. In the world the GPU is the limit: about 25 fps on an M3 at 1080p internal
+
+### Docs
+- `docs/linux-port.md` and `docs/macos-port.md` describe both ports, and `docs/macos-optimisations.md` records what is tuned, what is not, and how to measure it
+
 ## 0.11.1 (build O: Ocelot Hotfix a1)
 
 **Update:** press **Update**, then **Set up again** once (the game code is translated again for the mods' hook points, several minutes). Your shaders and saves are kept; no shader is translated again.

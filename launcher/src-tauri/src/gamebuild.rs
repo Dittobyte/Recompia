@@ -48,6 +48,8 @@ pub struct Tick {
 
 /// The package builds pkp.exe itself (model b) when it carries the build tools.
 pub fn is_package_b(tools_dir: &Path) -> bool {
+    // The release carries pkp_build.py: on Windows and Linux it links pkp.exe against pkp_rt.dll, on macOS pkp against
+    // libpkp_rt.dylib. A development tree (no tools/ next to the launcher) builds the game with CMake instead.
     tools_dir.join("build").join("pkp_build.py").is_file()
 }
 
@@ -113,12 +115,16 @@ static CHECKED: std::sync::Mutex<Option<(CheckKey, Built)>> = std::sync::Mutex::
 
 /// Whether pkp.exe was built by this release's tools (`pkp_build.py --check`, the stamp's only implementation).
 pub fn built_state(game_dir: &Path, tools_dir: &Path) -> Built {
-    // before the stamp: a dll from another release than the tools makes every build useless, whatever pkp.exe is
+    // before the stamp: a dll from another release than the tools makes every build useless, whatever pkp.exe is.
+    // macOS links the runtime into pkp (libpkp_rt.dylib) and has no pkp_rt.dll to compare, so the check does not apply.
+    #[cfg(target_os = "macos")]
+    let api = crate::runtime_api::Agreement::Agree;
+    #[cfg(not(target_os = "macos"))]
     let api = crate::runtime_api::check(game_dir, tools_dir);
     if let crate::runtime_api::Agreement::Mixed { dll, sdk } = api {
         return Built::Mixed { dll, sdk };
     }
-    let exe = game_dir.join("pkp.exe");
+    let exe = crate::host::game_exe(game_dir);   // pkp on macOS, pkp.exe elsewhere
     let done = game_dir.join("build").join("done.json");
     let (Ok(em), Ok(dm)) = (fs::metadata(&exe), fs::metadata(&done)) else {
         return Built::No;
@@ -136,11 +142,11 @@ pub fn built_state(game_dir: &Path, tools_dir: &Path) -> Built {
         }
     }
     // missing tools: Stale, so Set up runs and names what is missing
-    let Ok(tools) = find_tools(tools_dir) else {
+    let Ok(tools) = find_tools(tools_dir, game_dir) else {
         return Built::Stale;
     };
     let mut cmd = crate::host::command(&tools.python);
-    cmd.arg("-I").arg(&tools.script).arg("--check").arg("--game").arg(game_dir);
+    cmd.arg("-I").arg("-B").arg(&tools.script).arg("--check").arg("--game").arg(game_dir);
     quiet(&mut cmd, false);
     let Ok(out) = cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status() else {
         return Built::Stale; // not cached: the next look tries again
@@ -160,14 +166,21 @@ pub fn is_built(game_dir: &Path, tools_dir: &Path) -> bool {
     built_state(game_dir, tools_dir) == Built::Current
 }
 
-pub fn find_tools(tools_dir: &Path) -> Result<Tools, String> {
-    let python = crate::host::python(tools_dir);
+pub fn find_tools(tools_dir: &Path, game_dir: &Path) -> Result<Tools, String> {
+    // The Python is fetched into the writable tools folder (the game folder on macOS, next to the AppImage on Linux); the
+    // script, the lifter and the runtime library ship inside the package.
+    let fetched = crate::host::python(&crate::host::tools_dir_for(game_dir));
+    let python = if fetched.is_file() { fetched } else { crate::host::python(tools_dir) };
     let script = tools_dir.join("build").join("pkp_build.py");
+    let mut required = vec![python.clone(), script.clone()];
+    // macOS compiles with Apple clang and links libpkp_rt.dylib; the Windows and Linux packages carry Zig and the runtime as
+    // pkp_rt.lib (Windows, linked in) or libpkp_rt.so (Linux, found next to the exe at run time).
+    if !cfg!(target_os = "macos") {
+        required.push(crate::host::zig(tools_dir));
+    }
+    required.extend([crate::host::runtime_lib_rel(), "build/recomp/nxrecomp/__main__.py"].iter().map(|p| tools_dir.join(p)));
     let mut missing = Vec::new();
-    for p in [python.clone(), script.clone(), crate::host::zig(tools_dir)]
-        .into_iter()
-        .chain(["build/sdk/pkp_rt.lib", "build/recomp/nxrecomp/__main__.py"].iter().map(|p| tools_dir.join(p)))
-    {
+    for p in required {
         if !p.is_file() {
             missing.push(p.display().to_string());
         }
@@ -196,7 +209,7 @@ pub fn run(job: &Job, tools: &Tools, cancel: &AtomicBool, mut report: impl FnMut
     let cancel_file = build.join("cancel");
     let _ = fs::remove_file(&cancel_file);
     let mut cmd = crate::host::command(&tools.python);
-    cmd.arg("-I").arg(&tools.script).arg("--exefs").arg(&job.exefs).arg("--game").arg(&job.game_dir);
+    cmd.arg("-I").arg("-B").arg(&tools.script).arg("--exefs").arg(&job.exefs).arg("--game").arg(&job.game_dir);
     cmd.args(["--jobs", &job.jobs.max(1).to_string()]);
     quiet(&mut cmd, job.idle);
     let say = |t: &str| {

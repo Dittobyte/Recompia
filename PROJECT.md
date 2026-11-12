@@ -102,7 +102,8 @@ Public headers are `runtime/include/nxrt/*.h`. A shared helper exists once; use 
 | High-resolution time | `nxrt/qpc.h` |
 | A counter or timer shown in diagnostics | `GaugeHook` in `nxrt/gauge.h` |
 | Winsock start-up | `ensure_winsock()` in `src/net/win_sock.h` |
-| "Is this Wine/Proton?" | `host_is_wine()` in `nxrt/host_device.h` |
+| "Is the host kernel Linux?" (natively, or under Wine) | `host_is_linux()` in `nxrt/host_device.h`; ask the kernel or driver, never "is this Wine" |
+| "Which machine is this?" (handheld, Steam Deck) | `host_is_handheld()`, `host_is_steam_deck()` in `nxrt/host_device.h` |
 | Ini value or env override | `nxrt/config.h` (`config_get_*`; env `NXRT_<SECTION>_<KEY>` wins) |
 | A fact about the game (name, log file, ini file, defaults) | `game::info()` in `nxrt/game.h` |
 | Hook a guest address | `nxrt/hooks.h` (in the game layer: always through a `HookSet`) |

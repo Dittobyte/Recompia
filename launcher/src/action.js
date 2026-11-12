@@ -12,13 +12,14 @@ const setupRunning = (s) => s.setup?.progress?.state === 'running';
 
 /**
  * Where the game is. Rust reports state "running" for three different moments, told apart by play.rs's message:
- * the shader step before launch, the game itself ("pkp.exe started (process N)"), the shader step after it exits.
+ * the shader step before launch, the game itself ("pkp started (process N)" / "pkp.exe started ..."), the shader step after
+ * it exits. macOS has no shader step: its play.rs sends "Starting the game..." and then the game's message.
  */
 export function gamePhase(game) {
   if (game?.state === 'exited') return 'exited';
   if (game?.state !== 'running') return 'idle';
   const m = game.message || '';
-  if (m.startsWith('pkp.exe started')) return 'running';
+  if (m.startsWith('pkp.exe started') || m.startsWith('pkp started')) return 'running';
   if (m.startsWith('Translating the shaders the game built')) return 'finishing';
   return 'starting';
 }
