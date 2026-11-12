@@ -9,10 +9,7 @@ import { fromBackend } from '../backend-text.js';
 import { confirm, errText, esc, field, icon, row, segmented, select, slider, toast, toggle } from '../ui.js';
 import { store } from '../store.js';
 import { gamePhase } from '../action.js';
-import { allowQuestion, badges, byLine, canMove, cardAction, installQuestion, isSlider, settingValue } from '../mods-model.js';
-
-// The Browse tab (the Modtopia mod hub's list and installs) is off for 0.11.1 by the repo owner's call; true brings it back.
-const BROWSE = false;
+import { allowQuestion, badges, byLine, canMove, cardAction, detailsView, filterByGroup, groupChips, installQuestion, isSlider, isTested, keepGroup, settingValue } from '../mods-model.js';
 
 const gameActive = (s) => ['starting', 'running', 'finishing'].includes(gamePhase(s.game));
 
@@ -26,13 +23,14 @@ export async function render(el, ctx) {
   let listError = '';
   let catalog = null;     // mods_catalog
   let catalogError = '';
+  let group = '';         // the Browse filter chip: a group key, '' = All
   let busy = false;       // a change or an install is on its way: every control waits
-  let autoUpdate = false; // launcher.json mods_auto_update (the hub feature is off with BROWSE, so is its switch)
+  let autoUpdate = false; // launcher.json mods_auto_update (the switch for the hub's updates)
 
   el.innerHTML = `<div class="page mods">
     <div class="mods-head">
       <h1>${esc(t('Mods'))}</h1>
-      ${BROWSE ? segmented('mods-tab', [['installed', t('Installed')], ['browse', t('Browse')]], tab, { label: t('Mods') }) : ''}
+      ${segmented('mods-tab', [['installed', t('Installed')], ['browse', t('Browse')]], tab, { label: t('Mods') })}
     </div>
     <div class="mods-part" id="mods-banners"></div>
     <div class="mods-part" id="mods-prefs"></div>
@@ -55,7 +53,7 @@ export async function render(el, ctx) {
 
   /** The launcher's own preference for the hub's mods (the update itself runs at launcher start, mods_update.rs). */
   function prefsHtml() {
-    if (!BROWSE || tab !== 'installed') return '';
+    if (tab !== 'installed') return '';
     return `<div class="mods-pref glass">${row(t('Update mods by themselves'), toggle('mods-auto-update', autoUpdate, { label: t('Update mods by themselves') }))}
       <p class="faint mods-note">${esc(t('Once each time the launcher starts, from the mod hub. Mods you switched off stay off.'))}</p></div>`;
   }
@@ -106,7 +104,7 @@ export async function render(el, ctx) {
     if (!view) return `<div class="empty">${icon('loader-circle', 'spin')}</div>`;
     if (!view.mods.length) {
       return `<div class="empty glass">${icon('puzzle')}<strong>${esc(t('No mods yet'))}</strong>
-        <span>${esc(BROWSE ? t('Find mods under Browse, or put them into the mods folder.') : t('Put mods into the mods folder.'))}</span></div>${folder}`;
+        <span>${esc(t('Find mods under Browse, or put them into the mods folder.'))}</span></div>${folder}`;
     }
     const order = view.mods.length > 1 ? `<p class="faint mods-note">${esc(t('Mods load from the top down: on the same game file, the one further down wins.'))}</p>` : '';
     return `${order}${view.mods.map((m, i) => modHtml(m, i, view.mods)).join('')}${folder}`;
@@ -124,6 +122,7 @@ export async function render(el, ctx) {
     }[act];
     const chips = [{ text: c.gameplay ? t('Changes gameplay') : t('Looks only'), kind: c.gameplay ? 'warn' : '' }];
     if (c.network) chips.push({ text: t('Goes online'), kind: '' });
+    if (isTested(c, catalog.game)) chips.push({ text: t('Tested'), kind: 'ok' });
     return `<section class="mod glass card-mod">
       <div class="mod-head">
         <div class="grow">
@@ -133,8 +132,15 @@ export async function render(el, ctx) {
       </div>
       ${c.summary ? `<p class="mod-desc">${esc(c.summary)}</p>` : ''}
       <div class="cluster">${chips.map(chip).join('')}${c.installed && c.newer ? `<span class="chip">${esc(t('{version} installed', { version: c.installed }))}</span>` : ''}</div>
-      <div class="cluster mod-actions">${linkButton(c.page, t('Mod page'))}<span class="grow"></span>${button}</div>
+      <div class="cluster mod-actions"><button class="btn quiet sm" data-act="details" data-id="${esc(c.id)}">${icon('info')}${esc(t('Details'))}</button>${linkButton(c.page, t('Mod page'))}<span class="grow"></span>${button}</div>
     </section>`;
+  }
+
+  /** The group chips of Browse (only when the hub names groups): one button each, the chosen one pressed. */
+  function groupsHtml() {
+    const chips = groupChips(catalog.groups);
+    if (!chips.length) return '';
+    return `<div class="cluster mods-groups" role="group" aria-label="${esc(t('Mod groups'))}">${chips.map((g) => `<button class="chip" data-act="group" data-id="${esc(g.key)}" aria-pressed="${g.key === group}">${esc(g.label)}</button>`).join('')}</div>`;
   }
 
   function browseHtml() {
@@ -145,10 +151,11 @@ export async function render(el, ctx) {
         <button class="btn quiet sm" data-act="refresh" ${busy ? 'disabled' : ''}>${icon('refresh-cw')}${esc(t('Refresh'))}</button></div></div></div>`;
     const offline = catalog.offline ? `<div class="banner warn">${icon('triangle-alert')}<div class="grow">${esc(t('The mod hub cannot be reached: this is the last list the launcher saw. Installing needs the hub.'))}</div></div>` : '';
     const preview = catalog.preview ? `<div class="banner warn">${icon('triangle-alert')}<div class="grow">${esc(t('The mod hub is not open for installs yet: this is what is coming.'))}</div></div>` : '';
-    const cards = catalog.mods.length
-      ? catalog.mods.map(cardHtml).join('')
-      : `<div class="empty glass">${icon('puzzle')}<strong>${esc(t('No mods for this game version yet'))}</strong></div>`;
-    return note + offline + preview + cards;
+    const shown = filterByGroup(catalog.mods, group);
+    const cards = shown.length
+      ? shown.map(cardHtml).join('')
+      : `<div class="empty glass">${icon('puzzle')}<strong>${esc(catalog.mods.length ? t('No mods in this group') : t('No mods for this game version yet'))}</strong></div>`;
+    return note + offline + preview + groupsHtml() + cards;
   }
 
   // a redraw keeps the focus on the same control (the pad and the keyboard must not lose their place)
@@ -183,6 +190,7 @@ export async function render(el, ctx) {
     if (refresh) { catalog = null; catalogError = ''; draw(); }
     try {
       catalog = await api.modsCatalog({ refresh });
+      group = keepGroup(catalog.groups, group);
       catalogError = '';
     } catch (e) {
       catalogError = errText(e);
@@ -243,6 +251,19 @@ export async function render(el, ctx) {
     if (ok) await loadCatalog();
   }
 
+  /** The whole description, the settings it adds, what the hub says about testing, size and links. Plain text only. */
+  async function details(id) {
+    const c = catalog?.mods.find((x) => x.id === id);
+    if (!c) return;
+    const d = detailsView(c, catalog.game);
+    const html = `<p class="mod-by">${esc(d.by)}</p>
+      ${d.description ? `<p class="mod-long selectable">${esc(d.description)}</p>` : ''}
+      ${d.settings.length ? `<h3 class="mod-sub">${esc(t('Settings you can change'))}</h3><ul class="mod-set-list">${d.settings.map((s) => `<li class="selectable">${esc(s)}</li>`).join('')}</ul>` : ''}
+      ${d.facts.map((f) => `<p>${esc(f)}</p>`).join('')}
+      ${d.links.length ? `<div class="cluster">${d.links.map((l) => linkButton(l.url, l.label)).join('')}</div>` : ''}`;
+    await confirm({ title: d.title, html, ok: t('Close'), alert: true, onAct: (b) => api.openLink({ url: b.dataset.url }).catch((err) => toast(errText(err), 'error')) });
+  }
+
   async function remove(id) {
     const m = view?.mods.find((x) => x.id === id);
     if (!m) return;
@@ -282,6 +303,8 @@ export async function render(el, ctx) {
       case 'down': return apply(() => api.modsMove({ id, delta: 1 }));
       case 'remove': return remove(id);
       case 'install': return install(id);
+      case 'details': return details(id);
+      case 'group': group = id; return draw();
       case 'folder': return api.openModsDir().catch((err) => toast(errText(err), 'error'));
       case 'link': return api.openLink({ url: b.dataset.url }).catch((err) => toast(errText(err), 'error'));
       case 'refresh': return loadCatalog(true);
@@ -294,7 +317,7 @@ export async function render(el, ctx) {
     if (['app', 'game', 'task', 'setup'].includes(why)) part('mods-banners').innerHTML = bannersHtml();
   });
 
-  if (BROWSE) api.getConfig().then((c) => { autoUpdate = !!c?.mods_auto_update; draw(); }).catch((e) => console.warn('get_config', e));
+  api.getConfig().then((c) => { autoUpdate = !!c?.mods_auto_update; draw(); }).catch((e) => console.warn('get_config', e));
   draw();
   await loadList();
 }
