@@ -73,12 +73,11 @@ pub struct Achievement {
     pub picture: String,
 }
 
-/// The catalog's `achievements` block: the tracker page, where everyone's counts are, the pictures' licence and the list.
+/// The catalog's `achievements` block: where everyone's counts are and the list (the page shows both in the launcher; its web
+/// tracker page and licence link are not read).
 #[derive(Clone, Debug, Default)]
 pub struct Achievements {
-    pub page: String,
     pub stats: String,
-    pub license: String,
     pub list: Vec<Achievement>,
 }
 
@@ -103,9 +102,8 @@ pub fn parse(body: &[u8]) -> Result<Catalog, String> {
     let text = |k: &str| v.get(k).and_then(|s| s.as_str()).unwrap_or("").to_string();
     let mods = v.get("mods").and_then(|m| m.as_array()).map(|a| a.iter().filter_map(|m| serde_json::from_value(m.clone()).ok()).collect()).unwrap_or_default();
     let achievements = v.get("achievements").filter(|a| a.is_object()).map(|a| {
-        let field = |k: &str| a.get(k).and_then(|s| s.as_str()).unwrap_or("").to_string();
         let list = a.get("list").and_then(|l| l.as_array()).map(|l| l.iter().filter_map(|x| serde_json::from_value(x.clone()).ok()).collect()).unwrap_or_default();
-        Achievements { page: field("page"), stats: field("stats"), license: field("license"), list }
+        Achievements { stats: a.get("stats").and_then(|s| s.as_str()).unwrap_or("").to_string(), list }
     });
     Ok(Catalog { preview: v.get("preview").and_then(|p| p.as_bool()).unwrap_or(false), site: text("site"), submit: text("submit"), mods, achievements })
 }
@@ -270,7 +268,7 @@ mod tests {
         assert_eq!(a.list.len(), 2, "an entry without an id is left out, not the list");
         assert_eq!((a.list[0].cat.as_str(), a.list[0].goal), ("pokedex", 5));
         assert!(a.list[1].picture.is_empty() && a.list[1].cat.is_empty());
-        assert!(a.stats.ends_with("/api/stats") && a.license.ends_with("LICENSE.txt"));
+        assert!(a.stats.ends_with("/api/stats"));
         assert!(parse(br#"{"schema": 1, "mods": []}"#).unwrap().achievements.is_none());
         assert!(parse(br#"{"schema": 1, "achievements": []}"#).unwrap().achievements.is_none());
     }

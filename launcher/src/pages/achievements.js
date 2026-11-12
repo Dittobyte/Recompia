@@ -7,10 +7,9 @@ import { api } from '../api.js';
 import { t, language } from '../i18n.js';
 import { confirm, errText, esc, icon, toast } from '../ui.js';
 import { store } from '../store.js';
-import { allowQuestion } from '../mods-model.js';
-import { dateText, earnedCount, groupList, modActions, modLine, modState, percentText, rarest, sharingText, totals } from '../achievements-model.js';
+import { allowQuestion, installQuestion } from '../mods-model.js';
+import { PICTURES_LICENCE, dateText, earnedCount, groupList, modActions, modLine, modState, percentText, rarest, sharingText, totals } from '../achievements-model.js';
 
-const linkButton = (url, label, ic = 'external-link') => (url ? `<button class="btn quiet sm" data-act="link" data-url="${esc(url)}">${icon(ic)}${esc(label)}</button>` : '');
 
 /** The achievement's picture, or the trophy when it has none. */
 const pictureHtml = (item) => `<span class="ach-pic">${item.picture ? `<img src="${esc(item.picture)}" alt="" draggable="false">` : icon('trophy')}</span>`;
@@ -36,7 +35,7 @@ export async function render(el, _ctx) {
   function modHtml() {
     const state = modState(modsView, view.mod_id);
     const buttons = {
-      get: linkButton(view.mod_page, t('Get the mod')),
+      install: `<button class="btn primary sm" data-act="install" ${busy ? 'disabled' : ''}>${icon('download')}${esc(t('Install the mod'))}</button>`,
       folder: `<button class="btn quiet sm" data-act="folder">${icon('folder-open')}${esc(t('Open mods folder'))}</button>`,
       enable: `<button class="btn primary sm" data-act="enable" ${busy ? 'disabled' : ''}>${icon('check')}${esc(t('Switch the mod on'))}</button>`,
       share: `<button class="btn sm" data-act="share" ${busy ? 'disabled' : ''}>${icon('users')}${esc(t('Turn sharing on'))}</button>`,
@@ -81,7 +80,7 @@ export async function render(el, _ctx) {
 
   function creditsHtml() {
     return `<p class="faint ach-note">${esc(t('Counts from the Modtopia community service: players of Pokopia Native and Recompia together. Names and descriptions are the hub\'s own, in English. Pictures: Microsoft Fluent Emoji (MIT).'))}</p>
-      <div class="cluster">${linkButton(view.page, t('Tracker page on the mod hub'))}${linkButton(view.license, t('Pictures\' licence'))}</div>`;
+      <div class="cluster"><button class="btn quiet sm" data-act="licence">${icon('file-text')}${esc(t('Pictures\' licence'))}</button></div>`;
   }
 
   function draw() {
@@ -168,6 +167,24 @@ export async function render(el, _ctx) {
     await change(() => api.modsSetEnabled({ id: mod.id, on: true, allow }));
   }
 
+  async function install() {
+    let card = null;
+    try {
+      card = (await api.modsCatalog({})).mods.find((c) => c.id === view.mod_id && c.available);
+    } catch (e) {
+      toast(errText(e), 'error');
+      return;
+    }
+    if (!card) { toast(t('The mod hub cannot be reached: this is the last list the launcher saw.'), 'error'); return; }
+    const q = installQuestion(card);
+    if (!await confirm({ title: q.title, html: q.lines.map((l) => `<p>${esc(l)}</p>`).join(''), ok: q.ok })) return;
+    await change(() => api.modsInstall({ id: card.id }));
+  }
+
+  function licence() {
+    return confirm({ title: t('Pictures\' licence'), html: `<pre class="ach-licence selectable">${esc(PICTURES_LICENCE)}</pre>`, alert: true });
+  }
+
   async function shareOn() {
     const { mod } = modState(modsView, view.mod_id);
     if (mod) await change(() => api.modsSetSetting({ id: mod.id, key: 'share', number: 1 }));
@@ -180,8 +197,9 @@ export async function render(el, _ctx) {
       case 'refresh': return load(true);
       case 'enable': return enable();
       case 'share': return shareOn();
+      case 'install': return install();
+      case 'licence': return licence();
       case 'folder': return api.openModsDir().catch((err) => toast(errText(err), 'error'));
-      case 'link': return api.openLink({ url: b.dataset.url }).catch((err) => toast(errText(err), 'error'));
     }
   });
 

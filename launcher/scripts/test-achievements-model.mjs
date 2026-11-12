@@ -40,7 +40,7 @@ check(kind({ mods: [mod({ settings: [] })] }) === 'sharing', 'on without a share
 check(modState({ mods: [mod()] }, 'community_achievements').mod.id === 'community_achievements', 'the mod comes with its state');
 
 const acts = (k) => modActions({ kind: k }).join();
-check(acts('missing') === 'get,folder' && acts('off') === 'enable' && acts('private') === 'share', 'each state offers its action');
+check(acts('missing') === 'install,folder' && acts('off') === 'enable' && acts('private') === 'share', 'each state offers its action');
 check(acts('sharing') === '' && acts('unknown') === '' && acts('broken') === 'folder', 'nothing to do when it is working');
 check(['missing', 'broken', 'off', 'private', 'sharing', 'unknown'].every((k) => modLine({ kind: k }).length > 20), 'every state has a sentence');
 

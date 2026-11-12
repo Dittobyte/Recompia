@@ -330,8 +330,7 @@ const mockCatalog = {
 // ?page=achievements: a short list with counts, two earned; the mod is not installed (add it to mockMods to see the other states)
 const mockAch = (n, name, cat, goal, players) => ({ id: n, name, desc: `Have ${goal} of the ${cat}.`, cat, goal, picture: '', players });
 const mockAchievements = {
-  available: true, offline: false, mod_id: 'community_achievements', mod_page: 'https://pokopia-native.vercel.app/mods/community-achievements',
-  page: 'https://pokopia-native.vercel.app/mods/achievements', license: 'https://pokopia-native.vercel.app/img/ach/LICENSE.txt',
+  available: true, offline: false, mod_id: 'community_achievements',
   stats: { players: 240, kept: false },
   earned: { dex_5: 1762900000, habitat_5: 1762990000 },
   list: [

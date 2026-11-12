@@ -25,3 +25,4 @@
 .ach-pic { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 48px; height: 48px; color: var(--color-text-3); }
 .ach-pic img { width: 48px; height: 48px; object-fit: contain; }
 .ach-pic .icon { width: 28px; height: 28px; }
+.ach-licence { white-space: pre-wrap; font-size: 0.8em; max-height: 50vh; overflow: auto; }
