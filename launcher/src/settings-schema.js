@@ -380,7 +380,15 @@ export const SECTIONS = [
               { value: '133', label: t('1440p') }, { value: '200', label: t('2160p') },
             ],
           },
-          { id: 'keep_aspect', label: t('Keep 16:9 picture'), type: 'toggle', ...fromSchema(controls('display', 'keep_aspect')) },
+          {
+            // [display] aspect: the runtime writes a preset back as W:H (write_aspect in play_config_table.cpp)
+            id: 'aspect', label: t('Aspect ratio'), type: 'select', ...fromSchema(controls('display', 'aspect')),
+            options: [
+              { value: 'auto', label: t('Automatic') }, { value: '16:9', label: t('16:9') }, { value: '16:10', label: t('16:10') },
+              { value: '21:9', label: t('21:9') }, { value: '32:9', label: t('32:9') },
+            ],
+          },
+          { id: 'keep_aspect', label: t('Letterbox instead of stretching'), type: 'toggle', ...fromSchema(controls('display', 'keep_aspect')) },
         ],
       },
       {

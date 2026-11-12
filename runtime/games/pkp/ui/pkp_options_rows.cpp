@@ -31,6 +31,10 @@ int index_of(const int* values, int n, int v, int otherwise) {
     for (int i = 0; i < n; ++i) if (values[i] == v) return i;
     return otherwise;
 }
+int index_of(const double* values, int n, double v, int otherwise) {
+    for (int i = 0; i < n; ++i) if (std::fabs(values[i] - v) < 1e-6) return i;
+    return otherwise;
+}
 
 constexpr int kFpsValues[] = {-1, 30, 40, 45, 60, 90, 120, 144, 165, 240, 0};
 constexpr int kFpsCount = static_cast<int>(std::size(kFpsValues));
@@ -38,6 +42,10 @@ constexpr const char* kFpsNames[kFpsCount + 1] = {"Match Display", "30", "40", "
 constexpr int kWidths[] = {1280, 1600, 1920, 2560, 3840}, kHeights[] = {720, 900, 1080, 1440, 2160};
 constexpr int kSizeCount = static_cast<int>(std::size(kWidths));
 constexpr const char* kSizeNames[kSizeCount + 1] = {"1280 x 720", "1600 x 900", "1920 x 1080", "2560 x 1440", "3840 x 2160", "Custom"};
+// [display] aspect: 0 is auto (the window's shape); read once at start (pkp_play.cpp install_render), so the row applies after a restart.
+constexpr double kAspectValues[] = {0.0, 16.0 / 9.0, 16.0 / 10.0, 21.0 / 9.0, 32.0 / 9.0};
+constexpr int kAspectCount = static_cast<int>(std::size(kAspectValues));
+constexpr const char* kAspectNames[kAspectCount + 1] = {"Auto", "16:9", "16:10", "21:9", "32:9", "Custom"};
 constexpr int kAniso[] = {0, 2, 4, 8, 16};
 constexpr const char* kAnisoNames[] = {"Game Default", "2x", "4x", "8x", "16x"};
 // In play::PromptStyle order (the row stores the enum's number).
@@ -92,7 +100,10 @@ const Row kDisplay[] = {
     names("Window Size", "The size of the window in windowed mode.", kSizeNames, kSizeCount + 1,
           [](const S& s) { for (int i = 0; i < kSizeCount; ++i) if (s.display.width == kWidths[i] && s.display.height == kHeights[i]) return i; return kSizeCount; },
           [](S& s, int v) { if (v < kSizeCount) { s.display.width = kWidths[v]; s.display.height = kHeights[v]; } }),
-    choice("Keep 16:9 Picture", "Letterbox the picture instead of stretching it to the window.", kOffOn, 2, ROW_BOOL(display.keep_aspect)),
+    names("Aspect Ratio", "The shape of the picture. Auto follows the window; 16:9 is the game's own.", kAspectNames, kAspectCount + 1,
+          [](const S& s) { return index_of(kAspectValues, kAspectCount, s.display.aspect, kAspectCount); },
+          [](S& s, int v) { if (v < kAspectCount) s.display.aspect = kAspectValues[v]; }, true),
+    choice("Letterbox", "Black bars keep the picture's shape when it does not fit the window, instead of stretching it.", kOffOn, 2, ROW_BOOL(display.keep_aspect)),
     choice("VSync", "Wait for the display between frames: no tearing, a little more delay.", kOffOn, 2, ROW_BOOL(display.vsync)),
     names("Frame Rate Limit", "The highest frame rate. Match Display follows the refresh rate.", kFpsNames, kFpsCount + 1,
           [](const S& s) { return index_of(kFpsValues, kFpsCount, s.display.fps_cap, kFpsCount); },
