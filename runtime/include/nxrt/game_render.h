@@ -6,6 +6,7 @@
 //   camera           none: no temporal upscaling (FSR 3 / DLSS / DLAA find no camera, nothing is jittered)
 //   tonemaps         none: no shader is the tone map (no HDR variant, no scene upscaler, no temporal pass)
 //   loop_guards      none: no compute loop gets its count limited ([nvn] loop_guard has nothing to do)
+//   ui_after_picture false: the game's 2D cannot be hidden (nxrt/ui_layer.h; a mod's ui_visible is not offered)
 // Header-only and free of Vulkan, so game.h users that do not link the graphics back end can include it.
 #pragma once
 #include <cstdint>
@@ -64,6 +65,10 @@ struct Render {
     uint32_t tonemap_count = 0;
     const LoopGuard* loop_guards = nullptr;
     uint32_t loop_guard_count = 0;
+    // The game draws its 2D (HUD, markers, menus, text) after its 3D picture, as draws with vertex inputs into the texture it presents, and
+    // everything else that reaches that texture (the composite of the picture, fades) as full-screen draws without vertex inputs. Then the
+    // replay can leave the 2D out (nxrt/ui_layer.h).
+    bool ui_after_picture = false;
 };
 
 }  // namespace nxrt::game

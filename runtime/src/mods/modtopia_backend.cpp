@@ -23,6 +23,7 @@
 #include "nxrt/notices.h"
 #include "nxrt/screenshot.h"
 #include "nxrt/services_api.h"
+#include "nxrt/ui_layer.h"
 
 namespace nxrt::mods::detail {
 
@@ -216,6 +217,14 @@ int be_color_matrix(void*, const float* m12) {
     return MT_OK;
 }
 
+// The game's 2D (HUD, markers, menus, text) over its picture: the core passes 0 while any mod hides it, 1 when none does
+// (modtopia_host.h). The replay leaves it out from the next draw on (nxrt/ui_layer.h). Offered only when the game supports it
+// (make_backend), so elsewhere a mod that asks hears MT_ERR_VERSION as before.
+int be_ui_visible(void*, int visible) {
+    ui_layer::set_visible(visible != 0);
+    return MT_OK;
+}
+
 // One HTTP(S) request off the calling thread (src/net/http_client.h: https only but for localhost, no redirects, no cookies or sign-in). The
 // core has checked the URL against the mod's hosts and keeps at most 4 of a mod's waiting; the client caps the whole process. The sizes are
 // modtopia.h's: a body of at most 64 KiB, an answer of at most 256 KiB (longer: no answer, status 0). done runs once, on the request's worker.
@@ -272,6 +281,7 @@ MtBackend make_backend() {
     be.screenshot = &be_screenshot;
     be.key_down = &be_key_down;
     be.color_matrix = &be_color_matrix;
+    if (ui_layer::supported()) be.ui_visible = &be_ui_visible;
     be.net_request = &be_net_request;
     be.pad_read = &be_pad_read;
     be.pad_hold = &be_pad_hold;
