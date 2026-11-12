@@ -223,6 +223,16 @@ call sites. `runtime/CMakeLists.txt:18` (`message(FATAL_ERROR "nxrt targets nati
 platform branch, not a deletion. The existing `.github/workflows/release.yml` stays untouched; a new
 `macos.yml` builds the macOS artifact.
 
+### D13 — a mod's HTTPS request is the system's libcurl
+
+`src/net/http_client.cpp` was WinHTTP only, so the macOS build refused every request a mod made (`MT_ERR_STATE`). It now
+`dlopen`s `/usr/lib/libcurl.4.dylib`, which every macOS keeps in the dyld shared cache, and declares the ten easy-interface
+calls itself so curl's headers stay out of the build. Nothing is linked, so `libpkp_rt.dylib` keeps its short `NEEDED`
+list and a host without the library refuses the request rather than failing the start. The rules are the WinHTTP ones
+(https only but for localhost, no redirect, cookie or sign-in, TLS 1.2 or later, 256 KiB cap, one time limit per step);
+the same block runs on Linux (`docs/linux-port.md` §L9), where it was measured against libcurl 8.5.0. **Not yet run on
+macOS**: it compiles there, but no macOS run has made a request.
+
 ---
 
 ## 3. Milestones

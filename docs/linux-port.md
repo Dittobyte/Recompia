@@ -80,6 +80,22 @@ the Windows `/STACK` and the Mach-O `-stack_size`), and the runtime library is c
 `host::game_exe[_name]()` / `host::runtime_lib[_name]()`, and the `astcdec-*.dll` copies are gated on `has_decoder_dlls()`
 (Windows only). Windows behaviour and wording are unchanged.
 
+### L9 — a mod's HTTPS request is the system's libcurl, loaded at run time
+
+`src/net/http_client.cpp` was WinHTTP only, so the POSIX builds refused every request (`MT_ERR_STATE` to the mod). The
+POSIX branch now `dlopen`s `libcurl.so.4` at the first request and declares the ten calls it makes itself: the easy
+interface's ABI has been stable since libcurl 7.0, and linking it would make a build-time dependency a run-time one for
+every player. `libpkp_rt.so` keeps its five `NEEDED` entries (libm, libstdc++, libgcc_s, libc, the loader); a host without
+libcurl refuses the request as before instead of failing the start. Every desktop distribution ships libcurl, Steam itself
+links it, and macOS keeps `libcurl.4.dylib` in the dyld shared cache, so the same block serves both ports.
+
+The rules stay the WinHTTP ones, because they are what `http_client.h` promises: https anywhere and plain http only to
+localhost / 127.0.0.1, no user name or password in the URL, no control character, no redirect followed, no cookie engine,
+TLS 1.2 or later, a 256 KiB answer cap, the connect timeout plus a low-speed bound for a stalled transfer, and the verb
+taken from the method so a GET with a body stays a GET. Measured against libcurl 8.5.0: GET and POST to localhost 200 and
+201 with the type and body arriving, `https://example.com` 200 over TLS, 302 answered as 302, an answer past the cap and a
+stalled transfer both 0, and a stub libcurl missing a call refused up front.
+
 ## 3. `__APPLE__` sites: Apple-only or portable
 
 Every `#if defined(__APPLE__)` in `runtime/src` (51 sites, 18 files), and what Linux does instead:
