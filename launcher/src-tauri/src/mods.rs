@@ -381,6 +381,63 @@ pub fn trust_file(game_dir: &Path, id: &str) -> Result<(), String> {
     core.trust_mod(id).map_err(|_| format!("Could not record your yes for {}.", m.name))
 }
 
+/// Test helpers: a game folder and .pkmod packages made in memory (stored zips), so the real core can scan them.
+#[cfg(test)]
+pub(crate) mod testkit {
+    use std::path::PathBuf;
+
+    pub fn temp_game_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("recompia-mods-{}-{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    fn crc32(data: &[u8]) -> u32 {
+        let mut crc = !0u32;
+        for b in data {
+            crc ^= *b as u32;
+            for _ in 0..8 {
+                crc = if crc & 1 != 0 { crc >> 1 ^ 0xEDB8_8320 } else { crc >> 1 };
+            }
+        }
+        !crc
+    }
+
+    /// A zip with every file stored (no compression), which is all the core's reader needs for a test.
+    fn zip_stored(files: &[(&str, &[u8])]) -> Vec<u8> {
+        let (mut out, mut central) = (Vec::new(), Vec::new());
+        let le = |v: &mut Vec<u8>, n: u64, bytes: usize| v.extend_from_slice(&n.to_le_bytes()[..bytes]);
+        for (name, data) in files {
+            let (crc, offset, len, nlen) = (crc32(data) as u64, out.len() as u64, data.len() as u64, name.len() as u64);
+            for (n, w) in [(0x0403_4b50, 4), (20, 2), (0, 2), (0, 2), (0, 2), (0, 2), (crc, 4), (len, 4), (len, 4), (nlen, 2), (0, 2)] {
+                le(&mut out, n, w);
+            }
+            out.extend_from_slice(name.as_bytes());
+            out.extend_from_slice(data);
+            for (n, w) in [(0x0201_4b50, 4), (20, 2), (20, 2), (0, 2), (0, 2), (0, 2), (0, 2), (crc, 4), (len, 4), (len, 4), (nlen, 2), (0, 2), (0, 2), (0, 2), (0, 2), (0, 4), (offset, 4)] {
+                le(&mut central, n, w);
+            }
+            central.extend_from_slice(name.as_bytes());
+        }
+        let (cd_off, cd_size, count) = (out.len() as u64, central.len() as u64, files.len() as u64);
+        out.extend_from_slice(&central);
+        for (n, w) in [(0x0605_4b50, 4), (0, 2), (0, 2), (count, 2), (count, 2), (cd_size, 4), (cd_off, 4), (0, 2)] {
+            le(&mut out, n, w);
+        }
+        out
+    }
+
+    /// A .pkmod: a mod.toml with this id and version, and when `code` a Windows library (the core only looks at it, nothing runs).
+    pub fn pkmod(id: &str, version: &str, code: bool) -> Vec<u8> {
+        let toml = format!("id = \"{id}\"\nversion = \"{version}\"\nname = \"{id}\"\nauthors = [\"Test\"]\nlicense = \"MIT\"\n");
+        let mut files: Vec<(&str, &[u8])> = vec![("mod.toml", toml.as_bytes())];
+        if code {
+            files.push(("bin/windows-x64/mod.dll", b"MZ"));
+        }
+        zip_stored(&files)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -396,12 +453,30 @@ mod tests {
     }
 
     #[test]
+    fn an_install_records_the_yes_for_that_one_mod_only() {
+        use testkit::{pkmod, temp_game_dir};
+        let dir = temp_game_dir("trust");
+        let mods = ensure_mods_dir(&dir).unwrap();
+        for (file, id, code) in [("cam-1.0.0.pkmod", "cam", true), ("cam2-1.0.0.pkmod", "cam2", true), ("look-1.0.0.pkmod", "look", false)] {
+            fs::write(mods.join(file), pkmod(id, "1.0.0", code)).unwrap();
+        }
+        let ask = |dir: &Path, id: &str| list(dir).unwrap().mods.into_iter().find(|m| m.id == id).unwrap().needs_yes;
+        assert!(ask(&dir, "cam") && ask(&dir, "cam2") && !ask(&dir, "look"), "code is new until the player said yes; data has none to ask for");
+        trust_file(&dir, "cam").unwrap();
+        assert!(!ask(&dir, "cam") && ask(&dir, "cam2"), "the yes is for cam, not for the code beside it");
+        trust_file(&dir, "look").unwrap();
+        let known = fs::read_to_string(mods.join(".modtopia").join("known-code.toml")).unwrap();
+        assert!(known.contains("cam") && !known.contains("cam2") && !known.contains("look"), "{known}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn the_mods_folder_gets_a_readme_that_is_never_overwritten() {
         let dir = std::env::temp_dir().join(format!("recompia-mods-readme-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         let readme = ensure_mods_dir(&dir).unwrap().join(README_NAME);
         let first = fs::read_to_string(&readme).unwrap();
-        assert!(first.contains("Mods page") && first.contains("your rights"));
+        assert!(first.contains("Mods page") && first.contains("your rights") && first.contains("\r\n"), "{first:?}");
         fs::write(&readme, "mine").unwrap();
         ensure_mods_dir(&dir).unwrap();
         assert_eq!(fs::read_to_string(&readme).unwrap(), "mine", "an existing README is left as it is");
