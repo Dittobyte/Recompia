@@ -72,18 +72,18 @@ uint64_t import_stride() {
 }
 uint64_t import_overlap() { return import_stride() / 4; }
 
-// [nvn] pool_lazy = auto (default: on under Wine) | on | off. Under Proton the heap is private memory (no section, no private views), so
-// every pool was imported whole: ~4.7 GiB of amdgpu userptr memory. RADV puts every allocation on its global BO list and amdgpu walks the
-// pages of every userptr BO of a submission again (hmm_range_fault), so each kernel submission cost ~2-5 ms (HANDOFF session 4b). Draws
-// read a small part of a pool in place (LASRecomp measured 15-28 MB a frame of a 3.2 GB heap): with pool_lazy a pool larger than one cell
-// ([nvn] pool_lazy_chunk_mb, default 16) is imported a run of cells at a time, the first time a bind touches them, imports nobody bound for
-// a while are dropped, and textures whose storage is not imported are untiled on the CPU (gpu_untile) instead of importing it. Approach
+// [nvn] pool_lazy = auto (default: on on Linux) | on | off. On Linux (Proton or native) the heap is private memory (no section, no private
+// views), so every pool was imported whole: ~4.7 GiB of amdgpu userptr memory. RADV puts every allocation on its global BO list and amdgpu
+// walks the pages of every userptr BO of a submission again (hmm_range_fault), so each kernel submission cost ~2-5 ms (HANDOFF session 4b).
+// Draws read a small part of a pool in place (LASRecomp measured 15-28 MB a frame of a 3.2 GB heap): with pool_lazy a pool larger than one
+// cell ([nvn] pool_lazy_chunk_mb, default 16) is imported a run of cells at a time, the first time a bind touches them, imports nobody bound
+// for a while are dropped, and textures whose storage is not imported are untiled on the CPU (gpu_untile) instead of importing it. Approach
 // after peiikai/LASRecomp runtime/nvn/vulkan/exec.c (lazy 16 MB heap chunks, MIT).
 bool lazy_on() {
     static const bool on = [] {
         const std::string v = config_get_str("nvn", "pool_lazy", "auto");
-        const bool r = v == "auto" ? host_is_wine() : (v == "on" || v == "1" || v == "true");
-        NXLOG_I(kTag, "pool_lazy %s (%s%s)", r ? "on" : "off", v.c_str(), v == "auto" ? (host_is_wine() ? ", Wine" : ", not Wine") : "");
+        const bool r = v == "auto" ? host_is_linux() : (v == "on" || v == "1" || v == "true");
+        NXLOG_I(kTag, "pool_lazy %s (%s%s)", r ? "on" : "off", v.c_str(), v == "auto" ? (host_is_linux() ? ", Linux" : ", not Linux") : "");
         return r;
     }();
     return on;

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// [nvn] pool_copy = auto (default: Wine, or an integrated GPU with <=8 GiB of device-local memory) | on | off: memory pools as copies (shadows)
-// instead of imports. Under Proton every vkQueueSubmit costs more the more userptr memory is imported (amdgpu revalidates every userptr BO of the
-// submission's BO list): with whole pools imported (3.8 GiB) the game froze inside vkQueueSubmit, and the lazy pool's ~2 GiB of live imports
-// still cost ~17.8 ms per batch submission on the Deck. Here a pool keeps the lazy pool's cell structure (nvn_gpu_pool.cpp: cells, ext,
-// cell_ext, spans, idle drop), but each cell holds a host-visible Vulkan buffer of its own (MemoryUse::Shadow, handed out by
-// nvn_pool_stock.cpp) instead of an import of the guest pages, so no submission carries a userptr BO.
+// [nvn] pool_copy = auto (default: Linux, or an integrated GPU with <=8 GiB of device-local memory) | on | off: memory pools as copies
+// (shadows) instead of imports. On Linux (Proton or native) every vkQueueSubmit costs more the more userptr memory is imported (amdgpu
+// revalidates every userptr BO of the submission's BO list): with whole pools imported (3.8 GiB) the game froze inside vkQueueSubmit, and
+// the lazy pool's ~2 GiB of live imports still cost ~17.8 ms per batch submission on the Deck. Here a pool keeps the lazy pool's cell
+// structure (nvn_gpu_pool.cpp: cells, ext, cell_ext, spans, idle drop), but each cell holds a host-visible Vulkan buffer of its own
+// (MemoryUse::Shadow, handed out by nvn_pool_stock.cpp) instead of an import of the guest pages, so no submission carries a userptr BO.
 //
 // The rules that keep the shadow right:
 //  * touch (resolve_in_pool, render thread): every resolve copies the pages of the range it binds from guest memory into the shadow, unless
@@ -64,7 +64,7 @@ std::mutex g_auto_mu;
 AutoDecision g_auto;
 
 bool auto_copy() {
-    if (host_is_wine()) return true;
+    if (host_is_linux()) return true;
 #if defined(__APPLE__)
     // On by default, whatever the device supports. MoltenVK 1.4 does implement VK_EXT_external_memory_host (the log says
     // "host-memory import available") and importing is far cheaper than mirroring 25-40 MB a frame, but with the direct path
@@ -118,7 +118,7 @@ void log_cfg(const Cfg& c, bool on) {
     static std::once_flag once;
     std::call_once(once, [&] {
         const char* why = !c.automatic ? ""
-                        : host_is_wine() ? ", Wine"
+                        : host_is_linux() ? ", Linux"
 #if defined(__APPLE__)
                         : on ? ", the compute writes reach the textures through the shadow"
                              : ", host-memory import, the direct path (no shadow)";
@@ -279,7 +279,7 @@ uint64_t guarded_copy(uint8_t* d, const uint8_t* s, uint64_t n, bool in) {
 bool pool_copy_on() {
     const Cfg& c = cfg();
     const bool on = c.automatic ? auto_copy() : c.on;
-    if (!c.automatic || host_is_wine() || active()) log_cfg(c, on);   // native Windows: wait for a device before deciding or logging auto
+    if (!c.automatic || host_is_linux() || active()) log_cfg(c, on);   // native Windows: wait for a device before deciding or logging auto
     return on;
 }
 uint64_t pool_copy_cell() { return cfg().cell; }

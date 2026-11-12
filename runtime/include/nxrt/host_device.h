@@ -16,7 +16,14 @@ bool host_is_handheld();
 // change it). For defaults tied to the Deck's fixed-refresh panel, such as [display] fps_snap auto.
 bool host_is_steam_deck();
 
-// Running under Wine (Proton, SteamOS): ntdll exports wine_get_version. Read once; any thread.
+// The host kernel is Linux: true for the native Linux build and for a Windows build running under Wine on Linux (Proton, SteamOS), false
+// on Windows and macOS. This is the question a default's reason is the kernel, its scheduler or a Mesa driver, because those apply under
+// Proton and natively alike: RADV revalidating every imported userptr BO of a submission, amdgpu faulting the pages of one in, mprotect
+// invalidating them, a listener's TIME_WAIT, /proc, the SteamOS session. host_is_wine() is left for what Wine itself does.
+bool host_is_linux();
+
+// Running under Wine (Proton, SteamOS): ntdll exports wine_get_version. Read once; any thread. Only for a default whose reason is Wine
+// itself (winebrowser, SDL's missing pad-change events, ntdll); anything a Linux kernel or Mesa driver explains asks host_is_linux().
 bool host_is_wine();
 // Steam's on-screen keyboard for text the game asks for (the software keyboard applet). Wanted under Wine (Proton) on a Steam Deck
 // (host_is_steam_deck), on SteamOS (SteamOS=1) and in Steam's gamepad UI (SteamGamepadUI=1); [applet] steam_keyboard = auto (default)

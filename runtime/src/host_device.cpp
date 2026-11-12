@@ -14,6 +14,7 @@
 #include <cctype>
 #include <condition_variable>
 #include <cstdio>
+#include <cstring>
 #include <deque>
 #include <fstream>
 #include <mutex>
@@ -25,13 +26,17 @@ namespace nxrt {
 namespace {
 
 // An SMBIOS string: HKLM\HARDWARE\DESCRIPTION\System\BIOS (Windows; Wine's wineboot fills it from SMBIOS), else the Linux DMI file
-// through Wine's Z: drive (on Windows that path does not exist).
+// (through Wine's Z: drive on a Windows build under Wine, and straight from /sys on the POSIX hosts, where the registry is not there).
 std::string smbios(const char* value, const char* dmi_file) {
+#if defined(_WIN32)
     char buf[128] = {};
     DWORD n = sizeof buf;
     if (RegGetValueA(HKEY_LOCAL_MACHINE, "HARDWARE\\DESCRIPTION\\System\\BIOS", value, RRF_RT_REG_SZ, nullptr, buf, &n) == ERROR_SUCCESS)
         return text::lower_trim(buf);
     std::ifstream f(std::string("Z:\\sys\\class\\dmi\\id\\") + dmi_file);
+#else
+    std::ifstream f(std::string("/sys/class/dmi/id/") + dmi_file);
+#endif
     std::string s;
     if (f && std::getline(f, s)) return text::lower_trim(s);
     return {};
@@ -76,6 +81,29 @@ bool host_is_steam_deck() {
         return d;
     }();
     return deck;
+}
+
+bool host_is_linux() {
+#if defined(__linux__)
+    return true;   // the native Linux build
+#elif defined(_WIN32)
+    // A Windows build under Wine: ntdll's wine_get_host_version names the kernel the process really runs on ("Linux" under Proton on
+    // SteamOS, whatever the host is under CrossOver on macOS).
+    static const bool linux_kernel = [] {
+        HMODULE nt = GetModuleHandleW(L"ntdll.dll");
+        if (!nt) return false;
+        using host_version_fn = void (*)(const char**, const char**);
+        const auto fn = reinterpret_cast<host_version_fn>(GetProcAddress(nt, "wine_get_host_version"));
+        if (!fn) return false;
+        const char* sysname = nullptr;
+        const char* release = nullptr;
+        fn(&sysname, &release);
+        return sysname && std::strcmp(sysname, "Linux") == 0;
+    }();
+    return linux_kernel;
+#else
+    return false;   // macOS
+#endif
 }
 
 bool host_is_wine() {
@@ -181,8 +209,8 @@ bool host_steam_keyboard_wanted() {
             why = "[applet] steam_keyboard = on";
         } else if (c == "0" || c == "off" || c == "false" || c == "no") {
             why = "[applet] steam_keyboard = off";
-        } else if (!host_is_wine()) {
-            why = "Windows (a steam:// URL would start Steam if it is not running)";
+        } else if (!host_is_linux()) {
+            why = "Windows or macOS (a steam:// URL would start Steam if it is not running)";
         } else if (host_is_steam_deck()) {
             w = true;
             why = "a Steam Deck";

@@ -473,10 +473,10 @@ bool heap_create(uint64_t reserve_bytes) {
                 static_cast<unsigned long long>(size), static_cast<unsigned long long>(kHeapMax));
         return false;
     }
-    // [memory] heap_section: auto (default) = a section unless running under Wine (memory.h), 1 = always, 0 = never
+    // [memory] heap_section: auto (default) = a section unless the host is Linux (memory.h), 1 = always, 0 = never
     const std::string mode = nxrt::config_get_str("memory", "heap_section", "auto");
-    const bool wine = host_is_wine();
-    if (mode == "0" || (mode != "1" && wine)) {
+    const bool linux_kernel = host_is_linux();
+    if (mode == "0" || (mode != "1" && linux_kernel)) {
         void* p = VirtualAlloc(reinterpret_cast<void*>(kHeapBase), static_cast<SIZE_T>(size), MEM_RESERVE, PAGE_NOACCESS);
         if (reinterpret_cast<uint64_t>(p) != kHeapBase) {
             NXLOG_E(kTag, "heap_create: VirtualAlloc(MEM_RESERVE %llu MiB) at %llx failed, error %lu", static_cast<unsigned long long>(size >> 20),
@@ -489,7 +489,7 @@ bool heap_create(uint64_t reserve_bytes) {
         g_heap_cls.assign(static_cast<size_t>(size / kPage), 0);
         g_committed = 0;
         NXLOG_I(kTag, "heap: private memory of %llu MiB at %llx, no section (%s): no alias views, pools import at their own address",
-                static_cast<unsigned long long>(size >> 20), static_cast<unsigned long long>(kHeapBase), wine ? "Wine" : "[memory] heap_section = 0");
+                static_cast<unsigned long long>(size >> 20), static_cast<unsigned long long>(kHeapBase), linux_kernel ? "Linux" : "[memory] heap_section = 0");
         return true;
     }
     HANDLE sec = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE | SEC_RESERVE,

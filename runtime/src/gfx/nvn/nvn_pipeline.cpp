@@ -276,12 +276,12 @@ void ensure_cache() {
 // [nvn] pipeline_cache_save: whether the pipeline cache is ever read back from the driver and written to pipeline_cache. auto (default):
 // not with Intel's Windows driver, whose vkGetPipelineCacheData faults while copying the data out (igvk64.dll, UHD Graphics on a 12th-gen
 // i3, driver 0x001957f1: an access violation on the first save, 3 s into every start; #270); the cache file is still loaded at start,
-// and the driver keeps its own disk cache. Under Wine the driver is Mesa's, so auto keeps the save there. on: always. off: never.
+// and the driver keeps its own disk cache. On Linux the driver is Mesa's, so auto keeps the save there. on: always. off: never.
 bool cache_save_on() {
     static const bool on = [] {
         const std::string v = config_get_str("nvn", "pipeline_cache_save", "auto");
         const uint32_t vendor = device().properties().vendorID;
-        const bool intel_win = vendor == 0x8086 && !host_is_wine();
+        const bool intel_win = vendor == 0x8086 && !host_is_linux();
         const bool r = v == "on" || v == "true" || v == "1" || ((v == "auto" || v.empty()) && !intel_win);
         NXLOG_I(kTag, "pipeline_cache_save = %s (%s, vendor 0x%04x%s)", v.c_str(), r ? "on" : "off", vendor,
                 intel_win && !r ? ": Intel's Windows driver faults reading the cache back, #270" : "");
@@ -425,7 +425,7 @@ static VkShaderModule create_module(const std::vector<uint32_t>& words, const ch
         }
     }
     // [nvn] loop_guard: the game's compute loops whose count is a constant buffer word get it limited (game::Render::loop_guards,
-    // spirv_limit_count). auto (default): by the table's size on NVIDIA and under Wine (Mesa's drivers: RADV on the Deck and other AMD
+    // spirv_limit_count). auto (default): by the table's size on NVIDIA and on Linux (Mesa's drivers: RADV on the Deck and other AMD
     // handhelds, #531); a plain cap of 16384 elsewhere (AMD's Windows driver crashed making pokopia-native's size-query version). A loop of
     // up to 16384 items a lane can still pass the Deck's 5 s GPU timeout, so the table size is used wherever it builds. table / cap: that on
     // any GPU. off: never.
@@ -434,9 +434,9 @@ static VkShaderModule create_module(const std::vector<uint32_t>& words, const ch
         if (!gr || !gr->loop_guard_count) return 0;
         const std::string v = config_get_str("nvn", "loop_guard", "auto");
         const uint32_t vendor = device().properties().vendorID;
-        const int m = v == "off" || v == "false" || v == "0" ? 0 : v == "table" ? 1 : v == "cap" ? 2 : vendor == 0x10de || host_is_wine() ? 1 : 2;
+        const int m = v == "off" || v == "false" || v == "0" ? 0 : v == "table" ? 1 : v == "cap" ? 2 : vendor == 0x10de || host_is_linux() ? 1 : 2;
         NXLOG_I(kTag, "loop_guard = %s (%s, vendor 0x%04x%s)", v.c_str(), m == 0 ? "off" : m == 1 ? "table size" : "cap 16384", vendor,
-                host_is_wine() ? ", Wine" : "");
+                host_is_linux() ? ", Linux" : "");
         return m;
     }();
     std::vector<uint32_t> guarded[2];
@@ -1283,7 +1283,7 @@ bool async_whole_on() {
         // [nvn] gpl_ab keeps a finished build as the measured alternative instead of swapping it in: an empty entry would stay empty
         const bool ab = r && nxrt::config_get_int("nvn", "gpl_ab", 0) > 0;
         if (ab) r = false;
-        NXLOG_I(kTag, "async_whole %s (%s%s, %s)", r ? "on" : "off", v.c_str(), ab ? ", off with gpl_ab" : "", nxrt::host_is_wine() ? "Wine" : "not Wine");
+        NXLOG_I(kTag, "async_whole %s (%s%s)", r ? "on" : "off", v.c_str(), ab ? ", off with gpl_ab" : "");
         return r;
     }();
     return on;

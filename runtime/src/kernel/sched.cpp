@@ -264,7 +264,7 @@ static void sched_disable_power_throttling() {
     if (SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling, &ps, sizeof ps))
         NXLOG_I("sched", "process power throttling opted out (execution speed + timer resolution)");
     else
-        NXLOG_I("sched", "process power throttling opt-out not applied (error %lu; expected under Wine/Proton or before Windows 11)", static_cast<unsigned long>(GetLastError()));
+        NXLOG_I("sched", "process power throttling opt-out not applied (error %lu; expected on Linux or before Windows 11)", static_cast<unsigned long>(GetLastError()));
 #endif  // _WIN32
 }
 
