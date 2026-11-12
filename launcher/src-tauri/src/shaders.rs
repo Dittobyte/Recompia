@@ -45,6 +45,49 @@ const RETRANSLATE_REL: &str = "shader_cache/runtime/retranslate.txt";
 /// blocks is about 1.8 GB of SPIR-V (preflight CHUNK_BYTES) and 15 runs, and a stopped run no longer loses its work (the harness
 /// writes a results row per block as it goes), so a bigger chunk costs nothing when the player pauses.
 const CHUNK: usize = 7000;
+/// What a chunk of .spv files takes: the 2.0.1 corpus is 26.1 GB over 99,012 blocks, 1.8 GB per chunk (measured, every chunk of the
+/// corpus). A RAM stage is used only with this much free, so a chunk bigger than that one still fits.
+#[cfg(target_os = "linux")]
+const RAM_STAGE_FREE: u64 = 3 << 30;
+
+/// Where a chunk's loose .spv files are written before they are archived. A RAM filesystem when the platform has one with room: the
+/// files are written once, read back within the same chunk and deleted, and on a Steam Deck's microSD card those writes and reads are
+/// most of what the shader step costs. Elsewhere (and on Windows, which has no RAM file system) the game folder's cache.
+pub fn stage_dir(game_dir: &Path) -> PathBuf {
+    ram_stage().unwrap_or_else(|| cache_dir(game_dir).join("stage"))
+}
+
+#[cfg(target_os = "linux")]
+fn ram_stage() -> Option<PathBuf> {
+    let shm = Path::new("/dev/shm");
+    if !shm.is_dir() {
+        return None;
+    }
+    // A Set up that was killed leaves its folder behind, and a chunk of SPIR-V in RAM is not something to leak on a 16 GB machine
+    // (and a full tmpfs makes the next one fail). Every folder is named after the launcher process that owns it, so one whose
+    // process is gone is stale.
+    if let Ok(rd) = fs::read_dir(shm) {
+        for e in rd.filter_map(Result::ok) {
+            let name = e.file_name().to_string_lossy().to_string();
+            let Some(pid) = name.strip_prefix("nxrt-stage-").and_then(|p| p.parse::<u32>().ok()) else { continue };
+            if pid != std::process::id() && !Path::new(&format!("/proc/{}", pid)).exists() {
+                let _ = fs::remove_dir_all(e.path());
+            }
+        }
+    }
+    if crate::host::free_bytes(shm)? < RAM_STAGE_FREE {
+        return None;
+    }
+    let dir = shm.join(format!("nxrt-stage-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    Some(dir)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn ram_stage() -> Option<PathBuf> {
+    None
+}
+
 /// Workers for the extractor. It maps each asset file into memory and decompresses it, so one worker per CPU thread can
 /// thrash a machine's memory and disk (issue #194: 15 workers on a hard drive); a few already saturate the disk. The
 /// translator (spirv_harness) keeps the full `job.jobs`.
@@ -464,36 +507,56 @@ fn first_col(row: &str) -> &str {
     row.split('\t').next().unwrap_or("")
 }
 
-/// Moves a harness run's .spv files from `stage` into `spirv`, then appends its rows to spirv/results.tsv (the rows are
-/// what make a block count as done, so they go last). Returns the number of rows.
-fn commit_stage(stage: &Path, spirv: &Path) -> Result<usize, String> {
-    let results = spirv.join("results.tsv");
+/// The rows of a harness run, with a killed run's half-written last row dropped (a row without every column is not a translation).
+fn stage_rows(stage: &Path) -> Result<(String, Vec<String>), String> {
     let (rheader, mut rrows) = read_tsv(&stage.join("results.tsv"))?;
-    // A run that was killed can leave its last row half written. A row without every column is not a translation: drop it.
     let cols = rheader.split('\t').count();
     rrows.retain(|r| r.split('\t').count() == cols);
-    for r in &rrows {
-        let h = first_col(r);
-        let src = stage.join(format!("{}.spv", h));
-        if src.is_file() {
-            let dst = spirv.join(format!("{}.spv", h));
-            let _ = fs::remove_file(&dst);
-            fs::rename(&src, &dst).map_err(|e| format!("cannot move {}: {}", src.display(), e))?;
-        }
-    }
+    Ok((rheader, rrows))
+}
+
+/// Appends a run's rows to spirv/results.tsv. They go last: a row is what makes a block count as done, so it is written only once the
+/// block's SPIR-V is in the cache (moved there or archived).
+fn append_rows(spirv: &Path, rheader: &str, rrows: &[String]) -> Result<usize, String> {
+    let results = spirv.join("results.tsv");
     let new_file = !results.is_file();
     let mut out = fs::OpenOptions::new().create(true).append(true).open(&results).map_err(|e| format!("cannot write {}: {}", results.display(), e))?;
     let mut text = String::new();
     if new_file {
-        text.push_str(&rheader);
+        text.push_str(rheader);
         text.push('\n');
     }
-    for r in &rrows {
+    for r in rrows {
         text.push_str(r);
         text.push('\n');
     }
     out.write_all(text.as_bytes()).map_err(|e| format!("cannot write {}: {}", results.display(), e))?;
     Ok(rrows.len())
+}
+
+/// Moves one file, copying it when the two are on different file systems (a RAM stage and the game folder are).
+fn move_file(src: &Path, dst: &Path) -> Result<(), String> {
+    let _ = fs::remove_file(dst);
+    if fs::rename(src, dst).is_ok() {
+        return Ok(());
+    }
+    fs::copy(src, dst).map_err(|e| format!("cannot move {}: {}", src.display(), e))?;
+    let _ = fs::remove_file(src);
+    Ok(())
+}
+
+/// Moves a harness run's .spv files from `stage` into `spirv` (the loose storage), then appends its rows to spirv/results.tsv.
+/// Returns the number of rows.
+fn commit_stage(stage: &Path, spirv: &Path) -> Result<usize, String> {
+    let (rheader, rrows) = stage_rows(stage)?;
+    for r in &rrows {
+        let h = first_col(r);
+        let src = stage.join(format!("{}.spv", h));
+        if src.is_file() {
+            move_file(&src, &spirv.join(format!("{}.spv", h)))?;
+        }
+    }
+    append_rows(spirv, &rheader, &rrows)
 }
 
 fn col(row: &str, k: usize) -> &str {
@@ -577,7 +640,7 @@ pub fn translate_missing(game_dir: &Path, tools_dir: &Path) -> Result<usize, Str
     // a compact cache stays compact: the new translations join the archive (a small segment)
     if crate::shader_archive::exists(game_dir) {
         let hashes: Vec<String> = todo.iter().map(|r| col(r, 10).to_string()).collect();
-        crate::shader_archive::compact(game_dir, Some(&hashes), &AtomicBool::new(false), |_, _| {})?;
+        crate::shader_archive::compact(game_dir, None, Some(&hashes), &AtomicBool::new(false), |_, _| {})?;
     }
     Ok(n)
 }
@@ -638,7 +701,7 @@ pub fn prepare(game_dir: &Path, tools_dir: &Path, cancel: &AtomicBool) -> Result
 pub fn run(job: &Job, tools: &Tools, cancel: &AtomicBool, mut report: impl FnMut(Progress)) -> Result<bool, String> {
     let cache = cache_dir(&job.game_dir);
     let corpus = cache.join("corpus");
-    let stage = cache.join("stage");
+    let stage = stage_dir(&job.game_dir);
     let spirv = job.game_dir.join(SPIRV_REL);
     fs::create_dir_all(&spirv).map_err(|e| format!("cannot create {}: {}", spirv.display(), e))?;
     crate::shader_archive::clean(&job.game_dir);
@@ -760,12 +823,17 @@ pub fn run(job: &Job, tools: &Tools, cancel: &AtomicBool, mut report: impl FnMut
         if !ok && !started {
             return Ok(false);
         }
-        let kept = commit_stage(&stage, &spirv)?;
-        if compact {
-            // into the archive at once: the loose files of a chunk never pile up (peak disk use stays near the compressed size)
-            let hashes: Vec<String> = chunk.iter().map(|r| first_col(r).to_string()).collect();
-            crate::shader_archive::compact(&job.game_dir, Some(&hashes), &AtomicBool::new(false), |_, _| {})?;
-        }
+        let kept = if compact {
+            // Straight from the stage into the archive: a fresh translation is never written loose to the game folder, so a chunk
+            // costs one compressed write instead of a loose write, a read back and a delete.
+            let (rheader, rrows) = stage_rows(&stage)?;
+            let hashes: Vec<String> = rrows.iter().map(|r| first_col(r).to_string()).collect();
+            crate::shader_archive::compact(&job.game_dir, Some(&stage), Some(&hashes), &AtomicBool::new(false), |_, _| {})?;
+            append_rows(&spirv, &rheader, &rrows)?
+        } else {
+            commit_stage(&stage, &spirv)?
+        };
+        let _ = fs::remove_dir_all(&stage);
         if !ok {
             if let Some(l) = &job.log {
                 l(&format!("paused: {} shaders translated before the pause are kept", kept));

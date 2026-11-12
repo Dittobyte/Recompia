@@ -11,11 +11,16 @@ files you extracted from your own copy, writes `pkp.ini` next to `pkp.exe` and b
    shader_cache/spirv`) and builds `shader_cache\spirv\` next to `pkp.exe`:
    - Extract: `tools\shaders\extract_corpus.py` finds every shader in the romfs and in `exefs\main` and writes the
      distinct blocks to `shader_cache\corpus\` (a few pack files, about 5 GB, deleted when setup finishes).
-   - Translate: `tools\spirv_harness\spirv_harness.exe --batch` in chunks of 7000 into `shader_cache\spirv\`
-     (`<hash>.spv` + `results.tsv`, about 26 GB for the 99,012 blocks of 2.0.1).
-   - Pack (on by default, "Packed shader files" on the Set up page): each translated chunk is moved into
-     `shader_cache\spirv.archive\NNNNNN.pack` (zstd segments the runtime reads, `src-tauri/src/shader_archive.rs`) as soon as it
-     is committed, so the loose files never pile up. A cache that already has loose files keeps them until the player packs it.
+   - Translate: `tools\spirv_harness\spirv_harness.exe --batch` in chunks of 7000, writing each block's `<hash>.spv` and its row
+     of `results.tsv` into `shader_cache\stage\` as the block finishes (about 1.8 GB per chunk; 26 GB of SPIR-V for the 99,012
+     blocks of 2.0.1).
+   - Commit: the chunk's rows are appended to `shader_cache\spirv\results.tsv`, which is what makes a block count as translated,
+     after its SPIR-V is in the cache.
+   - Pack (on by default, "Packed shader files" on the Set up page): each chunk goes from the stage straight into
+     `shader_cache\spirv.archive\NNNNNN.pack` (zstd segments the runtime reads, `src-tauri/src/shader_archive.rs`), so a fresh
+     translation is never written to `shader_cache\spirv\` loose. On Linux the stage is a RAM filesystem (`/dev/shm`), so on a
+     Steam Deck's card a chunk costs one compressed write and no loose write at all. With packing off, the chunk is moved into
+     `shader_cache\spirv\` instead. A cache that already has loose files keeps them until the player packs it.
    A progress bar shows each step. Pause stops the tools and Continue setup picks up where they stopped: a block listed
    in `results.tsv` is never translated twice, and extraction is skipped if it already ran for the same romfs. The tools
    run at below-normal priority.

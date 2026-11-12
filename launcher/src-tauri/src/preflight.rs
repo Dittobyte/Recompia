@@ -20,8 +20,9 @@ pub const SPIRV_BYTES: u64 = 26 * GB;
 /// The same shaders packed (shader_archive.rs): SPIRV_BYTES / RATIO_GUESS, the 3.8x the preload pack measured at a lower zstd level
 /// than the archive uses, so a ceiling. Replace with the measured size once the first full caches are packed (setup.log says).
 pub const PACKED_BYTES: u64 = 7 * GB;
-/// A packed setup still writes each translated chunk as loose files before it packs them: the largest chunk (shaders.rs CHUNK, 7000
-/// blocks, about 1.8 GB of SPIR-V) and its packed copy are on disk together for a moment.
+/// A packed setup still writes each translated chunk into the game folder before it packs it (on Linux the stage is a RAM
+/// filesystem, but the packed copy is on the drive): the largest chunk (shaders.rs CHUNK, 7000 blocks, about 1.8 GB of SPIR-V) and
+/// its packed copy are on disk together for a moment.
 pub const CHUNK_BYTES: u64 = 2 * GB;
 /// The default block count when setup.json has none yet (2.0.1).
 pub const DEFAULT_BLOCKS: u64 = 99_012;

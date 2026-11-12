@@ -247,11 +247,10 @@ fn loose_hash(name: &str) -> Option<&str> {
     (h.len() == 16 && h.bytes().all(|b| b.is_ascii_hexdigit())).then_some(h)
 }
 
-/// The loose shader hashes, without a stat per file: `compact` only needs the names, and a card with a slow 4 KiB queue makes
-/// 99,000 of those cost real time.
-pub fn loose_hashes(game_dir: &Path) -> Vec<String> {
-    let dir = game_dir.join(SPIRV_REL);
-    fs::read_dir(&dir)
+/// The loose shader hashes in `dir`, without a stat per file: `compact` only needs the names, and a card with a slow 4 KiB queue
+/// makes 99,000 of those cost real time.
+fn loose_hashes_in(dir: &Path) -> Vec<String> {
+    fs::read_dir(dir)
         .map(|rd| {
             rd.filter_map(Result::ok)
                 .filter_map(|e| loose_hash(&e.file_name().to_string_lossy()).map(str::to_string))
@@ -286,13 +285,15 @@ pub struct Moved {
 }
 
 /// Moves the loose files whose hash is in `only` (None: every loose file) into new segments, deleting each after its segment is on disk.
-/// `progress(done, total)`. Stops between shaders when `cancel` is set (what is moved stays moved). A file that is not valid SPIR-V
-/// (empty, not whole words) stays loose. Ok((moved, finished)).
-pub fn compact(game_dir: &Path, only: Option<&[String]>, cancel: &AtomicBool, mut progress: impl FnMut(u64, u64)) -> Result<(Moved, bool), String> {
+/// `src`: where the loose files are (None: `shader_cache/spirv`), which Set up points at its stage so a fresh translation is archived
+/// without being written to the game folder first. `progress(done, total)`. Stops between shaders when `cancel` is set (what is moved
+/// stays moved). A file that is not valid SPIR-V (empty, not whole words) stays loose. Ok((moved, finished)).
+pub fn compact(game_dir: &Path, src: Option<&Path>, only: Option<&[String]>, cancel: &AtomicBool, mut progress: impl FnMut(u64, u64)) -> Result<(Moved, bool), String> {
     let t0 = std::time::Instant::now();
-    let spirv = game_dir.join(SPIRV_REL);
+    let loose_dir = src.map(Path::to_path_buf).unwrap_or_else(|| game_dir.join(SPIRV_REL));
+    let spirv: &Path = &loose_dir;
     let dir = archive_dir(game_dir);
-    let mut todo = loose_hashes(game_dir);
+    let mut todo = loose_hashes_in(spirv);
     if let Some(only) = only {
         let want: std::collections::HashSet<&str> = only.iter().map(String::as_str).collect();
         todo.retain(|h| want.contains(h.as_str()));
@@ -317,7 +318,7 @@ pub fn compact(game_dir: &Path, only: Option<&[String]>, cancel: &AtomicBool, mu
         // the loose copies go only now that the segment holding them is on disk, and on every core: the unlinks are as slow as the
         // reads were on a card
         let per = batch.len().div_ceil(threads).max(1);
-        let spirv_dir: &Path = &spirv;
+        let spirv_dir: &Path = spirv;
         std::thread::scope(|s| {
             for part in batch.chunks(per) {
                 s.spawn(move || {
@@ -341,7 +342,7 @@ pub fn compact(game_dir: &Path, only: Option<&[String]>, cancel: &AtomicBool, mu
             return Ok((moved, false));
         }
         // the window is read in parallel, then taken in list order, so the segments hold the shaders in the same order either way
-        let raws = read_all(&spirv, part, threads);
+        let raws = read_all(spirv, part, threads);
         for (h, raw) in part.iter().zip(raws) {
             done += 1;
             let Some(raw) = raw else { continue };
@@ -486,7 +487,7 @@ mod tests {
         assert_eq!(before.mode, "loose");
         assert_eq!(before.loose_files, 300);
 
-        let (moved, finished) = compact(&game, None, &AtomicBool::new(false), |_, _| {}).unwrap();
+        let (moved, finished) = compact(&game, None, None, &AtomicBool::new(false), |_, _| {}).unwrap();
         assert!(finished);
         assert_eq!(moved.shaders, 300);
         assert!(moved.disk_bytes < moved.raw_bytes, "{} >= {}", moved.disk_bytes, moved.raw_bytes);
@@ -506,7 +507,7 @@ mod tests {
         let newer = module(9999, 400);
         fs::write(spirv.join(format!("{}.spv", h0)), &newer).unwrap();
         assert_eq!(read_translation(&spirv, &Archive::open(&game), h0), Some(newer.clone()));
-        compact(&game, None, &AtomicBool::new(false), |_, _| {}).unwrap();
+        compact(&game, None, None, &AtomicBool::new(false), |_, _| {}).unwrap();
         assert!(!spirv.join(format!("{}.spv", h0)).exists());
         assert_eq!(Archive::open(&game).read(h0), Some(newer.clone()));
 
@@ -520,11 +521,45 @@ mod tests {
     }
 
     #[test]
+    fn compact_reads_the_stage_a_translation_was_written_to() {
+        // Set up's packed path: the harness writes into a stage folder and the archive takes the shaders straight from there, so a
+        // fresh translation never exists as a loose file in the game's cache.
+        let game = temp("stage");
+        let stage = temp("stage-src");
+        let mut written = Vec::new();
+        for i in 0..120u32 {
+            let h = format!("{:016x}", 0xabc0_0000u64 + i as u64);
+            let b = module(i, 400);
+            fs::write(stage.join(format!("{}.spv", h)), &b).unwrap();
+            written.push((h, b));
+        }
+        // the last one has no results row (a run killed between its .spv and its row): it is not archived
+        let (last, _) = written.last().unwrap().clone();
+        let rows: Vec<String> = written[..written.len() - 1].iter().map(|(h, _)| h.clone()).collect();
+
+        let (moved, finished) = compact(&game, Some(&stage), Some(&rows), &AtomicBool::new(false), |_, _| {}).unwrap();
+        assert!(finished);
+        assert_eq!(moved.shaders, 119);
+        // nothing was written loose to the game folder, and the archived copy is the stage's bytes
+        assert_eq!(loose_files(&game).len(), 0);
+        assert_eq!(storage(&game).mode, "compact");
+        let a = Archive::open(&game);
+        for (h, b) in &written[..written.len() - 1] {
+            assert_eq!(a.read(h).as_deref(), Some(b.as_slice()), "{}", h);
+        }
+        assert!(!a.contains(&last), "a shader without a row is not archived");
+        assert!(stage.join(format!("{}.spv", last)).is_file(), "and its file is left in the stage");
+        assert!(!stage.join(format!("{}.spv", written[0].0)).exists(), "an archived shader is deleted from the stage");
+        let _ = fs::remove_dir_all(&game);
+        let _ = fs::remove_dir_all(&stage);
+    }
+
+    #[test]
     fn cancelled_compact_keeps_everything_readable() {
         let game = temp("cancel");
         let shaders: Vec<_> = (0..600).map(|i| put(&game, i)).collect();
         let stop = AtomicBool::new(false);
-        let (moved, finished) = compact(&game, None, &stop, |done, _| {
+        let (moved, finished) = compact(&game, None, None, &stop, |done, _| {
             if done >= 250 {
                 stop.store(true, Ordering::SeqCst);
             }
@@ -549,7 +584,7 @@ mod tests {
         // PackDiskEntry {hash[16], line_hash, offset, csize, usize} = 40 bytes, index at the end of the file
         let game = temp("layout");
         let (h, b) = put(&game, 7);
-        compact(&game, None, &AtomicBool::new(false), |_, _| {}).unwrap();
+        compact(&game, None, None, &AtomicBool::new(false), |_, _| {}).unwrap();
         let (_, path) = segments(&archive_dir(&game)).pop().unwrap();
         let f = fs::read(&path).unwrap();
         assert_eq!(&f[..8], b"NXSPACK1");
