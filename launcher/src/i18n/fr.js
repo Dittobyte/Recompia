@@ -856,4 +856,6 @@ export default {
   'Settings you can change': 'Réglages modifiables',
   'Source': 'Source',
   'No mods in this group': 'Aucun mod dans ce groupe',
+  'Start without mods': 'Lancer sans mods',
+  'Starts the game once without mods. Your mods and their settings stay as they are.': 'Lance le jeu une fois sans mods. Vos mods et leurs réglages restent tels quels.',
 };

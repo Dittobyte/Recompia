@@ -63,7 +63,7 @@ fn report_files(dir: &Path, started: SystemTime) -> Vec<ReportFile> {
         .collect()
 }
 
-pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config) -> Result<(), String> {
+pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config, without_mods: bool) -> Result<(), String> {
     let (minimize, discord) = (cfg.minimize_on_play, cfg.discord_presence);
     {
         let st = app.play();
@@ -94,7 +94,7 @@ pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config) -> Result<(), Strin
             _ => String::new(),
         };
         // Calculate after shader preparation, immediately before the process starts, so a long preparation cannot age the offset.
-        let mut cmd = match crate::events::override_for(&dir).and_then(|clock| game_command(&exe, &dir, clock)) {
+        let mut cmd = match crate::events::override_for(&dir).and_then(|clock| game_command(&exe, &dir, clock, without_mods)) {
             Ok(c) => c,
             Err(e) => {
                 set_status(&app2, Status { state: GameState::Exited, crashed: true, message: format!("Could not start pkp.exe: {}", e), ..Default::default() });
@@ -153,13 +153,16 @@ pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config) -> Result<(), Strin
 }
 
 /// How Play starts pkp.exe: in its folder, through Proton on Linux (host.rs). Every path (exefs, romfs, shader cache) comes
-/// from pkp.ini next to it.
-fn game_command(exe: &Path, dir: &Path, clock: Option<crate::events::ClockOverride>) -> Result<std::process::Command, String> {
+/// from pkp.ini next to it. `without_mods`: this start runs without mods.
+fn game_command(exe: &Path, dir: &Path, clock: Option<crate::events::ClockOverride>, without_mods: bool) -> Result<std::process::Command, String> {
     crate::host::sync_runtime_files(&crate::paths::exe_dir(), dir)?;
     let mut cmd = crate::host::windows_program(exe)?;
     cmd.current_dir(dir).args(["--log", "pkp.log"]);
     if let Some(clock) = clock {
         clock.apply_to(&mut cmd);
+    }
+    if without_mods {
+        leave_mods_out(&mut cmd);
     }
     #[cfg(windows)]
     {
@@ -167,6 +170,12 @@ fn game_command(exe: &Path, dir: &Path, clock: Option<crate::events::ClockOverri
         cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW: no stray console if pkp.exe is a console build
     }
     Ok(cmd)
+}
+
+/// One start without mods: the runtime's `[mods] off` through its environment override (runtime/docs/CONFIG.md), so pkp.ini and
+/// the mods folder are not touched and the next start has its mods again.
+fn leave_mods_out(cmd: &mut std::process::Command) {
+    cmd.env("NXRT_MODS_OFF", "1");
 }
 
 /// `--play`: what Play does, without the window, for a shortcut that starts the game directly (Steam, Sunshine). Checks
@@ -198,7 +207,7 @@ pub fn run_cli(game_dir: &Path, tools: &Path) -> i32 {
         Err(e) => return fail(e),
     };
     let backups = crate::savebackup::Watch::start(game_dir);   // the same save backups as Play in the window
-    let status = game_command(&exe, game_dir, clock).and_then(|mut c| c.status().map_err(|e| format!("Could not start pkp.exe: {}", e)));
+    let status = game_command(&exe, game_dir, clock, false).and_then(|mut c| c.status().map_err(|e| format!("Could not start pkp.exe: {}", e)));
     backups.finish();
     let code = match status {
         Ok(st) => st.code().unwrap_or(1),
@@ -220,4 +229,17 @@ pub fn open_with_shell(path: &Path) -> Result<(), String> {
 /// Opens an http(s) link in the default browser (same route as open_with_shell).
 pub fn open_url(url: &str) -> Result<(), String> {
     crate::host::open(std::ffi::OsStr::new(url))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn without_mods_sets_the_runtime_switch() {
+        let mut cmd = std::process::Command::new("pkp-test");
+        leave_mods_out(&mut cmd);
+        let off = cmd.get_envs().find(|(k, _)| *k == std::ffi::OsStr::new("NXRT_MODS_OFF")).and_then(|(_, v)| v);
+        assert_eq!(off, Some(std::ffi::OsStr::new("1")));
+    }
 }

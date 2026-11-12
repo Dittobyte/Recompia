@@ -226,7 +226,8 @@ void ModsTab::build() {
         Line l;
         l.shape = Shape{2, 0, 1, Use::ReadOnly};
         l.label = "No mods";
-        l.desc = "No mods. Add them in the launcher's Mods page.";
+        l.desc = mods::started_without() ? "This start runs without mods. They are back at the next start."
+                                         : "No mods. Add them in the launcher's Mods page.";
         l.names = {"None", "None"};
         lines_.push_back(std::move(l));
         return;

@@ -15,6 +15,7 @@
 
 #include "modtopia_mappings.gen.h"
 #include "mods_internal.h"
+#include "nxrt/config.h"
 #include "nxrt/file_write.h"
 #include "nxrt/game.h"
 #include "nxrt/log.h"
@@ -228,7 +229,15 @@ void on_save_committed() {
 void start(const StartOptions& opt) {
     detail::Host& h = host();
     const game::Info& gi = game::info();
-    if (!gi.mods || h.L) return;
+    if (!gi.mods || h.L || h.off) return;
+    // Start without mods: the player's way out when a mod keeps the game from starting (the launcher passes it for one start). Nothing
+    // of the mods is touched: no scan, no files laid over the game's, the player's switches and the mods' settings stay as they are.
+    if (config_get_bool("mods", "off", false)) {
+        h.off = true;
+        NXLOG_I(kTag, "mods: [mods] off: this start runs without mods");
+        notices::post("mods", "Started without mods: they are back at the next start", 10);
+        return;
+    }
     std::error_code ec;
     const stdfs::path mods_dir = stdfs::absolute(stdfs::u8path(gi.mods->mods_dir), ec);
     if (ec || !stdfs::is_directory(mods_dir, ec)) {
@@ -294,5 +303,6 @@ std::vector<std::string> gameplay_mods() {
 }
 
 MtLoader* loader() { return host().L; }
+bool started_without() { return host().off; }
 
 }  // namespace nxrt::mods

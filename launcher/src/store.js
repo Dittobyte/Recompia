@@ -217,11 +217,12 @@ export const store = {
     }
   },
 
-  async play() {
+  /** `withoutMods`: this one start runs without mods (the player's way out when a mod keeps the game from starting). */
+  async play({ withoutMods = false } = {}) {
     if (store.state.starting) return;
     set({ starting: true }, 'task');
     try {
-      await api.play();
+      await api.play(withoutMods ? { withoutMods } : undefined);
     } catch (e) {
       toast(errText(e), 'error');
       store.refresh();

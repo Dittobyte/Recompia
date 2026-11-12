@@ -738,6 +738,11 @@ export const SECTIONS = [
             actions: (env) => [{ act: 'repair-open', label: t('Repair and reset'), icon: 'wrench', disabled: env.gameBusy || env.updating || env.taskBusy }],
           },
           {
+            id: 'without_mods', label: t('Start without mods'), type: 'info',
+            value: t('Starts the game once without mods. Your mods and their settings stay as they are.'),
+            actions: (env) => [{ act: 'play-without-mods', label: t('Start without mods'), icon: 'play', disabled: !env.canPlay }],
+          },
+          {
             id: 'repair_undo', label: t('Undo last repair'), type: 'info', when: (v, env) => !!env.repairBackup,
             value: (env) => (env.repairBackup ? t('Puts back {files}', { files: env.repairBackup.files.join(', ') }) : ''),
             actions: (env) => [{ act: 'repair-undo', label: t('Undo'), icon: 'rotate-ccw', disabled: env.gameBusy || env.updating || env.taskBusy }],
