@@ -3,10 +3,8 @@ import './theme.css';
 import './layout.css';
 import './components.css';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import markUrl from './art/mark.png';
-import markTestingUrl from './art/mark-testing.png';
-import logoUrl from './art/logo.png';
 import { api } from './api.js';
+import { brandImg, setBranding } from './branding.js';
 import { t } from './i18n.js';
 import { errText, esc, icon } from './ui.js';
 import { store } from './store.js';
@@ -80,7 +78,7 @@ function drawNav() {
   const items = Object.entries(PAGES).filter(([, p]) => p.nav).map(([id, p]) =>
     `<button class="nav-item" data-page="${id}" aria-label="${esc(p.nav)}">${icon(p.icon)}<span class="nav-label">${esc(p.nav)}</span><span class="nav-tip" aria-hidden="true">${esc(p.nav)}</span></button>`);
   nav.innerHTML = `
-    <div class="brand" data-tauri-drag-region><img class="brand-mark" src="${markUrl}" alt="" /><img class="brand-mark-testing" src="${markTestingUrl}" alt="${esc(t('Testing'))}" /><img class="brand-name brand-logo" src="${logoUrl}" alt="Pokopia" /><span class="brand-tag">${esc(t('Testing'))}</span></div>
+    <div class="brand" data-tauri-drag-region>${brandImg('mark', 'class="brand-mark" alt=""')}${brandImg('mark-testing', `class="brand-mark-testing" alt="${esc(t('Testing'))}"`)}${brandImg('logo', 'class="brand-name brand-logo" alt="Pokopia"')}<span class="brand-tag">${esc(t('Testing'))}</span></div>
     ${items.join('')}
     <div class="nav-spacer"></div>
     <button class="nav-item" id="theme-btn" aria-label="${esc(t('Change colours'))}">${icon('palette')}<span class="nav-label"></span><span class="nav-tip" aria-hidden="true"></span></button>
@@ -108,11 +106,13 @@ function drawNav() {
   });
 }
 
-/** The Testing channel is marked in the sidebar (the Testing icon and a tag), so a tester can tell this launcher from a Stable one at a glance. */
-async function syncChannel() {
+/** The Testing channel is marked in the sidebar (the Testing icon and a tag), so a tester can tell this launcher from a Stable one at a
+ *  glance; the pictures follow the player's logo and icon choice. */
+async function syncLook() {
   try {
     const c = await api.getConfig();
     document.documentElement.dataset.channel = c?.channel === 'testing' ? 'testing' : 'stable';
+    setBranding(c);
   } catch (e) {
     console.warn('get_config', e);
   }
@@ -227,8 +227,8 @@ function start() {
     applySidebar(false);
   });
   store.subscribe(drawChrome);
-  store.subscribe((_s, why) => { if (why === 'news') syncChannel(); });
-  syncChannel();
+  store.subscribe((_s, why) => { if (why === 'news') syncLook(); });
+  syncLook();
   drawChrome();
   store.start().catch((e) => console.error(e));
   const once = store.subscribe((s, why) => {

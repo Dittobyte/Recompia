@@ -35,6 +35,11 @@ pub struct Config {
     pub achievements_unlocked: bool,
     /// The player unlocked the mod's sharing setting (mods_lock.rs): it may be switched off. Locked unless the player unlocks it.
     pub achievements_sharing_unlocked: bool,
+    /// The wordmark the launcher and the Steam shortcut show: "classic" (the bubble letters of 0.10) or anything else for the current
+    /// Recompia logo (branding.rs).
+    pub logo: String,
+    /// The icon of the launcher, the game and the Steam shortcut, with the same values as `logo` (branding.rs).
+    pub icon: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]

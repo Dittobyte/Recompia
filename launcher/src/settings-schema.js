@@ -31,6 +31,9 @@ const controls = (section, key) => ({ file: 'controls', section, key });
 const pkp = (section, key) => ({ file: 'pkp', section, key });
 const config = (key) => ({ file: 'config', section: '', key });
 
+/** The logo and icon choices: 'Recompia' is a name and stays in English. */
+const LOOKS = [{ value: 'recompia', label: 'Recompia' }, { value: 'classic', label: t('Classic') }];
+
 const keyOf = (at) => (at.file === 'config' ? at.key : `${at.section}.${at.key}`);
 const rawOf = (src, at) => src[at.file]?.[keyOf(at)];
 const has = (src, at) => {
@@ -607,6 +610,15 @@ export const SECTIONS = [
           // pkp.ini [display] unpaced_loading, read by runtime/src/gfx/nvn/nvn_replay.cpp; that section has no generated schema yet
           { id: 'unpaced_loading', label: t('Fast loading screens'), type: 'toggle', at: pkp('display', 'unpaced_loading'), def: '0' },
           { id: 'unpaced_loading_note', type: 'note', note: () => ({ text: t('Lets loading screens run past your frame limit, so loading ends a little sooner. Their animations then play too fast above 60 fps. Takes effect the next time the game starts.') }) },
+        ],
+      },
+      {
+        title: t('Logo and icon'),
+        rows: [
+          // launcher.json; the launcher puts the choice in place (writer.js -> apply_branding, src-tauri/src/branding.rs)
+          { id: 'logo', label: t('Logo'), type: 'segmented', at: config('logo'), def: 'recompia', options: LOOKS },
+          { id: 'icon', label: t('Icon'), type: 'segmented', at: config('icon'), def: 'recompia', options: LOOKS },
+          { id: 'look_note', type: 'note', note: () => ({ text: t('Classic is the bubble-letter logo and R icon of earlier versions. The icon changes for the launcher, the game and the Steam shortcut (Steam shows it after a restart). Windows can take a moment to redraw an icon it has already shown.') }) },
         ],
       },
       {

@@ -2,7 +2,7 @@
 // the panel shows; a view's markup is only rewritten when it changes, and setup ticks touch a few nodes (live()), so a focused
 // control, an open details block or a half typed path stays as it is.
 import './setup.css';
-import logoUrl from '../art/logo.png';
+import { brandImg } from '../branding.js';
 import { api } from '../api.js';
 import { t } from '../i18n.js';
 import { fromBackend } from '../backend-text.js';
@@ -427,7 +427,7 @@ export function render(el, ctx) {
   if (!flow.checking && !store.state.nup) Object.assign(flow, { report: null, error: null });
 
   el.innerHTML = `<div class="setup">
-    ${ctx.firstRun ? `<div class="setup-brand"><img src="${logoUrl}" alt="Pokopia" /></div>` : ''}
+    ${ctx.firstRun ? `<div class="setup-brand">${brandImg('logo', 'alt="Pokopia"')}</div>` : ''}
     <section class="setup-panel glass strong" id="panel"></section>
   </div>`;
   const panel = el.querySelector('#panel');

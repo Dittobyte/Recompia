@@ -2,6 +2,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod backup_cmds;
+mod branding;
+mod branding_cmds;
 mod cli;
 mod config;
 mod dialogs;
@@ -12,6 +14,7 @@ mod dump;
 mod dump_cmds;
 mod error;
 mod events;
+mod exe_icon;
 mod achievements;
 mod achievements_cmds;
 mod fsutil;
@@ -100,6 +103,7 @@ fn main() {
                 // a failed screen query only means the window keeps its default size: it must never stop the launcher from starting
                 let _ = window::fit_window(&window, load_config(app.handle()).window);
             }
+            branding::apply_window(app.handle(), &branding::Branding::of(&load_config(app.handle())));
             // Link Play starts from its defaults on every launcher start: nothing left from an earlier session decides the next one (#239)
             if let Err(e) = settings::reset_link_play(&game_dir(app.handle())) {
                 eprintln!("Link Play reset: {e}");
@@ -113,6 +117,7 @@ fn main() {
                     let (root, game) = (exe_dir(), game_dir(&handle));
                     update::clean_start(&root, &update::old_files(&launcher, &game));
                     st.set_cleaning(false);
+                    branding::on_start(&load_config(&handle));
                 });
             }
             #[cfg(debug_assertions)]
@@ -173,6 +178,7 @@ fn main() {
             backup_cmds::backup_now,
             backup_cmds::backup_restore,
             backup_cmds::open_backup_dir,
+            branding_cmds::apply_branding,
             steam_cmds::steam_status,
             steam_cmds::steam_add,
             steam_cmds::steam_remove,

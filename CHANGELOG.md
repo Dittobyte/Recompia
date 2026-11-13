@@ -33,6 +33,7 @@ This build is about **waiting less**. Building the game code takes about half th
 - The launcher prepares an update's game code in the background, with its progress on the Home page, and installs the update once the game is closed
 - Link Play: every room on the public relay is listed in the game's **Visit a Friend**, for players on the same release with the same **Same for everyone** switches
 - Link Play: the game's own **Link Code** makes a room private. The room is still listed, and only players who type the code can join
+- Settings > Game > **Logo and icon**: choose the Recompia or the Classic (bubble letters and R) logo and icon. The icon also changes for the launcher and game programs on Windows and for the Steam shortcut (#557, #621)
 
 ### Changed
 - Native shader translation chooses workers and a bounded GC heap from available CPU and memory, uses server GC when there is room, and retries a silent or out-of-memory failure once with lighter settings. Previously Linux and macOS always used workstation GC; existing shader caches stay valid and this change only needs **Update**.
