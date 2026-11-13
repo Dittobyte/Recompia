@@ -8,7 +8,7 @@ import { t } from '../i18n.js';
 import { fromBackend } from '../backend-text.js';
 import { errCode, errText, esc, field, icon, row, toast, toggle } from '../ui.js';
 import { store } from '../store.js';
-import { needsFinish, primaryAction } from '../action.js';
+import { needsFinish, primaryAction, setupStepOf } from '../action.js';
 
 const GB = 2 ** 30;   // preflight.rs GB
 const SLOW_CHECK_MS = 200;   // a faster check never shows the "Checking" panel
@@ -17,23 +17,10 @@ const SETUP_BUSY = t('Setup is running. Pause it first.');
 
 const STEPS = [t('Build game'), t('Translate shaders'), t('First run')];
 
-// phase -> [step, the step's percent at the phase's start, at its end]. The two phases that take the time get the room.
-// Phases: main.rs check, tools, warmup; pkp_build.py verify, lift, compile, link, finish; shaders.rs extract, recheck, translate.
-const PHASES = {
-  check: [0, 0, 0], tools: [0, 0, 5], verify: [0, 5, 10], lift: [0, 10, 25], compile: [0, 25, 95], link: [0, 95, 100], finish: [0, 100, 100],
-  extract: [1, 0, 5], recheck: [1, 5, 10], translate: [1, 5, 100],
-  warmup: [2, 0, 0],
-};
-
-/** Where setup is: step index and percent of that step, null when the phase has no count. */
-function stepOf(p) {
-  const [step, from, to] = PHASES[p.phase] ?? [0, 0, 0];
-  return { step, pct: p.total ? Math.min(100, Math.floor(from + ((to - from) * p.done) / p.total)) : null };
-}
-
 // Time left. Only for the phases that fill their step, so "left in this step" is true for them; the rate is that of the last
-// few minutes because shader batches pause to save.
-const ETA_PHASES = new Set(['compile', 'translate']);
+// few minutes because shader batches pause to save. The lift counts in its own passes' weighted progress, which is what its
+// step of the bar shows.
+const ETA_PHASES = new Set(['lift', 'compile', 'translate']);
 const ETA_WINDOW_MS = 180_000;
 const ETA_MIN_SPAN_MS = 60_000;   // shorter: not meaningful yet
 const ETA_MIN_SAMPLES = 3;
@@ -480,7 +467,7 @@ export function render(el, ctx) {
     };
     if (view === 'running') {
       const p = s.setup.progress;
-      const { step, pct } = stepOf(p);
+      const { step, pct } = setupStepOf(p);
       meter(pct, t('Working'));
       part('eta').textContent = etaOf(p);
       const say = fromBackend(p.message);

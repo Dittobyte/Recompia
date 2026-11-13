@@ -35,6 +35,7 @@ This build is about **waiting less**. Building the game code takes about half th
 - Link Play: the game's own **Link Code** makes a room private. The room is still listed, and only players who type the code can join
 
 ### Changed
+- **Translating the game code** takes about 40 % less time: on a 24-thread PC the step went from about 110 s to about 65 s. The translator runs its passes in one set of worker processes instead of three, stops building C++ it throws away, and builds the statements it keeps with table lookups instead of formatting
 - **Finish update** and **Set up again** compile the game code in about half the time
 - One compile job per GB of free memory instead of per two, so PCs with little free memory build with more of their cores
 - An update that changes only comments or other platforms' parts of the translator no longer compiles the whole game again
@@ -50,6 +51,7 @@ This build is about **waiting less**. Building the game code takes about half th
 
 ### Fixed
 - The Ditto loading screen's black background reaches the top and bottom on taller screens such as the Steam Deck (#534). The game code is relinked and existing shaders are reused.
+- Set up no longer looks frozen while it translates the game code: the bar moves through that step, and the time left is shown beside it
 - The launcher no longer reports "The game stopped unexpectedly" (0xC0000409) when the game closes itself
 - Removed the touch screen Menu button, which could show up in the corner on desktop PCs
 
