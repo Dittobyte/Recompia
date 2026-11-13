@@ -798,12 +798,13 @@ def compile_all(runner, gen, obj, jobs, env, cache=None, skip=()):
             cache.store(keys[src], o)
         return None
 
-    # a big unit takes a GB or two in clang; with too many at once memory runs out and clang dies on every unit with
-    # exit 541541187 (0x20474343: an uncaught C++ exception, std::bad_alloc)
-    # ponytail: 2 GiB per job is a guess from the unit sizes; measure if machines with plenty of RAM get capped
+    # with too many units at once memory runs out and clang dies on every unit with exit 541541187 (0x20474343: an uncaught
+    # C++ exception, std::bad_alloc). Measured, peak working set of the compiler for main's largest unit (3.9 MB of source):
+    # 320 MiB with -g0 (556 MiB with debug info). 1 GiB per job leaves three times that; the cap used to be 2 GiB, a guess,
+    # which gave a PC with 4 GB free two jobs however many cores it had. A unit that still fails is compiled again below.
     avail = free_memory()
     if avail:
-        jobs = max(1, min(jobs, avail // (2 << 30)))
+        jobs = max(1, min(jobs, avail // (1 << 30)))
     failed = []
     with ThreadPoolExecutor(max_workers=jobs) as ex:
         pending = {ex.submit(one, t): t for t in todo}
