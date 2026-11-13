@@ -44,6 +44,7 @@ if(TARGET nxrt_gfx)
         "${_pkp}/render/pkp_render_size.cpp"
         "${_pkp}/render/pkp_render_targets.cpp"
         "${_pkp}/render/pkp_aspect.cpp"
+        "${_pkp}/render/pkp_loading_backdrop.cpp"
         "${_pkp}/render/pkp_wide_text.cpp"
         "${_pkp}/render/pkp_frame_rate.cpp"
         "${_pkp}/render/pkp_gfx_heap.cpp"

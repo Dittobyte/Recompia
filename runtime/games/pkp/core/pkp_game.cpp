@@ -11,6 +11,7 @@
 #include "ui/pkp_key_guide.h"
 #include "core/pkp_layout.h"
 #include "core/pkp_linkplay.h"
+#include "render/pkp_loading_backdrop.h"
 #include "core/pkp_mods.h"
 #include "ui/pkp_menu.h"
 #if NXRT_TESTTOOLS
@@ -68,6 +69,7 @@ constexpr uint64_t kFrameUpdate = 0x1fdcde4;
 //   key_guide           after its clients: its install registers the hooks they need
 //   options             after title: title's frame callback runs first
 //   item_edit           no hooks and no callbacks: the Options screen's Items tab calls it when it opens and commits (pkp_item_edit.h)
+//   loading_backdrop   after play: uses the height set by its UI camera hook
 // No other two features hook the same address.
 //
 // Each row says what the feature is to the player. mod(): a gameplay mod, named with its switches (the gameplay() rows of the [pkp]
@@ -87,7 +89,7 @@ constexpr Entry kEntries[] = {
 #if NXRT_TESTTOOLS
     port(&kMovieTestFeature),
 #endif
-    port(&kMenuFeature), port(&kQualityFeature),
+    port(&kMenuFeature), port(&kLoadingBackdropFeature), port(&kQualityFeature),
     port(&kTaaFeature),
 #if NXRT_TESTTOOLS
     port(&kTaaProbeFeature),
