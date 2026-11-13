@@ -4,10 +4,17 @@
 // The journal's two sites are the setters of the story quest history in the 2.0.1 main (m_story = save root + 0x4a26a0, in the player's
 // own save): 0x5d865c (m_story, id, state 1..4) writes a quest's state byte and 0x5d8774 (m_story, id, bool) bit 0 of its flag byte; the
 // quest pump 0x11b600 and the event scripts go through them. Both begin with `sub w8, w1, #1`. The entry hooks only read: x0 = m_story,
-// w1 = the quest id, w2 = the new value, and the byte in the save is still the old one. The role is the session byte of the game state
-// (*(main + 0x3561710) + 0x90: bit 0 online, bit 1 host, bit 2 visitor), the stage its byte at +0x18.
+// w1 = the quest id, w2 = the new value, and the byte in the save is still the old one. The role and the stage come from the game state
+// (pkp_layout.h).
+//
+// The save after a step is the game's own request for the player's file alone, as its menus make it (0xf707a0 case 8, 0xffa610):
+// 0x241324(save manager, request, 0, 0) with the 12-byte request {u32 5, u8 0, u8 the byte at save root + 0xa4, u8 0, u8, u32 2}: kind 2
+// writes CMNDAT and nothing of the world, whoever's world the player is in. It answers 0 while a save is running. The autosave's own
+// job (state at game state + 0x3bb5e0, 1..4 while it works) and the game's "busy" flag (0x1176a4: the byte at +0x6ea of the object at
+// game state + 0xd0, which its autosave waits for too) put the request off.
 #include "core/pkp_story_guard.h"
 #include "core/pkp_guest.h"
+#include "core/pkp_layout.h"
 #include "core/pkp_save_files.h"
 #include "core/pkp_settings.h"
 
@@ -35,10 +42,15 @@ constexpr const char* kCopyFolder = "story-coop-backup";
 constexpr const char* kJournalFolder = "story-journal";
 constexpr uintmax_t kJournalMax = 2u << 20;   // past this the journal becomes <key>.1.tsv (one older file is kept)
 
-constexpr uint64_t kGameState = 0x3561710;    // main: -> the game state
-constexpr uint64_t kStateStage = 0x18;        // u8: the stage the player is in
-constexpr uint64_t kStateSession = 0x90;      // u8: bit 0 online, bit 1 host, bit 2 visitor
 constexpr uint32_t kEntryWord = 0x51000428u;  // sub w8, w1, #1: the first instruction of both setters
+
+constexpr uint64_t kSaveManager = 0x35619d0;  // main: -> the save manager
+constexpr uint64_t kSaveRequest = 0x241324;   // (manager, request, mode, flag) -> 1 when queued
+constexpr uint64_t kRootHome = 0xa4;          // save root: u8, the request's second byte
+constexpr uint64_t kStateAutosave = 0x3bb5e0; // game state: u32, 1..4 while the autosave works
+constexpr uint64_t kStateEvent = 0xd0, kEventBusy = 0x6ea;
+constexpr int kSaveSettle = 120;              // game frames from the last change of a step to the request
+constexpr int kSaveTries = 3600;              // then the request is given up (the next step asks again)
 
 enum class Change : uintptr_t { State, Flag };
 struct Site {
@@ -54,6 +66,10 @@ struct State {
     uint32_t ids[kSiteCount] = {};         // all 0: off or not installed
     std::atomic<bool> armed{false};
     std::atomic<bool> checked{false};
+    int save_in = 0;                       // the game thread's: frames to the save request, 0 none; counts down to 1 and stays while refused
+    int save_tries = 0;
+    bool logged_save = false;
+    alignas(4) uint8_t request[12] = {};
     std::mutex file_mutex;
     stdfs::path journal;
     bool write_failed = false;             // under file_mutex: logged once
@@ -64,11 +80,11 @@ State& st() {
 }
 
 const char* role_str(uint8_t session) {
-    if (!(session & 1)) return "offline";
-    return (session & 4) ? "visitor" : "host";
+    if (!(session & layout::kSessionOnline)) return "offline";
+    return (session & layout::kSessionVisitor) ? "visitor" : "host";
 }
 
-void append(State& s, const char* role, unsigned stage, uint32_t id, Change change, unsigned before, unsigned after) {
+void append(State& s, const char* role, unsigned stage, uint32_t id, const char* change, unsigned before, unsigned after) {
     char when[32];
     const std::time_t now = std::time(nullptr);
     std::tm tmv{};
@@ -79,8 +95,7 @@ void append(State& s, const char* role, unsigned stage, uint32_t id, Change chan
 #endif
     std::strftime(when, sizeof when, "%Y-%m-%dT%H:%M:%SZ", &tmv);
     char line[160];
-    const int n = std::snprintf(line, sizeof line, "%s\t%s\t%u\t%u\t%s\t%u\t%u\n", when, role, stage, id,
-                                change == Change::State ? "state" : "flag", before, after);
+    const int n = std::snprintf(line, sizeof line, "%s\t%s\t%u\t%u\t%s\t%u\t%u\n", when, role, stage, id, change, before, after);
     if (n <= 0) return;
 
     const std::lock_guard<std::mutex> lock(s.file_mutex);
@@ -99,6 +114,18 @@ void append(State& s, const char* role, unsigned stage, uint32_t id, Change chan
         s.write_failed = true;
         NXLOG_W(kTag, "Story co-op journal: writing %s failed; the story itself is not affected", save_files::u8(s.journal).c_str());
     }
+}
+
+// One line with the player's role and stage as they are now. Returns the session byte.
+uint8_t note(State& s, uint32_t id, const char* change, unsigned before, unsigned after) {
+    uint8_t session = 0, stage = 0;
+    const uint64_t game = guest::rd<uint64_t>(s.base + layout::kGameState);
+    if (guest::ok(game, layout::kStateSession + 1)) {
+        session = guest::rd<uint8_t>(game + layout::kStateSession);
+        stage = guest::rd<uint8_t>(game + layout::kStateStage);
+    }
+    append(s, role_str(session), stage, id, change, before, after);
+    return session;
 }
 
 int hook_set(::Ctx* c, uint64_t, void* user) {
@@ -121,14 +148,46 @@ int hook_set(::Ctx* c, uint64_t, void* user) {
     if (change == Change::Flag) before &= 1;
     if (before == after) return 0;
 
-    uint8_t session = 0, stage = 0;
-    const uint64_t game = guest::rd<uint64_t>(s.base + kGameState);
-    if (guest::ok(game, kStateSession + 1)) {
-        session = guest::rd<uint8_t>(game + kStateSession);
-        stage = guest::rd<uint8_t>(game + kStateStage);
+    // In a session the step is written to the player's own save once it has settled (game_frame).
+    if (note(s, id, change == Change::State ? "state" : "flag", before, after) & layout::kSessionOnline) {
+        s.save_in = kSaveSettle;
+        s.save_tries = kSaveTries;
     }
-    append(s, role_str(session), stage, id, change, before, after);
     return 0;
+}
+
+// The game thread, once a frame: asks the game to write the player's own file when a step has settled and nothing else saves.
+void game_frame(::Ctx* c) {
+    State& s = st();
+    if (!s.save_in || !s.armed.load(std::memory_order_acquire)) return;
+    if (s.save_in > 1) {
+        --s.save_in;
+        return;
+    }
+    if (--s.save_tries <= 0) {
+        s.save_in = 0;
+        NXLOG_W(kTag, "Story co-op: the save after a story step was put off too long and is left to the game's own saves");
+        return;
+    }
+    const uint64_t game = guest::rd<uint64_t>(s.base + layout::kGameState);
+    const uint64_t manager = guest::rd<uint64_t>(s.base + kSaveManager);
+    const uint64_t root = guest::rd<uint64_t>(s.base + layout::kSaveRoot);
+    if (!guest::ok(game, kStateAutosave + 4) || !guest::ok(manager, 0x40) || !guest::ok(root, kRootHome + 1)) return;
+    if (guest::rd<uint32_t>(game + kStateAutosave) - 1 < 4) return;
+    const uint64_t event = guest::rd<uint64_t>(game + kStateEvent);
+    if (event && guest::ok(event, kEventBusy + 1) && guest::rd<uint8_t>(event + kEventBusy)) return;
+    const uint32_t type = 5, kind = 2;
+    std::memset(s.request, 0, sizeof s.request);
+    std::memcpy(s.request, &type, 4);
+    s.request[5] = guest::rd<uint8_t>(root + kRootHome);
+    std::memcpy(s.request + 8, &kind, 4);
+    if (!(guest::call(c, s.base + kSaveRequest, manager, reinterpret_cast<uint64_t>(s.request), 0, 0) & 1)) return;
+    s.save_in = 0;
+    note(s, 0, "save", 0, 0);
+    if (!s.logged_save) {
+        s.logged_save = true;
+        NXLOG_I(kTag, "Story co-op: after a story step in a session the player's own save file is written (the game's own request)");
+    }
 }
 
 void remove_hooks(State& s) {
@@ -145,6 +204,7 @@ void install(const FeatureInstall& in) {
     s.hooks = &in.hooks;
     s.armed.store(false);
     s.checked.store(false);
+    s.save_in = 0;
 
     static std::atomic<bool> copied{false};   // once per process: the save as it was before the game read it
     if (!copied.exchange(true)) {
@@ -193,11 +253,16 @@ void remove() {   // the registry has removed the hooks
 
 }  // namespace
 
+void story_journal_note(uint32_t quest, const char* change, unsigned a, unsigned b) {
+    State& s = st();
+    if (s.armed.load(std::memory_order_acquire)) note(s, quest, change, a, b);
+}
+
 uint64_t story_quest_offset(uint32_t id) {
     if (id - 1 >= 1000) return 0;
     return id > 800 ? 0x1860 + 2ull * (id - 800) : 0x1060 + 2ull * id;
 }
 
-const Feature kStoryGuardFeature = {.name = "story_guard", .install = &install, .remove = &remove, .frame = &frame};
+const Feature kStoryGuardFeature = {.name = "story_guard", .install = &install, .remove = &remove, .frame = &frame, .game_frame = &game_frame};
 
 }  // namespace nxrt::games::pkp
