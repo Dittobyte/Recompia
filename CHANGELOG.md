@@ -8,15 +8,15 @@
 
 **Linux and macOS:** new native downloads. On Linux, `PokopiaRecomp-0.12.0-linux-x64.tar.gz`; on a Mac with Apple silicon, `Recompia-0.12.0-macos-arm64.zip`. Unpack it, start the launcher and run **Set up** with your own dump.
 
-Pitoy runs **natively on Linux and macOS**, opens the **Modtopia mod hub** inside the launcher, adds a **Community Achievements** page, and fixes a batch of Set up and graphics problems.
+**Pitoy** runs **natively on Linux and macOS**, opens the **Modtopia mod hub** inside the launcher, adds a **Community Achievements** page, and fixes a batch of Set up and graphics problems.
 
-### Highlights
+### ✨ Highlights
 - **Native Linux and macOS:** the game runs without Proton or Wine on Linux, and on Apple silicon Macs through Metal
 - **Browse mods in the launcher:** the Modtopia mod hub's list, with groups, details and one-click install or update
 - **Achievements page:** the community tracker in the launcher, with what you earned and how many players have each one
-- New **Aspect Ratio** setting, an experimental **Item editor**, and a **Mods** tab in the game's own Settings
+- **More in the game:** a new **Aspect Ratio** setting, an experimental **Item editor**, and a **Mods** tab in the game's own Settings
 
-### Mods
+### 🧩 Mods
 - The launcher's **Mods** page opens on **Browse**: the Modtopia mod hub's list, filtered by group, with **Details** (the whole description, the settings a mod adds, game versions, download size and links), a **Tested** tag for this game version, and **Install** or **Update** behind a single question
 - **Installed** sits beside Browse, and each mod there shows as one line (name, switch, tags) that opens to its description, settings and buttons, so a long list stays short
 - **Update mods by themselves** (off unless you switch it on) checks the hub once each time the launcher starts. The mods folder gets a short README.txt
@@ -26,38 +26,39 @@ Pitoy runs **natively on Linux and macOS**, opens the **Modtopia mod hub** insid
 - Mods can now take screenshots (without the game's menus in them), react to keyboard keys, tint the final picture (colour presets, colorblind filters), show a picture beside their messages, hide the game's HUD while the 3D picture stays (Hide HUD, Photo Mode), and make HTTPS requests to the sites their own description names
 - Changing mods that need other hook points translates only the game part they touch (on PC: about 4.5 minutes for main-only points, under a minute for the others)
 
-### Launcher
+### 🚀 Launcher
 - New **Achievements** page: the Modtopia community tracker, grouped as the hub lists it, with how many players have each achievement, the rarest right now, and the ones you earned. It only reads the counts and sends nothing; the mod does the sharing
 - The **Testing** channel lists every prerelease (Testing betas and alpha builds) in **Choose a version** and What's New, and no longer offers an **Update**: testers pick each build by hand
+- Patch notes read better in **What's New**: the Update line stands out as a callout, Highlights show as cards, and notes can carry quotes and coloured Note / Tip / Warning boxes
 
-### Display
+### 🖥️ Display
 - New **Aspect Ratio** setting in the game's Settings > Display and in the launcher (Auto, 16:9, 16:10, 21:9, 32:9; applies after a restart): 16:9 now stays 16:9 on a 16:10 or ultrawide screen. The toggle that only chose black bars over stretching is now called **Letterbox** (#564)
 - Fixed the **Nearest**, **FSR 1** and **NIS** upscalers doing nothing with **Scene Resolution** below 100%: Nearest now shows hard pixels and FSR 1 / NIS a sharper picture, while the menus and HUD stay sharp (#571)
 
-### Gameplay
+### 🎮 Gameplay
 - New **Item editor (experimental)** in Settings > Gameplay, off by default: an **Items** tab in the game's Settings where you change how many of an item in your bag you hold (up to the game's stack limit). It adds no new items and is off during Link Play. Back up your save first
 
-### Fixes
+### 🛠️ Fixes
 - Fixed objects and effects staying invisible the first time they appear, until a restart, on graphics cards without pipeline libraries (such as the RX 580): the pipelines a visible object waits for are now built first (#515)
 - Fixed a black screen on GPUs that cannot share memory with the game directly (such as the Adreno X1-85 in Snapdragon X laptops) (#589)
 - Fixed **Set up** failing every time at "Linking pkp.exe" after a power cut during an earlier Set up: files are written to the disk before they count as done, and a damaged one is compiled again
 - Fixed **Set up** failing with "No such file or directory: ...\.lean-flows\...pkl" after the launcher was closed during an earlier Set up: Set up's tools now end when the launcher closes
 
-### Linux
+### 🐧 Linux
 - The game runs natively: no Proton, no Wine. The launcher is an AppImage and the runtime is `libpkp_rt.so`, the same runtime the Windows build links as `pkp_rt.dll`
 - Needs glibc 2.35 or newer (Ubuntu 22.04+, Debian 12+, Fedora 36+, SteamOS 3) and the system's graphics libraries (`libEGL`, `libGL`, `libvulkan`), which every desktop and SteamOS ship
 - Steam Deck: add the AppImage as a non-Steam game
 - The Linux fixes the Proton build had (pool handling, the submit thread, short sleeps, the loop guard, the pipeline cache) all apply natively, and write tracking and GPU-fence waits cost far less processor time
 - Not on Linux yet: **FSR 3 and DLSS** (Windows-only SDKs; FSR 1 and NIS work)
 
-### macOS
+### 🍎 macOS
 - The game runs natively on Apple silicon: Metal through MoltenVK, CoreAudio for sound
 - Unpack the zip anywhere, start `PokopiaLauncher`, allow it once in **System Settings > Privacy and Security**, and it updates itself from then on
 - The game renders at the console's own resolution (1920x1080 docked) and the window scales it up: the world holds 58 to 60 fps on an M3 in a 1440p window. `[display] render_mode = window` renders at the window's size instead
 - Vsync is on by default, a frame limit holds through loading screens, and textures no longer flash while an area loads
 - Not on macOS yet: the two in-game movies, and Link Play against another player has not been tried
 
-### Docs
+### 📚 Docs
 - `docs/linux-port.md` and `docs/macos-port.md` describe both ports, and `docs/macos-optimisations.md` records what is tuned and how to measure it
 
 ## 0.11.1 (build O: Ocelot Hotfix a1)

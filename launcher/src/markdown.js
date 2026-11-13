@@ -3,7 +3,13 @@
 // attribute. The only thing that can leave the page is <a data-url> on https://github.com/; it has no href, so a click
 // goes to the page's one listener (open_link) and never navigates the webview.
 //
-// Images (`![alt](url)`) become their alt text: the app's CSP allows no remote images.
+// Images (`![alt](url)`) become their alt text: the app's CSP allows no remote images. Raw HTML in a note stays text.
+//
+// Styling a note can ask for, all plain Markdown that GitHub shows too:
+// - a heading may start with an emoji ("### 🧩 Mods"); section names are matched without it
+// - a paragraph that opens with a bold label ("**Update:** press Update") is drawn as a callout
+// - the list under "### Highlights" is drawn as cards; an item's opening bold label ("**Native Linux:** ...") is its title
+// - "> text" is a quote, and GitHub's alerts ("> [!NOTE]", TIP, IMPORTANT, WARNING, CAUTION) are coloured boxes
 
 import { date } from './i18n.js';
 
@@ -17,12 +23,19 @@ const HEADING = /^#{1,6}\s+(.*?)\s*#*\s*$/;
 const RULE = /^\s*([-*_])(\s*\1){2,}\s*$/;
 const ITEM = /^(\s*)[-*]\s+(.*)$/;
 const TABLE_RULE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+const QUOTE = /^\s*>\s?(.*)$/;
+const ALERT = /^\[!(note|tip|important|warning|caution)\]\s*$/i;
+// "**Label:** rest": a bold label of at most 40 characters, the colon inside or right after the bold
+const LABEL = /^\*\*([^*]{1,40}?)(?::\*\*|\*\*:)\s+(.+)$/;
 
 const escape = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const isTableAt = (lines, i) => lines[i].includes('|') && !!lines[i + 1]?.includes('|') && TABLE_RULE.test(lines[i + 1]);
 const cells = (line) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
-const startsBlock = (lines, i) => FENCE.test(lines[i]) || HEADING.test(lines[i]) || RULE.test(lines[i]) || ITEM.test(lines[i]) || isTableAt(lines, i);
+/** A heading's name without a leading emoji or symbol: "✨ Highlights" -> "Highlights". */
+export const headingName = (text) => String(text ?? '').replace(/^[^\p{L}\p{N}]+/u, '').trim();
+
+const startsBlock = (lines, i) => QUOTE.test(lines[i]) || FENCE.test(lines[i]) || HEADING.test(lines[i]) || RULE.test(lines[i]) || ITEM.test(lines[i]) || isTableAt(lines, i);
 
 /** Items with one level of nesting. A wrapped line, with or without its indent, belongs to the item above it. */
 function parseList(lines, start) {
@@ -66,6 +79,11 @@ function parse(md) {
       for (i++; i < lines.length && !close.test(lines[i]); i++) code.push(lines[i]);
       i++;
       blocks.push({ type: 'code', text: code.join('\n') });
+    } else if (QUOTE.test(line)) {
+      const inner = [];
+      for (; i < lines.length && QUOTE.test(lines[i]); i++) inner.push(QUOTE.exec(lines[i])[1]);
+      const alert = ALERT.exec(inner[0].trim());
+      blocks.push({ type: 'quote', alert: alert ? alert[1].toLowerCase() : '', blocks: parse((alert ? inner.slice(1) : inner).join('\n')) });
     } else if (HEADING.test(line)) {
       blocks.push({ type: 'heading', level: /^#+/.exec(line)[0].length, text: HEADING.exec(line)[1] });
       i++;
@@ -116,13 +134,39 @@ function listHtml(items) {
   return `<ul>${li.join('')}</ul>`;
 }
 
+/** The Highlights list as cards: an item's bold label is the card's title. */
+function cardsHtml(items) {
+  const li = items.map((it) => {
+    const m = LABEL.exec(it.text);
+    const body = m ? `<strong class="md-card-title">${inline(m[1])}</strong><span>${inline(m[2])}</span>` : `<span>${inline(it.text)}</span>`;
+    return `<li>${body}${it.sub.length ? listHtml(it.sub) : ''}</li>`;
+  });
+  return `<ul class="md-cards">${li.join('')}</ul>`;
+}
+
+/** Blocks to HTML; a list right under a Highlights heading becomes cards. */
+function blocksHtml(blocks) {
+  let cards = false;
+  return blocks.map((b) => {
+    if (b.type === 'heading') cards = HIGHLIGHTS.test(headingName(b.text));
+    else if (b.type === 'list' && cards) return cardsHtml(b.items);
+    return blockHtml(b);
+  }).join('\n');
+}
+
 function blockHtml(b) {
   switch (b.type) {
     case 'heading': {
       const tag = b.level >= 4 ? 'h4' : 'h3';
       return `<${tag}>${inline(b.text)}</${tag}>`;
     }
-    case 'para': return `<p>${inline(b.text)}</p>`;
+    case 'para': {
+      const m = LABEL.exec(b.text);
+      return m ? `<p class="md-callout"><span class="md-label">${inline(m[1])}</span> ${inline(m[2])}</p>` : `<p>${inline(b.text)}</p>`;
+    }
+    case 'quote': return b.alert
+      ? `<aside class="md-alert md-alert-${b.alert}">${blocksHtml(b.blocks)}</aside>`
+      : `<blockquote>${blocksHtml(b.blocks)}</blockquote>`;
     case 'list': return listHtml(b.items);
     case 'code': return `<pre><code>${escape(b.text)}</code></pre>`;
     case 'rule': return '<hr>';
@@ -141,22 +185,24 @@ function blockHtml(b) {
 export function render(md, { title = '', warn = false } = {}) {
   const blocks = parse(md);
   if (title && blocks[0]?.type === 'heading' && blocks[0].text.includes(title)) blocks.shift();
-  if (!warn) return blocks.map(blockHtml).join('\n');
+  if (!warn) return blocksHtml(blocks);
   // Testing notes: a "Regressions and known problems" section is drawn as a highlighted block at the top of the note
   const [top, flagged, asked, rest] = [[], [], [], []];
   let into = top;
   for (const b of blocks) {
-    if (b.type === 'heading') into = WARN_HEADING.test(b.text.trim()) ? flagged : TEST_HEADING.test(b.text.trim()) ? asked : rest;
+    if (b.type === 'heading') into = WARN_HEADING.test(headingName(b.text)) ? flagged : TEST_HEADING.test(headingName(b.text)) ? asked : rest;
     into.push(b);
   }
-  const box = (cls, list) => (list.length ? `<section class="${cls}">${list.map(blockHtml).join('\n')}</section>` : '');
-  return [box('md-warn', flagged), box('md-test', asked), ...[...top, ...rest].map(blockHtml)].filter(Boolean).join('\n');
+  const box = (cls, list) => (list.length ? `<section class="${cls}">${blocksHtml(list)}</section>` : '');
+  return [box('md-warn', flagged), box('md-test', asked), blocksHtml([...top, ...rest])].filter(Boolean).join('\n');
 }
 
 /** The headings the launcher flags in a Testing note. */
 export const WARN_HEADING = /^(regressions|known problems)\b/i;
 /** The section that tells a tester what to try in this build. */
 export const TEST_HEADING = /^what to test\b/i;
+/** The section whose list is drawn as cards and read for a card's lines (`### What's new` in releases up to 0.5.0). */
+const HIGHLIGHTS = /^(highlights|what.?s new)$/i;
 
 /**
  * The raw markdown of one section: its heading line and everything up to the next heading (any `##`, `###` or `####`), or ''.
@@ -164,7 +210,7 @@ export const TEST_HEADING = /^what to test\b/i;
  */
 export function section(md, name) {
   const lines = String(md ?? '').split(/\r?\n/);
-  const at = lines.findIndex((l) => /^#{2,4}\s/.test(l) && new RegExp(`^${name}`, 'i').test(l.replace(/^#+\s+/, '').trim()));
+  const at = lines.findIndex((l) => /^#{2,4}\s/.test(l) && new RegExp(`^${name}`, 'i').test(headingName(l.replace(/^#+\s+/, ''))));
   if (at < 0) return '';
   let end = lines.findIndex((l, i) => i > at && /^#{2,4}\s/.test(l));
   if (end < 0) end = lines.length;
@@ -184,7 +230,7 @@ const firstSentence = (text) => /^.+?[.!?](?=\s|$)/.exec(text)?.[0] ?? text;
  */
 export function highlights(md, count = 2) {
   const blocks = parse(md).filter((b) => b.type !== 'rule');
-  const at = blocks.findIndex((b) => b.type === 'heading' && /^(highlights|what.?s new)$/i.test(b.text.trim()));
+  const at = blocks.findIndex((b) => b.type === 'heading' && HIGHLIGHTS.test(headingName(b.text)));
   if (at >= 0) {
     const end = blocks.findIndex((b, i) => i > at && b.type === 'heading');
     const list = blocks.slice(at + 1, end < 0 ? undefined : end).find((b) => b.type === 'list');
