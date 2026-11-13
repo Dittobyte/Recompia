@@ -53,6 +53,7 @@ constexpr uint64_t kActionId = 0x984;
 
 // ---- save data ----
 constexpr uint64_t kSaveHeading = 0x741a10;      // the local player's heading while kPlayerMode and kPlayerModeByte are 0
+constexpr uint64_t kSavePlayTime = 0x4a5418;     // double: the save's play time in seconds (0x71011358e0 reads it for "PlayHour")
 // The items (pkp_items.h has a slot's fields and how they were measured).
 constexpr uint64_t kSaveCommon = 0x13d4920;      // the common block
 constexpr uint64_t kBagOffline = 0x830;          // common block: the bag's slots while offline (m_useItemInventoryOffline)

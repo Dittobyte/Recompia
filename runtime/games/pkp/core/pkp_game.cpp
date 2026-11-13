@@ -22,6 +22,7 @@
 #endif
 #include "ui/pkp_options.h"
 #include "input/pkp_play.h"
+#include "core/pkp_play_time.h"
 #include "render/pkp_quality.h"
 #include "core/pkp_pokemon_cap.h"
 #include "core/pkp_save_uuid.h"
@@ -101,6 +102,7 @@ constexpr Entry kEntries[] = {
     mod(&kCraftFeature, CraftSearch), mod(&kItemEditFeature, ItemEditor), mod(&kPokemonCapFeature, PokemonCap),
     port(&key_guide::kKeyGuideFeature),
     port(&kOptionsFeature),
+    port(&kPlayTimeFeature),
 };
 constexpr size_t kFeatureCount = std::size(kEntries);
 

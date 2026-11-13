@@ -41,7 +41,7 @@ using games::pkp::layout::kAction;
 using games::pkp::layout::kActionId;
 using games::pkp::layout::kSaveRoot;
 constexpr uint64_t kSaveTimeOfDay = 0x13d373c;
-constexpr uint64_t kSavePlayTime = 0x4a5418;
+using games::pkp::layout::kSavePlayTime;
 constexpr uint64_t kSaveStageId = 0xc91f20;
 constexpr uint64_t kSaveTutorials = 0x6d7cec;   // m_tutorialHistory, 1024 bytes (serialiser 0x71005ca320); its set bits are `prog`
 
