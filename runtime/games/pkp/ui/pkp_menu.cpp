@@ -175,7 +175,7 @@ play::Act menu_frame(bool menu_up, const play::mm::Geometry& g) {
     if (snap.inside && snap.shown && !s.key_guides.empty()) {
         for (const Pane& p : s.panes) {
             if (!p.item || !p.contains(px, py)) continue;
-            // our own key guide entries (the title's Quit Game, the bag's Sort, the crafting screen's Search) are other instances of the
+            // our own key guide entries (the title's Quit Game, the bag's Hold to Sort, the crafting screen's Search) are other instances of the
             // same key guide layout: the instance a client last filled takes the click while the client still shows it (pkp_key_guide.h)
             if (p.lay >= 0 && p.lay < static_cast<int>(s.layouts.size())) {
                 play::Act act = play::Act::None;

@@ -72,7 +72,7 @@ This build is about **waiting less**. Building the game code takes about half th
 - Set up no longer looks frozen while it translates the game code: the bar moves through that step, and the time left is shown beside it
 - The launcher no longer reports "The game stopped unexpectedly" (0xC0000409) when the game closes itself
 - Removed the touch screen Menu button, which could show up in the corner on desktop PCs
-- Sort in storage boxes is on ZR instead of R, so it no longer turns the bag page once the bag is expanded; on keyboard and mouse, click **Sort**
+- Sorting the bag or a storage box uses the game's own sort: hold X (Hold to Sort), or click Hold to Sort with the mouse. It no longer turns the bag page once the bag is expanded, and it now works in Link Play
 - Seamless co-op: asking Drifloon for a Dream Island in a story area during a Link Play session no longer leaves the session in a broken "Dream Island" copy of the area. The trip is not available there in a session; it still is in Palette Town and on Cloud Islands
 - Seamless co-op: when a visitor digs up one of the host's gold-glowing buried spots, the host gets the item at the spot and the glow goes away, instead of the glow staying over an empty hole
 - Seamless co-op: after a visitor takes a memory piece, the host can take it too without loading the world again

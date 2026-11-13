@@ -92,7 +92,7 @@ inline constexpr Spec kSpecs[] = {
     gameplay(b(CameraAim, "camera_aim", true, "Abilities and tools aim where the camera looks instead of where the character faces.")),
     under(CameraAim, i(CameraAimReach, "camera_aim_reach", 0, 0, 4, "With camera_aim: extra cells of reach (0: the game's own range).")),
     live(b(CameraAimDebug, "camera_aim_debug", false, "Draw camera aim's ray, the cells it tested and the cell it picked (debugging).")),
-    gameplay(b(InventorySort, "inventory_sort", true, "A Sort button in the bag's and the container screens' key guide.")),
+    gameplay(b(InventorySort, "inventory_sort", true, "A click on Hold to Sort in the bag and the container screens sorts at once (the game's own sort, as holding X).")),
     under(InventorySort, b(InventoryAutosort, "inventory_autosort", false, "Sort the bag each time the bag or a container screen opens.")),
     opt_in(gameplay(b(CraftSearch, "craft_search", false, "A Search button in the crafting screen's key guide."))),
     opt_in(gameplay(b(ItemEditor, "item_editor", false, "Experimental: an Items tab in the game's Settings screen that changes the count of a stack in the bag."))),
