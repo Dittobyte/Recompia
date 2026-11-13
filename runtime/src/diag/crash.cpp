@@ -17,7 +17,9 @@
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -481,6 +483,23 @@ LONG WINAPI crash_vectored(EXCEPTION_POINTERS* ep) {
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
+// A C++ exception nothing caught. The ABORT report that follows starts in the C++ library and cannot say what was thrown (on
+// Linux it has no frame of ours either), so the exception's own text goes into the log first.
+[[noreturn]] void on_terminate() {
+    if (const std::exception_ptr e = std::current_exception()) {
+        try {
+            std::rethrow_exception(e);
+        } catch (const std::exception& x) {
+            NXLOG_E("crash", "uncaught C++ exception: %s", x.what());
+        } catch (...) {
+            NXLOG_E("crash", "uncaught C++ exception of a type without a message");
+        }
+    } else {
+        NXLOG_E("crash", "std::terminate was called without an exception");
+    }
+    std::abort();
+}
+
 }  // namespace
 
 void crash_install(const CrashOptions& opt) {
@@ -496,6 +515,7 @@ void crash_install(const CrashOptions& opt) {
     symbols_snapshot_images();   // before the reporter starts: the report's symbolizer reads this table, never dyld
 #endif
     SetUnhandledExceptionFilter(crash_filter);
+    std::set_terminate(on_terminate);
     ULONG guarantee = 64 * 1024;  // stack reserved for the handlers if the thread overflows
     SetThreadStackGuarantee(&guarantee);
     AddVectoredExceptionHandler(0, crash_vectored);
