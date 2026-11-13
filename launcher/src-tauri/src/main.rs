@@ -180,9 +180,7 @@ fn main() {
             relay_cmds::relay_status,
             relay_cmds::lan_report,
             relay_cmds::public_ip,
-            relay_cmds::room_code_new,
-            relay_cmds::room_code_check,
-            relay_cmds::room_code_host,
+
             mods_cmds::mods_list,
             mods_cmds::mods_set_enabled,
             mods_cmds::mods_move,

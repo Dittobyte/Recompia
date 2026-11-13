@@ -199,8 +199,7 @@ const TEXTS = [
 
   // relay_cmds.rs
   msg('Cannot open port {1}: {2}'),
-  msg('Cannot make a room code: {1}'),
-  msg('A room code has 16 letters and digits: XXXX-XXXX-XXXX-XXXX.'),
+
 
   // repair.rs, rollback.rs
   msg('Pick at least one group of game settings to reset.'),
