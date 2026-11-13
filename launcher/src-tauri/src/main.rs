@@ -65,6 +65,7 @@ mod storage;
 #[cfg(debug_assertions)]
 mod testhook;
 mod update;
+mod update_apply;
 mod update_cmds;
 mod window;
 mod writecheck;
