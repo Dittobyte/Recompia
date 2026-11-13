@@ -32,6 +32,29 @@ export function isFirstRun(s) {
 
 const pctOf = (p) => (p?.total ? Math.min(100, Math.floor((100 * p.done) / p.total)) : null);
 
+/**
+ * Where a setup phase sits in its step: [step, the step's percent at the phase's start, at its end]. Steps: 0 build game,
+ * 1 translate shaders, 2 first run (setup.js names them). The two phases that take the time get the room; a phase whose
+ * count runs 0..total then moves the bar across its own range, which is why the lifter reports its passes
+ * (pkp_build.py, `@lift`): before that, `lift` was one tick per module and the bar stood still for minutes.
+ * Phases: main.rs check, tools, warmup; pkp_build.py verify, lift, compile, link, finish; shaders.rs extract, recheck,
+ * translate.
+ */
+const PHASES = {
+  check: [0, 0, 0], tools: [0, 0, 5], verify: [0, 5, 10], lift: [0, 10, 35], compile: [0, 35, 95], link: [0, 95, 100], finish: [0, 100, 100],
+  extract: [1, 0, 5], recheck: [1, 5, 10], translate: [1, 5, 100],
+  warmup: [2, 0, 0],
+};
+
+/** Where setup is: the step and its percent in that step, null when the phase has no count (an unknown phase is step 0).
+ *  The setup page shows it with the steps listed beside it; the pill and the Home card show it next to the phase's own
+ *  message, which names the step ("Translating the game code: main (1 of 4), working out the flags"), so the number is the
+ *  progress of what the message says, and it starts over with the next step's message. */
+export function setupStepOf(p) {
+  const [step, from, to] = PHASES[p.phase] ?? [0, 0, 0];
+  return { step, pct: p.total ? Math.min(100, Math.floor(from + ((to - from) * p.done) / p.total)) : null };
+}
+
 const UPDATE_LABEL = {
   download: t('Downloading update'),
   verify: t('Checking update'),
@@ -63,7 +86,7 @@ export const updatePlayable = (s) => !!s.update && !SWAP_PHASES.has(s.update.pha
  *  ponytail: one pill, one task; a second task running at once waits behind it until the first ends. */
 export function taskOf(s) {
   if (s.update) return { kind: 'update', label: updateLabel(s.update), pct: ['restart', 'wait'].includes(s.update.phase) ? null : pctOf(s.update) };
-  if (setupRunning(s)) return { kind: 'setup', label: t('Setting up'), pct: pctOf(s.setup.progress) };
+  if (setupRunning(s)) return { kind: 'setup', label: t('Setting up'), pct: setupStepOf(s.setup.progress).pct };
   if (s.nup) return { kind: 'nup', label: t('Unpacking game files'), pct: pctOf(s.nup) };
   if (s.dlss) return { kind: 'dlss', label: t('Downloading DLSS'), pct: pctOf(s.dlss) };
   if (s.repack) return { kind: 'repack', label: s.repack.kind === 'expand' ? t('Unpacking shaders') : t('Packing shaders'), pct: pctOf(s.repack) };
