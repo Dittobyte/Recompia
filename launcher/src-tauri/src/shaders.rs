@@ -54,7 +54,23 @@ const RAM_STAGE_FREE: u64 = 3 << 30;
 /// files are written once, read back within the same chunk and deleted, and on a Steam Deck's microSD card those writes and reads are
 /// most of what the shader step costs. Elsewhere (and on Windows, which has no RAM file system) the game folder's cache.
 pub fn stage_dir(game_dir: &Path) -> PathBuf {
-    ram_stage().unwrap_or_else(|| cache_dir(game_dir).join("stage"))
+    ram_stage().unwrap_or_else(|| disk_stage(game_dir))
+}
+
+/// The stage inside the game's cache, for a platform with no RAM filesystem (or one that is full or not writable).
+fn disk_stage(game_dir: &Path) -> PathBuf {
+    cache_dir(game_dir).join("stage")
+}
+
+/// True when `stage` is the RAM filesystem's: a chunk that does not fit there has to run from the game folder instead.
+#[cfg(target_os = "linux")]
+fn stage_is_ram(stage: &Path) -> bool {
+    stage.starts_with("/dev/shm")
+}
+
+#[cfg(not(target_os = "linux"))]
+fn stage_is_ram(_stage: &Path) -> bool {
+    false
 }
 
 #[cfg(target_os = "linux")]
@@ -71,13 +87,23 @@ fn ram_stage() -> Option<PathBuf> {
             let name = e.file_name().to_string_lossy().to_string();
             let Some(pid) = name.strip_prefix("nxrt-stage-").and_then(|p| p.parse::<u32>().ok()) else { continue };
             if pid != std::process::id() && !Path::new(&format!("/proc/{}", pid)).exists() {
-                let _ = fs::remove_dir_all(e.path());
+                // a folder, or anything else that took the name (remove_dir_all alone would leave a file behind for good)
+                let p = e.path();
+                if fs::remove_file(&p).is_err() {
+                    let _ = fs::remove_dir_all(&p);
+                }
             }
         }
     }
     if crate::host::free_bytes(shm)? < RAM_STAGE_FREE {
         return None;
     }
+    // a mount that is there but not writable (a sandbox, a hardened distro) has to fall back here rather than fail a Set up halfway
+    let probe = shm.join(format!("nxrt-stage-probe-{}", std::process::id()));
+    if fs::write(&probe, b"x").is_err() {
+        return None;
+    }
+    let _ = fs::remove_file(&probe);
     let dir = shm.join(format!("nxrt-stage-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     Some(dir)
@@ -701,7 +727,7 @@ pub fn prepare(game_dir: &Path, tools_dir: &Path, cancel: &AtomicBool) -> Result
 pub fn run(job: &Job, tools: &Tools, cancel: &AtomicBool, mut report: impl FnMut(Progress)) -> Result<bool, String> {
     let cache = cache_dir(&job.game_dir);
     let corpus = cache.join("corpus");
-    let stage = stage_dir(&job.game_dir);
+    let mut stage = stage_dir(&job.game_dir);
     // a stage folder left by a Set up that was killed: its rows would look like this run's (a one-shot run cleared it itself)
     let _ = fs::remove_dir_all(&stage);
     let spirv = job.game_dir.join(SPIRV_REL);
@@ -832,6 +858,16 @@ pub fn run(job: &Job, tools: &Tools, cancel: &AtomicBool, mut report: impl FnMut
                     Ok(ok) => break ok,
                     Err(f) => {
                         worker = None;
+                        // A RAM stage can run out of room (a chunk bigger than the free space, or /dev/shm shared with something else):
+                        // the chunk runs again from the game folder rather than ending Set up. Nothing of it was committed.
+                        if stage_is_ram(&stage) {
+                            if let Some(l) = &job.log {
+                                l("the RAM stage could not hold this chunk: the rest of this Set up uses the game folder");
+                            }
+                            let _ = fs::remove_dir_all(&stage);
+                            stage = disk_stage(&job.game_dir);
+                            continue;
+                        }
                         if mode == crate::harness::Mode::Fast && !f.reported {
                             mode = crate::harness::Mode::Safe;
                             if let Some(l) = &job.log {
