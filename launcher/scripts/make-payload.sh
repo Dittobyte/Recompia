@@ -24,6 +24,9 @@ mkdir -p "$out/tools/build/sdk" "$out/tools/harness"
 cp "$repo/game-build/release_b/pkp_build.py" "$repo/game-build/release_b/dump_hashes.json" "$out/tools/build/"
 cp -R "$repo/recomp" "$out/tools/build/recomp"
 find "$out/tools/build/recomp" -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
+# what the package ships under tools/build/recomp: pkp_build.py stamps a build by these files only, so a file an older release
+# left in an updated install (an update never removes one) does not change the stamp
+(cd "$out/tools/build/recomp" && find . -type f ! -name '*.pyc' | sed 's|^\./||' | LC_ALL=C sort) > "$out/tools/build/recomp.files"
 # The shader pipeline: the corpus extractor and a self-contained publish of the harness (its own .NET runtime), so a player
 # needs neither .NET nor a checkout.
 cp "$repo/tools/shaders/ampere/extract_corpus.py" "$out/tools/"

@@ -264,11 +264,27 @@ def sha256(path):
     return h.hexdigest()
 
 
+def shipped_files(root):
+    """The files this package ships under root, as paths relative to it, or None when it has no list (a development tree, the
+    SDK folder). The release scripts write the list of recomp/ to recomp.files beside this script. An update replaces the files
+    a package holds and never removes one an older release left behind (nxrecomp/program.py, gone since 0.9.1), so a walk of an
+    updated install saw more files than a walk of the same release unpacked, and the two hashed differently."""
+    if os.path.normcase(os.path.abspath(root)) != os.path.normcase(RECOMP):
+        return None
+    try:
+        with open(os.path.join(HERE, 'recomp.files'), encoding='utf-8') as f:
+            return {line.strip() for line in f if line.strip()}
+    except OSError:
+        return None
+
+
 def tree_hash(root, rels):
     """One sha256 over the files under root/rel for each rel (a file or a folder, walked in sorted order): each file's path
-    relative to root and its sha256. Python's bytecode caches are left out (the lifter's own runs write them); a missing
-    path counts as missing, so the hash still compares."""
+    relative to root and its sha256. Python's bytecode caches are left out (the lifter's own runs write them), and so is a
+    file in a folder that this package does not ship (shipped_files); a missing path counts as missing, so the hash still
+    compares."""
     h = hashlib.sha256()
+    shipped = shipped_files(root)
     for rel in rels:
         top = os.path.join(root, *rel.split('/'))
         if os.path.isfile(top):
@@ -278,6 +294,8 @@ def tree_hash(root, rels):
             for d, dirs, names in os.walk(top):
                 dirs[:] = [x for x in dirs if x != '__pycache__']
                 files += [os.path.relpath(os.path.join(d, n), root).replace('\\', '/') for n in names if not n.endswith('.pyc')]
+            if shipped is not None:
+                files = [f for f in files if f in shipped]
         else:
             h.update(('%s\0missing\0' % rel).encode())
             continue

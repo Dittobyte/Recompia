@@ -36,6 +36,9 @@ for f in pkp_build.py dump_hashes.json fetch_dlss.py; do
 done
 cp -R "$repo/recomp" "$pkg/tools/build/recomp"
 find "$pkg/tools/build/recomp" -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
+# what the package ships under tools/build/recomp: pkp_build.py stamps a build by these files only, so a file an older release
+# left in an updated install (an update never removes one) does not change the stamp
+(cd "$pkg/tools/build/recomp" && find . -type f ! -name '*.pyc' | sed 's|^\./||' | LC_ALL=C sort) > "$pkg/tools/build/recomp.files"
 cp "$repo/game-build/src/pkp_stub.cpp" "$repo/game-build/src/pkp_rt_api.h" "$pkg/tools/build/sdk/"
 
 # the shader pipeline: the corpus extractor and a self-contained publish of the harness (its own .NET runtime)

@@ -73,6 +73,11 @@ Put "$root\recomp\LICENSE" 'tools\build\recomp\LICENSE'
 Mirror "$root\recomp\nxrecomp" 'tools\build\recomp\nxrecomp' @('*__pycache__*', '*.pyc')
 Mirror "$root\recomp\include\nxrecomp" 'tools\build\recomp\include\nxrecomp'
 foreach ($f in 'CMakeLists.txt', 'config.py', 'main.sites') { Put "$root\recomp\games\pkp\$f" "tools\build\recomp\games\pkp\$f" }
+# what the package ships under tools\build\recomp: pkp_build.py stamps a build by these files only, so a file an older release
+# left in an updated install (an update never removes one) does not change the stamp
+$recompDir = Join-Path $pkg 'tools\build\recomp'
+$shipped = Get-ChildItem $recompDir -Recurse -File | ForEach-Object { $_.FullName.Substring($recompDir.Length + 1).Replace('\', '/') } | Sort-Object
+[IO.File]::WriteAllText((Join-Path $pkg 'tools\build\recomp.files'), (($shipped -join "`n") + "`n"))
 
 # never ship anything from a game dump, a shader cache built from the game, saves or keys
 $bad = Get-ChildItem $pkg -Recurse -Force | Where-Object {

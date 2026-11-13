@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Fixed
+- An update no longer stops with "The prepared game code cannot be put in place (this release changes lifter)" in a game folder first installed from 0.9.0 or older
+
 ## 0.13.0 (build Q: Quokka)
 
 **Update:** press Update, then Finish update once. The game code is built in full one last time, in about half the time it took before. Shaders and saves are kept; no shader is translated again.
