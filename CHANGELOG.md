@@ -2,15 +2,46 @@
 
 ## Unreleased
 
+**Update:** press **Update**, then **Finish update** once. This is the last update that makes you wait like this: it builds the game code one more time in full, already with the faster build (about half the time it took before). Your shaders and saves are kept; no shader is translated again.
+
+This build is about **waiting less**. Building the game code takes about half the time, updates stop rebuilding parts of the game that did not change, and from the next update on the launcher builds the new game code **while you keep playing**. Link Play over the internet also gets simpler: **no more room codes**, every room shows up in the game's own list.
+
+### Highlights
+- **Updates no longer take the game away.** From the next update on, the launcher builds the new game code before it installs the update, and the version you have stays playable the whole time. The update goes in once the game is closed, and you can cancel at any point before that without losing progress
+- **Building the game code takes about half the time.** A full build on a 16-thread PC went from 13 minutes to 7. PCs with little free memory gain more, because the build now runs twice as many jobs in the same memory
+- **Small updates stay small.** The launcher only builds the parts of the game code an update really changes. Two of the last releases rebuilt the whole game for a change that touched little or none of it; that no longer happens
+- **The game build takes an eighth of the disk space**: 0.3 GB instead of 2.4 GB
+- **Link Play over the internet without room codes.** Every room on the public relay shows up in the game's **Visit a Friend** list: pick the host and join. For a private room, set a **Link Code** when the game asks; only players who type it can join
+
+### Added
+- The launcher prepares an update's game code in the background, with its progress on the Home page, and installs the update once the game is closed
+- Link Play: every room on the public relay is listed in the game's **Visit a Friend**, for players on the same release with the same **Same for everyone** switches
+- Link Play: the game's own **Link Code** makes a room private. The room is still listed, and only players who type the code can join
+
 ### Changed
-- An update that changes the game code builds it before it installs, and you can keep playing meanwhile: no more waiting on **Finish update** after the restart. The update installs once the game is closed, and **Cancel** works until then
-- **Set up again** compiles the game code faster and keeps it in an eighth of the disk space (the kept game libraries: 2.4 GB to 0.3 GB); the first Set up after this update is a full one
+- **Finish update** and **Set up again** compile the game code in about half the time
+- One compile job per GB of free memory instead of per two, so PCs with little free memory build with more of their cores
 - An update that changes only comments or other platforms' parts of the translator no longer compiles the whole game again
-- Link Play over the internet needs no room code any more: every room on the public relay shows up in the game's Visit a Friend list. To keep a room private, set a Link Code when the game asks.
+- The game libraries the launcher keeps for the next update take 0.3 GB instead of 2.4 GB
+- Link Play over the internet needs no room code any more; the launcher's room code fields are gone
+- If an update cannot finish, the launcher puts back the game build you had, not only its own files
+- The launcher no longer promises "about 7 minutes" for a rebuild: it says from a few minutes to an hour, depending on your PC
 
 ### Fixed
 - The launcher no longer reports "The game stopped unexpectedly" (0xC0000409) when the game closes itself
 - Removed the touch screen Menu button, which could show up in the corner on desktop PCs
+
+### What to test
+- **This update:** how long **Finish update** takes on your PC, next to what it took before (the launcher's Set up log has the times). Tell us your processor and memory with it
+- **The game after the rebuild:** play as usual. The game code is built with new compiler settings, so anything that behaves differently from 0.12.0 is worth a report
+- **Link Play over the internet:** host with **Internet**, and have a friend open **Visit a Friend**: your room should be in the list without any code. Then host again with a **Link Code** and check that only the right code gets in
+- **Link Play on the same network** still finds hosts as before
+- **The next Testing build** is the first one that installs in the background: press **Update**, keep playing while it prepares, then close the game and watch it install. Try **Cancel** while it prepares, then **Update** again: it should continue, not start over
+
+### Regressions and known problems
+- This update itself still waits on **Finish update**: the launcher you have now runs it. The background build starts with the update after this one
+- While an update prepares in the background, the game can run slower on small PCs and handhelds. The Set up page's **Slower, keeps the PC usable** switch makes the build gentler
+- While an update is in progress, Set up, repair, profiles and mods are locked in the launcher until it has installed or you cancel it
 
 ## 0.12.0 (build P: Pitoy)
 
