@@ -51,7 +51,7 @@
 
 ### Fixed
 - Stuck on the Ditto loading screen for good with the render scale above 100% on a 4K screen
-- Windows: a Switch 2 Pro Controller on a USB cable not being picked up; it now works with Switch prompts, rumble and gyro (#522)
+- Windows: a Switch 2 Pro Controller on a USB cable not being picked up; it now works with Switch prompts, rumble and gyro (#522, thanks ondona)
 - Linux: the Steam Controller not working when the game is started from Steam without `SDL_VIDEO_DRIVER=x11` in the launch options
 - Linux and SteamOS: Set up not finding the shader translator
 - The Ditto loading screen's black background not reaching the top and bottom on taller screens such as the Steam Deck (#534, thanks Piktrip)
