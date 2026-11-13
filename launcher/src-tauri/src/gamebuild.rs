@@ -12,6 +12,9 @@
 //! tools' header: an exe from another release than the dll is Stale however current its stamp, and a dll from another release
 //! than the tools is `Built::Mixed` (an update with only some files put in place), which no build fixes.
 //! On Linux the script runs with the Linux Python and Zig that host.rs fetches into `tools/linux`.
+//! An update builds the next pkp.exe before it replaces anything (update_game.rs): `Job::prepare` runs the downloaded package's
+//! script with `--prepare` (into `<game>/build/next`, the installed build untouched), `swap_builds` moves it into place after the
+//! swap (`--adopt`) or puts the old one back if the update is undone (`--revert`).
 //! Its crate-local imports are host.rs (with download.rs) and runtime_api.rs, so `examples/first_run.rs` can build the files alone.
 
 use std::fs;
@@ -24,6 +27,8 @@ use std::time::Duration;
 pub struct Tools {
     pub python: PathBuf,
     pub script: PathBuf,
+    /// Linux: the fetched Zig, passed as PKP_ZIG (the script would look beside itself, where a downloaded package has none)
+    pub zig: Option<PathBuf>,
 }
 
 /// Where setup writes its log lines (the launcher's setup.log); a closure so this file needs no crate-local import.
@@ -36,6 +41,8 @@ pub struct Job {
     /// "Gentle build": the script and its compilers run at idle priority (the default is below normal).
     pub idle: bool,
     pub log: Option<LogFn>,
+    /// build into `<game>/build/next` for an update (`--prepare`), leaving the build the game plays from alone
+    pub prepare: bool,
 }
 
 /// One progress line of the script: phase ("verify", "lift", "compile", "link", "finish"), done, total, text.
@@ -53,8 +60,9 @@ pub fn is_package_b(tools_dir: &Path) -> bool {
     tools_dir.join("build").join("pkp_build.py").is_file()
 }
 
-/// What Play says when pkp.exe is from an older release (Built::Stale). The time is the compile's, as in the README.
-pub const REBUILD_MESSAGE: &str = "This update changes the game code. Press Finish update to rebuild it (about 7 minutes). Your shaders and saves are kept.";
+/// What Play says when pkp.exe is from an older release (Built::Stale). No time: it is minutes to an hour, by the PC and by how
+/// much of the game code the release changes.
+pub const REBUILD_MESSAGE: &str = "This update changes the game code. Press Finish update to build it again: from a few minutes to an hour, depending on your PC. Your shaders and saves are kept.";
 /// What Play says for Built::Relink: the game code is kept, only the link runs again.
 pub const RELINK_MESSAGE: &str = "This update changes the runtime only. Press Finish update to link the game again (about a minute). Your shaders and saves are kept.";
 
@@ -145,8 +153,8 @@ pub fn built_state(game_dir: &Path, tools_dir: &Path) -> Built {
     let Ok(tools) = find_tools(tools_dir, game_dir) else {
         return Built::Stale;
     };
-    let mut cmd = crate::host::command(&tools.python);
-    cmd.arg("-I").arg("-B").arg(&tools.script).arg("--check").arg("--game").arg(game_dir);
+    let mut cmd = script(&tools);
+    cmd.arg("--check").arg("--game").arg(game_dir);
     quiet(&mut cmd, false);
     let Ok(out) = cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status() else {
         return Built::Stale; // not cached: the next look tries again
@@ -166,18 +174,20 @@ pub fn is_built(game_dir: &Path, tools_dir: &Path) -> bool {
     built_state(game_dir, tools_dir) == Built::Current
 }
 
+/// The build tools of the package whose `tools` folder is `tools_dir`: the installed one, or a downloaded one an update prepares
+/// with (update_game.rs).
 pub fn find_tools(tools_dir: &Path, game_dir: &Path) -> Result<Tools, String> {
-    // The Python is fetched into the writable tools folder (the game folder on macOS, next to the AppImage on Linux); the
-    // script, the lifter and the runtime library ship inside the package.
-    let fetched = crate::host::python(&crate::host::tools_dir_for(game_dir));
-    let python = if fetched.is_file() { fetched } else { crate::host::python(tools_dir) };
+    // Windows: the package carries Python and Zig. Linux and macOS fetch them into the writable tools folder (the game folder
+    // on macOS, next to the AppImage on Linux), which a downloaded package does not have; the script, the lifter and the
+    // runtime library ship inside the package.
+    let fetched = crate::host::tools_dir_for(game_dir);
+    let python = if cfg!(windows) || !crate::host::python(&fetched).is_file() { crate::host::python(tools_dir) } else { crate::host::python(&fetched) };
     let script = tools_dir.join("build").join("pkp_build.py");
     let mut required = vec![python.clone(), script.clone()];
     // macOS compiles with Apple clang and links libpkp_rt.dylib; the Windows and Linux packages carry Zig and the runtime as
     // pkp_rt.lib (Windows, linked in) or libpkp_rt.so (Linux, found next to the exe at run time).
-    if !cfg!(target_os = "macos") {
-        required.push(crate::host::zig(tools_dir));
-    }
+    let zig = (!cfg!(target_os = "macos")).then(|| crate::host::zig(if cfg!(windows) { tools_dir } else { &fetched }));
+    required.extend(zig.clone());
     required.extend([crate::host::runtime_lib_rel(), "build/recomp/nxrecomp/__main__.py"].iter().map(|p| tools_dir.join(p)));
     let mut missing = Vec::new();
     for p in required {
@@ -188,7 +198,65 @@ pub fn find_tools(tools_dir: &Path, game_dir: &Path) -> Result<Tools, String> {
     if !missing.is_empty() {
         return Err(format!("The game build cannot run, missing: {}. Extract the release zip again so tools/ is complete.", missing.join("; ")));
     }
-    Ok(Tools { python, script })
+    Ok(Tools { python, script, zig: zig.filter(|_| !cfg!(windows)) })
+}
+
+/// `python -I -B pkp_build.py`, with the Zig it is to use.
+fn script(tools: &Tools) -> Command {
+    let mut cmd = crate::host::command(&tools.python);
+    cmd.arg("-I").arg("-B").arg(&tools.script);
+    if let Some(z) = &tools.zig {
+        cmd.env("PKP_ZIG", z);
+    }
+    cmd
+}
+
+/// What `pkp_build.py --check --next` says of a prepared build (`<game>/build/next`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Next {
+    /// it is finished and matches these tools: the update only adopts it
+    Current,
+    /// none, unfinished, or from other tools: prepare (continues a stopped one)
+    Missing,
+    /// the script has no such option (a release before prepared updates): that release's Set up builds after its restart
+    Unsupported,
+}
+
+pub fn next_state(game_dir: &Path, tools: &Tools) -> Next {
+    let mut cmd = script(tools);
+    cmd.arg("--check").arg("--next").arg("--game").arg(game_dir);
+    quiet(&mut cmd, false);
+    match cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status().ok().and_then(|s| s.code()) {
+        Some(0) => Next::Current,
+        Some(2) => Next::Unsupported, // argparse refuses an option it does not know with exit 2; --check never exits 2
+        _ => Next::Missing,
+    }
+}
+
+/// `pkp_build.py --adopt` (the prepared build into place) or `--revert` (the build it replaced back): renames, seconds. Err: the
+/// script's own words.
+pub fn swap_builds(game_dir: &Path, tools: &Tools, revert: bool, log: Option<&LogFn>) -> Result<(), String> {
+    let mut cmd = script(tools);
+    cmd.arg(if revert { "--revert" } else { "--adopt" }).arg("--game").arg(game_dir);
+    quiet(&mut cmd, false);
+    let out = crate::proc_tree::spawn(cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()))
+        .and_then(|c| c.wait_with_output())
+        .map_err(|e| format!("could not start the game build ({}): {}", tools.python.display(), e))?;
+    let text = String::from_utf8_lossy(&out.stdout).into_owned() + &String::from_utf8_lossy(&out.stderr);
+    if let Some(f) = log {
+        text.lines().for_each(|l| f(&format!("out: {}", l)));
+    }
+    if out.status.success() {
+        return Ok(());
+    }
+    let error = text.lines().find_map(|l| l.strip_prefix("@error ")).map(|e| e.replace("\n", "
+"));
+    Err(error.unwrap_or_else(|| format!("The game build failed ({}). {}", out.status, text.trim())))
+}
+
+/// The build `--adopt` replaced, which pkp_build.py keeps in `build/prev` for `--revert` until the update has finished.
+pub fn forget_previous(game_dir: &Path) {
+    let _ = fs::remove_dir_all(game_dir.join("build").join("prev"));
 }
 
 fn quiet(cmd: &mut Command, idle: bool) {
@@ -208,9 +276,12 @@ pub fn run(job: &Job, tools: &Tools, cancel: &AtomicBool, mut report: impl FnMut
     fs::create_dir_all(&build).map_err(|e| format!("cannot create {}: {}", build.display(), e))?;
     let cancel_file = build.join("cancel");
     let _ = fs::remove_file(&cancel_file);
-    let mut cmd = crate::host::command(&tools.python);
-    cmd.arg("-I").arg("-B").arg(&tools.script).arg("--exefs").arg(&job.exefs).arg("--game").arg(&job.game_dir);
+    let mut cmd = script(tools);
+    cmd.arg("--exefs").arg(&job.exefs).arg("--game").arg(&job.game_dir);
     cmd.args(["--jobs", &job.jobs.max(1).to_string()]);
+    if job.prepare {
+        cmd.arg("--prepare");
+    }
     quiet(&mut cmd, job.idle);
     let say = |t: &str| {
         if let Some(f) = &job.log {

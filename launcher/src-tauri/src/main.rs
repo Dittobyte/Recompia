@@ -66,6 +66,7 @@ mod storage;
 mod testhook;
 mod update;
 mod update_apply;
+mod update_game;
 mod update_cmds;
 mod window;
 mod writecheck;

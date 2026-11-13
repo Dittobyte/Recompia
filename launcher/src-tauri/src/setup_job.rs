@@ -152,7 +152,7 @@ pub fn start_setup(app: AppHandle, state: SetupArg, gentle: Option<bool>) -> Res
         if gentle { ", gentle (idle priority)" } else { "" }
     ));
     log(&format!("game files: {}", dump::fwd(Path::new(&chosen.exefs))));
-    let build_job = gamebuild::Job { game_dir: dir.clone(), exefs: PathBuf::from(&chosen.exefs), jobs: build_jobs, idle: gentle, log: Some(log.clone()) };
+    let build_job = gamebuild::Job { game_dir: dir.clone(), exefs: PathBuf::from(&chosen.exefs), jobs: build_jobs, idle: gentle, log: Some(log.clone()), prepare: false };
     let romfs_base = (!chosen.romfs_base.is_empty()).then(|| PathBuf::from(&chosen.romfs_base));
     let job = shaders::Job { game_dir: dir, romfs: PathBuf::from(&chosen.romfs), romfs_base, main: PathBuf::from(&chosen.exefs).join("main"), jobs, idle: gentle, log: Some(log.clone()), limit: 0, compact: !cfg.loose_shaders };
     std::thread::spawn(move || {

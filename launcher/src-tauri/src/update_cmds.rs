@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Update commands: the releases, one-click update, picking a build (releases.rs and update.rs hold the logic).
 
-use serde::Serialize;
 use std::path::Path;
 use tauri::Emitter;
 use tauri::{AppHandle, Manager};
 
 use crate::states::{UpdateArg, States};
 use crate::config::{config_path, game_dir, load_config};
+use crate::update_game::GameStep;
 use crate::error::{self, CmdError};
 use crate::guard::{ensure_idle, Need};
 use crate::paths::{exe_dir, launcher_path};
@@ -57,11 +57,11 @@ pub fn releases_for(app: &AppHandle, refresh: bool, channel: Channel) -> Vec<rel
 
 pub fn run_update(app: &AppHandle, st: &update::UpdateState, wanted: Option<Wanted>) -> Result<(), String> {
     let _claim = st.claim().ok_or("An update is already running.")?;
-    // asked again right before files move: the download takes minutes
-    let idle = || {
-        ensure_idle(app, &[Need::Setup("Setup is running. Pause it first, then update."), Need::Game("The game is running. Close it first, then update.")])
-    };
-    idle()?;
+    // Set up builds in the game folder the update prepares in. The game may run: the update downloads and prepares meanwhile, and
+    // waits for it to close before files move (`busy`, asked until then)
+    const SETUP_RUNS: &str = "Setup is running. Pause it first, then update.";
+    ensure_idle(app, &[Need::Setup(SETUP_RUNS)])?;
+    let busy = || ensure_idle(app, &[Need::Setup(SETUP_RUNS), Need::Game("The game is running. Close it first, then update.")]).err();
     let version = update_version(app).ok_or("This build does not update itself.")?;
     // the newest newer build, or the one the player picked
     let (target, older) = match &wanted {
@@ -79,24 +79,24 @@ pub fn run_update(app: &AppHandle, st: &update::UpdateState, wanted: Option<Want
         launcher: launcher_path().ok_or("Could not find the launcher's own file.")?,
         game_dir: game_dir(app),
     };
-    let mut report = |phase: &str, done: u64, total: u64| {
-        let _ = app.emit("update-progress", UpdateProgress { phase: phase.to_string(), done, total });
+    let mut report = |p: update::Progress| {
+        let _ = app.emit("update-progress", p);
     };
     // an older build: the player's data is copied first (rollback.rs), after the download and right before the files move; if the copy
     // cannot be made nothing is replaced
     let config_dir = config_path(app).ok().and_then(|p| p.parent().map(Path::to_path_buf)).unwrap_or_default();
     let ready = || -> Result<(), String> {
-        idle()?;
         if older {
             rollback::backup(&paths.game_dir, &config_dir, &target.tag)?;
         }
         Ok(())
     };
-    let session = update::install(&target, &paths, st, &mut report, &ready)?;
-    report("restart", 0, 1);
+    let code = GameStep::new(&load_config(app), &target.tag);
+    let session = update::install(&target, &paths, st, &mut report, &update::Steps { busy: &busy, ready: &ready, code: &code })?;
+    report(update::Progress::of("restart", "", 0, 1));
     stop_relay(app);
     if let Err(e) = update::relaunch(&paths.launcher, &paths.install) {
-        return Err(match session.rollback() {
+        return Err(match session.rollback(&code) {
             Ok(()) => format!("The new launcher did not start ({}). The update was undone.", e),
             Err(left) => format!("The new launcher did not start ({}). {}", e, left),
         });
@@ -104,20 +104,13 @@ pub fn run_update(app: &AppHandle, st: &update::UpdateState, wanted: Option<Want
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.hide();
     }
-    session.finish();
+    session.finish(&code);
     app.exit(0);
     Ok(())
 }
 
-#[derive(Serialize, Clone)]
-pub struct UpdateProgress {
-    /// "download", "verify", "extract", "apply" or "restart"
-    pub phase: String,
-    pub done: u64,
-    pub total: u64,
-}
-
-/// One-click update (update.rs). Emits "update-progress"; on success the launcher restarts and the page hears nothing more.
+/// One-click update (update.rs). Emits "update-progress" (update::Progress); on success the launcher restarts and the page hears
+/// nothing more.
 /// The Err of a cancel has the code error::UPDATE_CANCELLED.
 #[tauri::command]
 pub async fn install_update(app: AppHandle, state: UpdateArg<'_>) -> Result<(), CmdError> {
@@ -146,7 +139,8 @@ pub async fn install_version(app: AppHandle, state: UpdateArg<'_>, tag: String, 
     tauri::async_runtime::spawn_blocking(move || run_update(&app, &st, Some(wanted))).await.map_err(|e| e.to_string())?.map_err(update_error)
 }
 
-/// Stops a running update while it is still downloading or unpacking; the install stays as it was.
+/// Stops a running update until its files start to move (downloading, unpacking, preparing the game, waiting for it to close); the
+/// install stays as it was, and the game code prepared so far is kept for the next update.
 #[tauri::command]
 pub fn cancel_update(state: UpdateArg) {
     state.cancel();

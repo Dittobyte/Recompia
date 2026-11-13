@@ -89,7 +89,7 @@ fn main() {
     }
     if !gamebuild::is_built(&game, &tools_dir) {
         let tools = gamebuild::find_tools(&tools_dir, &game).unwrap_or_else(|e| fail(e));
-        let job = gamebuild::Job { game_dir: game.clone(), exefs: PathBuf::from(&a[1]), jobs, idle: false, log: None };
+        let job = gamebuild::Job { game_dir: game.clone(), exefs: PathBuf::from(&a[1]), jobs, idle: false, log: None, prepare: false };
         match gamebuild::run(&job, &tools, &cancel, |t| tick(&t.phase, &t.message)) {
             Ok(true) => {}
             Ok(false) => fail("paused".into()),
