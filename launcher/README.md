@@ -11,11 +11,18 @@ files you extracted from your own copy, writes `pkp.ini` next to `pkp.exe` and b
    shader_cache/spirv`) and builds `shader_cache\spirv\` next to `pkp.exe`:
    - Extract: `tools\shaders\extract_corpus.py` finds every shader in the romfs and in `exefs\main` and writes the
      distinct blocks to `shader_cache\corpus\` (a few pack files, about 5 GB, deleted when setup finishes).
-   - Translate: `tools\spirv_harness\spirv_harness.exe --batch` in chunks of 1000 into `shader_cache\spirv\`
-     (`<hash>.spv` + `results.tsv`, about 26 GB for the 99,012 blocks of 2.0.1).
-   - Pack (on by default, "Packed shader files" on the Set up page): each translated chunk is moved into
-     `shader_cache\spirv.archive\NNNNNN.pack` (zstd segments the runtime reads, `src-tauri/src/shader_archive.rs`) as soon as it
-     is committed, so the loose files never pile up. A cache that already has loose files keeps them until the player packs it.
+   - Translate: `tools\spirv_harness\spirv_harness.exe --serve`, one process for the whole translation that takes a chunk of 7000
+     blocks at a time and writes each block's `<hash>.spv` and its row of `results.tsv` into `shader_cache\stage\` as the block
+     finishes (about 1.8 GB per chunk; 26 GB of SPIR-V for the 99,012 blocks of 2.0.1).
+   - Commit: the chunk's rows are appended to `shader_cache\spirv\results.tsv`, which is what makes a block count as translated,
+     after its SPIR-V is in the cache.
+   - Pack (on by default, "Packed shader files" on the Set up page): each chunk goes from the stage straight into
+     `shader_cache\spirv.archive\NNNNNN.pack` (zstd segments the runtime reads, `src-tauri/src/shader_archive.rs`), so a fresh
+     translation is never written to `shader_cache\spirv\` loose. It runs beside the translator: a chunk is packed while the next
+     one is translated, on the cores the translator leaves. On Linux the stage is a RAM filesystem (`/dev/shm`) when it has
+     room and is writable, so on a Steam Deck's card a chunk costs one compressed write and no loose write at all; where it has
+     not, the stage is the game folder. With packing off, the chunk is moved into `shader_cache\spirv\` instead. A cache that
+     already has loose files keeps them until the player packs it.
    A progress bar shows each step. Pause stops the tools and Continue setup picks up where they stopped: a block listed
    in `results.tsv` is never translated twice, and extraction is skipped if it already ran for the same romfs. The tools
    run at below-normal priority.
@@ -89,16 +96,12 @@ build of your own goes in the release folder next to `tools/`. The game stays th
 - **Build tools:** the first Set up downloads Python 3.13 (python-build-standalone) with the lz4 and capstone wheels, and
   Zig 0.17.0 (the version the release bundles for Windows), into `tools/linux/`, each pinned by size and SHA-256.
   `pkp_build.py` compiles with that Zig and reads free memory from `/proc/meminfo` there.
-- **Proton:** the shader translator and `pkp.exe` (the hidden first run and Play) run through Steam's Proton Experimental,
-  else the newest Proton N.N Steam installed, inside the Steam Linux Runtime its `toolmanifest.vdf` asks for, as Steam starts a
-  game, with the prefix in `~/.local/share/pokopia-recomp/proton`. `PKP_PROTON=<folder>` picks another Proton build. Without
-  Steam: `umu-run`, then `wine`. Paths handed to them are `Z:\...`. Linux translates shaders in chunks of 5000 (every run also
-  starts Proton); Pause kills the tool's process group, Proton's wine processes included; the hidden first run is stopped if it
-  is still going 4 minutes after its 60 s.
-  Every Proton run gets GPU driver shader caches of the game's own that are never trimmed
+- **Native, no Proton:** the shader translator (`tools/harness/spirv_harness`, a self-contained .NET publish for linux-x64) and
+  `pkp` (the hidden first run and Play) are Linux programs and run as such, with plain paths and no runner in front of them.
+  Pause kills the tool's process group; the hidden first run is stopped if it is still going 4 minutes after its 60 s.
+  Every run gets GPU driver shader caches of the game's own that are never trimmed
   (`~/.local/share/pokopia-recomp/shadercache/{nvidia,mesa}`), as Steam sets them up for the games it starts.
-- **The checks before Set up** read statvfs, `/proc` and `libvulkan.so.1`, and Set up refuses to start without Proton (it says
-  so before the build, not after it).
+- **The checks before Set up** read statvfs, `/proc` and `libvulkan.so.1`.
 - **Desktop:** Link Play lists addresses from getifaddrs and `/proc/net/route` (Tailscale and ZeroTier as overlays; bridges,
   veth and VPN interfaces skipped), and the firewall hint names firewalld; save import looks in `~/.local/share/eden` and
   `~/.config/Ryujinx`; files and links open with `xdg-open`; on NVIDIA the launcher sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` (a
@@ -108,7 +111,8 @@ build of your own goes in the release folder next to `tools/`. The game stays th
 - **Building** needs Rust, Node.js and the webkit2gtk-4.1, gtk3 and libsoup3 development packages. Built on Ubuntu 22.04 the
   binary and the AppImage need only glibc 2.35.
 
-Tested on Bazzite 45 (Ryzen 9 9900X, 16 GB, RTX 4070 Ti, Proton Experimental in the Steam Linux Runtime 4), end to end with a
+Tested on Bazzite 45 (Ryzen 9 9900X, 16 GB, RTX 4070 Ti, Proton Experimental in the Steam Linux Runtime 4; that run was before
+the native port, and nothing goes through Proton now), end to end with a
 2.0.1 dump: Set up built pkp.exe in 12 minutes, translated the 99,012 shaders in 17 minutes (also paused and continued in the
 middle), the hidden first run collected 212 shaders, and Play ran the game; from the native binary and from the AppImage.
 

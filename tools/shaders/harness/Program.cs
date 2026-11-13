@@ -21,6 +21,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -57,7 +58,8 @@ namespace SpirvHarness
 
         const string Usage =
             "usage: spirv_harness <code.bin> <ctrl.bin> [-o out.spv] [--glsl] [--glslc <GLSLC output, NVN2>]\n" +
-            "       spirv_harness --batch <extracted dir> --out <dir> [--jobs N] [--limit N] [--no-val] [--no-retry] [--debug-mode] [--target-env E] [--host desktop|moltenvk] [--spirv-val PATH] [--reflect <Ampere corpus>]";
+            "       spirv_harness --batch <extracted dir> --out <dir> [--jobs N] [--limit N] [--no-val] [--no-retry] [--debug-mode] [--target-env E] [--host desktop|moltenvk] [--spirv-val PATH] [--reflect <Ampere corpus>]\n" +
+            "       spirv_harness --serve --out <dir> [--jobs N] [--no-val] ...: --batch for each corpus folder named on stdin, one per line";
 
         static int Main(string[] args)
         {
@@ -83,6 +85,7 @@ namespace SpirvHarness
                          $"{Environment.ProcessorCount} processors, {GC.GetGCMemoryInfo().TotalAvailableMemoryBytes >> 20} MiB for the GC; " +
                          $"arguments: {string.Join(' ', args)}");
                 if (args.Length >= 2 && args[0] == "--batch") return Batch(args);
+                if (args.Length >= 2 && args[0] == "--serve") return Serve(args);
                 if (args.Length >= 2 && !args[0].StartsWith("-")) return Single(args);
             }
             catch (ArgumentException e)
@@ -350,8 +353,9 @@ namespace SpirvHarness
         {
             const uint OpCapability = 17, OpDecorate = 71, DecorationBuiltIn = 11, BuiltInViewportIndex = 10;
             const uint MultiViewport = 57, ShaderViewportIndex = 70, ShaderViewportIndexLayerEXT = 5254;
-            uint[] w = new uint[spv.Length / 4];
-            Buffer.BlockCopy(spv, 0, w, 0, spv.Length);
+            // Over the bytes in place: a copy of every module just to look for two words was 26 GB of large-object allocation
+            // over a 99,012-block corpus, and each one was collected in gen 2.
+            ReadOnlySpan<uint> w = MemoryMarshal.Cast<byte, uint>(spv);
             bool viewportIndex = false, haveCap = false;
             for (int i = 5; i < w.Length;)
             {
@@ -466,8 +470,18 @@ namespace SpirvHarness
             Progress($"{jobs.Count} blocks loaded, {jobsN} jobs");
 
             ConcurrentBag<Result> results = new();
+            // Rows go out as each block finishes, after its .spv is on disk: a run that is stopped (the player pauses Set up, the
+            // machine sleeps, the process dies) keeps every block it had translated and the caller can commit them. It also means
+            // a corpus no longer has to be translated in small chunks to stay safe, which is what cost most of the wall clock:
+            // each chunk paid a fresh process, a cold JIT and a thread pool ramp.
+            using ResultWriter writer = new(Path.Combine(outDir, "results.tsv"));
             int done = 0;
             Stopwatch total = Stopwatch.StartNew();
+            // Every block occupies two thread pool threads: the Parallel.ForEach body, which waits for the result, and the task that
+            // translates. The pool starts with one thread per CPU, so the translator's threads arrived by injection (about one a
+            // second) and a short run spent its whole life short of workers. Ask for them up front.
+            ThreadPool.GetMinThreads(out int minWorker, out int minIo);
+            ThreadPool.SetMinThreads(Math.Max(minWorker, jobsN * 2), Math.Max(minIo, jobsN));
             Parallel.ForEach(jobs, new ParallelOptions { MaxDegreeOfParallelism = jobsN }, job =>
             {
                 Result r;
@@ -508,6 +522,7 @@ namespace SpirvHarness
                         if (r.ValError != "") r.Status = "invalid";
                     }
                 }
+                writer.Add(r);   // after the .spv: a row is what makes a block count as done
                 results.Add(r);
                 int n = Interlocked.Increment(ref done);
                 if (n == 1) Progress($"first block done ({r.Status})");
@@ -519,11 +534,43 @@ namespace SpirvHarness
             });
 
             List<Result> all = results.OrderBy(r => r.Group).ThenBy(r => r.Hash).ToList();
-            WriteResults(Path.Combine(outDir, "results.tsv"), all);
             string summary = Summarize(all, total.Elapsed, targetEnv);
             File.WriteAllText(Path.Combine(outDir, "summary.txt"), summary);
             Console.Write(summary);
             Progress($"done: {all.Count} blocks");
+            return 0;
+        }
+
+        /// --serve: one process for a whole Set up. Each line on stdin names a corpus folder (the launcher writes one per chunk) and
+        /// gets the same translation a one-shot --batch run does; when that chunk's results.tsv and summary.txt are written, "chunk
+        /// done" goes to stdout and the process waits for the next line. Nothing carries over between chunks but the process, which
+        /// is the point: a chunk no longer pays the .NET start, the cold JIT and the thread pool ramp.
+        static int Serve(string[] args)
+        {
+            string outDir = Opt(args, "--out", null) ?? throw new ArgumentException("--out is required");
+            Directory.CreateDirectory(outDir);
+            List<string> common = args.Skip(1).Where(a => a != "--serve").ToList();   // what a --batch run gets, less its corpus folder
+            string line;
+            while ((line = Console.In.ReadLine()) != null)
+            {
+                line = line.Trim();
+                if (line.Length == 0) continue;
+                if (line == "quit") break;
+                List<string> chunk = new() { "--batch", line };
+                chunk.AddRange(common);
+                try
+                {
+                    Batch(chunk.ToArray());
+                }
+                catch (Exception e)
+                {
+                    // a chunk that dies ends the worker: the launcher reads ErrorFile and starts another one
+                    Fail(outDir, e.ToString());
+                    Console.WriteLine("chunk failed");
+                    return 3;
+                }
+                Console.WriteLine("chunk done");
+            }
             return 0;
         }
 
@@ -543,16 +590,30 @@ namespace SpirvHarness
             return first.Trim();
         }
 
-        static void WriteResults(string path, List<Result> all)
+        // results.tsv, a row appended as each block finishes (see Batch). One writer, one lock: a row is a few hundred bytes and
+        // handing it to the OS at once is what keeps it after a killed process.
+        sealed class ResultWriter : IDisposable
         {
-            using StreamWriter w = new(path) { NewLine = "\n" };  // LF on Windows too: same bytes as on macOS
-            w.WriteLine("hash\tgroup\tstage\tstages_using\tstatus\tms\tspv_bytes\tresources\ttranslator_messages\terror\tdraw_time_queries\tglslc_reflection");
-            foreach (Result r in all)
+            const string Header = "hash\tgroup\tstage\tstages_using\tstatus\tms\tspv_bytes\tresources\ttranslator_messages\terror\tdraw_time_queries\tglslc_reflection";
+
+            readonly StreamWriter _w;
+            readonly object _lock = new();
+
+            public ResultWriter(string path)
+            {
+                _w = new StreamWriter(path) { NewLine = "\n", AutoFlush = true };   // LF on Windows too: same bytes as on macOS
+                _w.WriteLine(Header);
+            }
+
+            public void Add(Result r)
             {
                 string err = (r.Error + " " + r.ValError).Trim().Replace('\t', ' ').Replace('\n', ' ');
-                w.WriteLine($"{r.Hash}\t{r.Group}\t{r.Stage}\t{r.Stages}\t{r.Status}\t{r.Ms:F1}\t{r.SpvBytes}\t{r.Resources}\t" +
-                            $"{string.Join(" | ", r.Messages).Replace('\t', ' ')}\t{err}\t{r.Queries}\t{r.Reflection}");
+                string line = $"{r.Hash}\t{r.Group}\t{r.Stage}\t{r.Stages}\t{r.Status}\t{r.Ms:F1}\t{r.SpvBytes}\t{r.Resources}\t" +
+                              $"{string.Join(" | ", r.Messages).Replace('\t', ' ')}\t{err}\t{r.Queries}\t{r.Reflection}";
+                lock (_lock) _w.WriteLine(line);
             }
+
+            public void Dispose() => _w.Dispose();
         }
 
         // Group messages that differ only in numbers ("Attribute offset 0x3A0 ..." etc.) so the summary stays short.
