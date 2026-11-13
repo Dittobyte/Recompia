@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Fixed
+- The launcher no longer reports "The game stopped unexpectedly" (0xC0000409) when the game closes itself
+
 ## 0.12.0 (build P: Pitoy)
 
 **Update:** press Update, then Set up again once (the game code is translated again, several minutes). Shaders and saves are kept.
