@@ -7,7 +7,7 @@
 
 #include "core/pkp_guest.h"
 #include "core/pkp_layout.h"
-#include "input/pkp_play_internal.h"
+#include "input/pkp_play.h"
 
 namespace nxrt::games::pkp {
 namespace {
@@ -19,7 +19,7 @@ constexpr uint64_t kPaneQuadReturn = 0x1f772ec;
 constexpr size_t kSavedReturn = 8, kSavedDraw = 0x58;   // x29-relative LR and SP-relative caller x21 in the quad builder
 constexpr size_t kDrawPane = 8;
 constexpr size_t kWorldY = 13;
-constexpr float kCanvasHalfHeight = play_detail::kTableH * 0.5f;
+constexpr float kAuthoredHalfWidth = 960.f, kAuthoredHalfHeight = 540.f;
 
 bool named(uint64_t pane, std::string_view name) {
     if (!pane || rd<uint16_t>(pane + layout::kPaneNameLen) != name.size()) return false;
@@ -33,7 +33,7 @@ int extend_backdrop(::Ctx* c, uint64_t addr, void*) {
     if (rd<uint64_t>(c->x[29] + kSavedReturn) != base + kPaneQuadReturn) return 0;
     float& half_height = c->v[1].f32[0];
     float& local_y = c->v[3].f32[0];
-    if (c->v[0].f32[0] != play_detail::kTableW * 0.5f || local_y != 0.f) return 0;
+    if (c->v[0].f32[0] != kAuthoredHalfWidth || local_y != 0.f) return 0;
 
     const uint64_t draw = rd<uint64_t>(c->x[31] + kSavedDraw);
     const uint64_t pane = rd<uint64_t>(draw + kDrawPane);
@@ -48,9 +48,9 @@ int extend_backdrop(::Ctx* c, uint64_t addr, void*) {
     if (matrix[0] != 1.f || matrix[1] != 0.f || matrix[4] != 0.f || matrix[5] != 1.f || matrix[12] != 0.f) return 0;
     const float direction = top ? 1.f : -1.f;
     const float outer_edge = direction * matrix[kWorldY] + half_height;
-    if (!(std::fabs(outer_edge - kCanvasHalfHeight) <= 0.5f)) return 0;
+    if (!(std::fabs(outer_edge - kAuthoredHalfHeight) <= 0.5f)) return 0;
 
-    const float canvas_half_height = rd<int32_t>(play_detail::wide().ui_size + sizeof(int32_t)) * 0.5f;
+    const float canvas_half_height = play_ui_canvas_height() * 0.5f;
     const float extra_half = (canvas_half_height - outer_edge) * 0.5f;
     // Move only the outer edge. These registers belong to this draw; the pane and its matrix stay reusable.
     half_height += extra_half;
@@ -59,8 +59,7 @@ int extend_backdrop(::Ctx* c, uint64_t addr, void*) {
 }
 
 void install(const FeatureInstall& in) {
-    const auto& wide = play_detail::wide();
-    if (wide.ui_size && rd<int32_t>(wide.ui_size + sizeof(int32_t)) > play_detail::kTableH)
+    if (play_ui_canvas_height() > kAuthoredHalfHeight * 2.f)
         in.hooks.add_mid(in.base + kQuadGeometry, &extend_backdrop);
 }
 
