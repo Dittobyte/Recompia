@@ -45,6 +45,11 @@ constexpr uint64_t kPlayerMode = 0x5a34, kPlayerModeByte = 0x5a39;
 constexpr uint64_t kMouseModeOn = 0xaa81;        // the game's Joy-Con 2 mouse mode is on (u8)
 constexpr uint64_t kMouseHitValid = 0xaa82;      // the pointer's hit is valid (u8)
 constexpr uint64_t kMouseSwingPos = 0xaa50, kMouseSwingValid = 0xaa84;   // the swing tools' position under the pointer (vec4), its flag
+constexpr uint64_t kAction = 0x18b8;             // the action component (pointer)
+
+// ---- action component ([character + kAction]) ----
+// u16: the action running now. StartAction stores the started id at 0x710027e5d8 (its only non-zero writer); every end path writes 0.
+constexpr uint64_t kActionId = 0x984;
 
 // ---- save data ----
 constexpr uint64_t kSaveHeading = 0x741a10;      // the local player's heading while kPlayerMode and kPlayerModeByte are 0
