@@ -1,6 +1,6 @@
 // Home: one button that does the next right thing, what went wrong if anything did, and the newest releases.
 import './home.css';
-import logoUrl from '../art/logo.png';
+import { brandImg } from '../branding.js';
 import { api } from '../api.js';
 import { num, t } from '../i18n.js';
 import { fromBackend } from '../backend-text.js';
@@ -72,7 +72,7 @@ const DISCORD_URL = 'https://discord.recompia.com';
 export function render(el, ctx) {
   el.innerHTML = `<div class="page home">
     <div class="home-hero">
-      <h1 class="display"><img class="home-logo" src="${logoUrl}" alt="Pokopia" /></h1>
+      <h1 class="display">${brandImg('logo', 'class="home-logo" alt="Pokopia"')}</h1>
       <div class="home-actions">
         <button class="btn primary big" id="primary"></button>
         <button class="btn big on-art" id="update" data-act="update" hidden>${icon('download')}${esc(t('Update'))}</button>
