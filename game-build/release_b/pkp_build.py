@@ -35,10 +35,12 @@ game's own site lists. A point that fails its checks is left out (and printed), 
 is in the library stamp, so another plan lifts and compiles again and the same plan keeps everything.
 
 Object cache: every compiled object is also kept in <game>/build/objcache under a key of its source text, the generated headers
-less the declarations it never names, the lifter's include/ tree, the compiler and the flags (class ObjCache), so Set up again
+less the declarations it never names, the lifter's headers as the compiler sees them (class IncludeView: preprocessed, so a
+comment or another platform's branch is no change), the compiler and the flags (class ObjCache), so Set up again
 after a release that changes only some translation units compiles only those (a new hook site rewrites a few of main's units
 and adds a declaration to funcs.h, which the other units do not name). It survives the stamp reset and the cleanup after
 linking, is trimmed to --cache-mb (default 3072, 0 = off) and never serves a partial or damaged entry.
+The key formula is the players' cache: KEY_SCHEME says what a change to it costs.
 
 Resumable: a module's lift counts once its marker file is written, an object once it is renamed into place, so a stopped
 build continues where it stopped. A file named <game>/build/cancel stops it (the launcher's Pause).
@@ -133,6 +135,13 @@ try:
 except ValueError as e:
     sys.exit('PKP_LOCALS: %s' % e)
 CACHE_MB = 3072                         # default size cap of <game>/build/objcache
+# The object cache's key formula (ObjCache.key, IncludeView). Every player's cache is keyed with it: a change to what goes into
+# a key, or to how it is hashed, compiles all of the game again on every PC, once (0.11.1 did, for sources that had not changed
+# by one byte). Change the formula only together with something that compiles everything anyway (a flag or compiler change),
+# and raise this number then, so the old entries are plainly another scheme's.
+KEY_SCHEME = 2
+# ObjCache: the lifter headers a unit includes, '#include <nxrecomp/cxx.h>' (the generated ones are quoted: _header_view)
+INCLUDE_RE = re.compile(r'^[ \t]*#[ \t]*include[ \t]*<([^>\n]+)>', re.M)
 EXE = 'pkp' if (DARWIN or LINUX) else 'pkp.exe'    # the game executable the build links and --check looks for
 # ObjCache: a one-line function declaration in a generated header ('void f_7100001000(Ctx *__restrict c);') and a C identifier
 DECL_RE = re.compile(r'void\s+([A-Za-z_]\w*)\s*\([^;{}]*\)\s*;\s*$')
@@ -555,21 +564,65 @@ def free_memory():
         return None
 
 
+class IncludeView:
+    """The lifter's headers (recomp/include) as one unit's compile sees them, for the object cache key: the hash of the
+    preprocessed text of the '#include <...>' lines the unit has, under the same compiler and flags.
+
+    The hash of the files themselves made every edit of a header a new key for every unit of the game: a comment, or a branch
+    for another host, compiled all 280 units again on every PC. The preprocessor drops comments and the branches this target
+    does not take, and -P drops the line markers.
+    It runs in the include folder with '-I .', and the tool folders' paths are taken out of the text, so a moved install keeps
+    its keys. If the preprocessor cannot run, the view is the hash of the files: more misses, never a stale hit."""
+
+    def __init__(self, env, work):
+        self.env = env
+        self.work = work                  # a folder for the stub source (build/)
+        self.memo = {}
+        self.lock = threading.Lock()
+
+    def view(self, names):
+        with self.lock:
+            if names not in self.memo:
+                self.memo[names] = self._make(names)
+            return self.memo[names]
+
+    def _make(self, names):
+        inc = os.path.join(RECOMP, 'include')
+        try:
+            stub = os.path.join(self.work, 'include-view.cpp')
+            with open(stub, 'w', encoding='utf-8', newline='\n') as f:
+                f.write(''.join('#include <%s>\n' % n for n in names))
+            p = popen(COMPILER + CXXFLAGS + ['-I', '.', '-E', '-P', stub], env=self.env, cwd=inc)
+            out = p.communicate()[0]
+            os.remove(stub)
+            if p.returncode == 0 and out:
+                roots = [inc, self.work] + [os.path.dirname(c) for c in COMPILER if os.path.isfile(c)]
+                for root in sorted(set(roots), key=len, reverse=True):
+                    for form in (root, root.replace('\\', '/'), root.replace('\\', '\\\\')):
+                        out = out.replace(form.encode('utf-8'), b'@')
+                return 'pp ' + hashlib.sha256(out).hexdigest()
+        except OSError:
+            pass
+        return 'files ' + tree_hash(RECOMP, ['include'])
+
+
 class ObjCache:
     """Compiled objects kept by content, so a lifter or main.sites change recompiles only the translation units whose text changed.
 
-    An entry is <key>-<size>.o in the cache folder. key = sha256 of the unit's source bytes, the part of the generated headers
-    next to it that the unit can see (_header_view), the lifter's include/ tree, the compiler (its file hash) and the flags. The
-    compiler or the flags changing gives other keys, so nothing stale is ever hit. An entry is written to a .tmp file, flushed
+    An entry is <key>-<size>.o in the cache folder. key = sha256 of KEY_SCHEME, the unit's source bytes, the part of the
+    generated headers next to it that the unit can see (_header_view), the lifter headers it includes as the compiler sees them
+    (IncludeView), the compiler (its file hash) and the flags. The compiler or the flags changing gives other keys, so nothing
+    stale is ever hit. An entry is written to a .tmp file, flushed
     and renamed, and a hit must have exactly the size in its name and be whole_object(), so a cut-off write or a damaged file
     is a miss (and is deleted).
     Hits are copied out, never linked. The folder is trimmed to the size cap, least recently used first (a hit refreshes the
     entry's time). Any cache error is a miss."""
 
-    def __init__(self, folder, cap_bytes, compiler_id, flags_text, include_hash):
+    def __init__(self, folder, cap_bytes, compiler_id, flags_text, includes):
         self.folder = folder
         self.cap = cap_bytes
-        self.base = '\0'.join([compiler_id, flags_text, include_hash])
+        self.base = '\0'.join(['scheme %d' % KEY_SCHEME, compiler_id, flags_text])
+        self.includes = includes          # IncludeView
         self.headers = {}                 # folder of the sources -> [(file name, other lines, {declared name: line})]
         self.lock = threading.Lock()
         self.hits = self.misses = 0
@@ -613,9 +666,11 @@ class ObjCache:
     def key(self, src):
         with open(src, 'rb') as f:
             data = f.read()
+        text = data.decode('utf-8', 'replace')
         h = hashlib.sha256()
         h.update(self.base.encode())
-        h.update(b'\0' + self._header_view(src, data.decode('utf-8', 'replace')).encode() + b'\0')
+        h.update(b'\0' + self.includes.view(tuple(INCLUDE_RE.findall(text))).encode())
+        h.update(b'\0' + self._header_view(src, text).encode() + b'\0')
         h.update(hashlib.sha256(data).hexdigest().encode())
         return h.hexdigest()
 
@@ -687,12 +742,13 @@ class ObjCache:
             pass
 
 
-def make_cache(folder, cap_mb, compiler):
-    """The object cache for this package's compiler (compiler_id()) and flags, or None when cap_mb is 0."""
+def make_cache(folder, cap_mb, compiler, env):
+    """The object cache for this package's compiler (compiler_id()) and flags, or None when cap_mb is 0. env: the compile's
+    environment (IncludeView's preprocessor runs in it)."""
     if cap_mb <= 0:
         return None
     try:
-        return ObjCache(folder, cap_mb << 20, compiler, ' '.join(CXXFLAGS), tree_hash(RECOMP, ['include']))
+        return ObjCache(folder, cap_mb << 20, compiler, ' '.join(CXXFLAGS), IncludeView(env, os.path.dirname(folder)))
     except OSError:
         return None
 
@@ -1036,7 +1092,7 @@ def main():
             lift(runner, a.exefs, gen, a.jobs, extra, skip)
             times['lift'] = round(time.time() - t, 1)
             t = time.time()
-            compile_all(runner, gen, obj, a.jobs, env, make_cache(os.path.join(build, 'objcache'), a.cache_mb, compiler), skip)
+            compile_all(runner, gen, obj, a.jobs, env, make_cache(os.path.join(build, 'objcache'), a.cache_mb, compiler, env), skip)
             times['compile'] = round(time.time() - t, 1)
         t = time.time()
         progress('link', 0, 1, 'Linking %s' % EXE)
