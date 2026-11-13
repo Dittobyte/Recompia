@@ -119,7 +119,13 @@ void install_render(uint64_t base, const play::DisplaySettings& d, int window_w,
         s.render_installed = true;
         return;
     }
-    if (!override_size) {
+    // Below the console's 1920x1080 the game keeps its own size, whatever [pkp] render_override says. The game scales its layouts to its
+    // targets in whole pixels, pane by pane, so the parts of a layout stop adding up: the tiles of the terminal menu are two 368 px
+    // halves with a 0 px piece between them, at 832x468 they came out as 159 + 1 + 159 and the 1 px piece drew a column of the half's
+    // texture, a line down the tile (#490). The back end renders the game's 1920x1080 targets at h / 1080 instead: the same number of
+    // pixels, laid out as the game authored it. Sizes from 1920x1080 up stay the game's own (its text is then drawn at that size).
+    const bool below_console = override_size && h < kTableH;
+    if (!override_size || below_console) {
         // The game's own size (the back end's [gfx] render_scale enlarges it). Its dynamic resolution still drops the scene viewport below
         // 1920x1080 when frames run late (1664x936 seen at 1440p: the scene then covers part of the targets, a hard-edged band): with
         // [display] dynamic_resolution off, the per-frame copy of the parameters keeps the top level ([upscale] scene_scale below it).
@@ -127,7 +133,8 @@ void install_render(uint64_t base, const play::DisplaySettings& d, int window_w,
         // [display] render_scale for the NVN back end, which renders the game's targets at that factor: a fixed size by its height, auto
         // by the window's height (at least 1), a percentage of the console's 1920x1080
         float scale = 1.0f;
-        if (d.render_width > 0 && d.render_height > 0) scale = static_cast<float>(d.render_height) / kTableH;
+        if (below_console) scale = static_cast<float>(h) / kTableH;   // the size pick_size chose
+        else if (d.render_width > 0 && d.render_height > 0) scale = static_cast<float>(d.render_height) / kTableH;
         // the console's resolution (see above): the game's targets are not enlarged to the window, the present pass upscales
         else if (d.render_scale <= 0) scale = host_is_handheld() ? std::min(1.0f, static_cast<float>(window_h) / kTableH) : 1.0f;
         else scale = static_cast<float>(std::clamp(d.render_scale, 25, 400)) / 100.0f;
