@@ -61,7 +61,7 @@ const TEXTS = [
   msg("The local start time for timed event '{1}' is not available in this time zone."),
 
   // gamebuild.rs, readiness.rs, setup_job.rs
-  msg('This update changes the game code. Press Finish update to rebuild it (about 7 minutes). Your shaders and saves are kept.'),
+  msg('This update changes the game code. Press Finish update to build it again: from a few minutes to an hour, depending on your PC. Your shaders and saves are kept.'),
   msg('This update changes the runtime only. Press Finish update to link the game again (about a minute). Your shaders and saves are kept.'),
   msg('pkp_rt.dll next to the launcher is from another release than the build tools in the tools folder ({1} and {2}), so Set up would build a pkp.exe that does not run with it. Only part of an update is in place: extract the whole release zip over this folder, every file, then press Set up again.'),
   msg('The game build cannot run, missing: {1}. Extract the release zip again so tools/ is complete.'),
@@ -258,7 +258,7 @@ const TEXTS = [
   msg('Profiles (a separate save and name for each player) arrived in 0.8.0. An older version ignores profiles.json and uses one save, so a second player\'s save may not be found.'),
   msg('The one-click updater arrived in 0.7.5. An older launcher cannot update itself, so moving forward again would mean extracting a release by hand.'),
   msg('That version could not be compared with the one you have.'),
-  msg('The game files may have to be built again for the older version, so Set up again can be asked (about 15 to 20 minutes).'),
+  msg('The game code may have to be built again for the older version, before it is installed or with Set up again after it: from a few minutes to an hour, depending on your PC.'),
   msg('Files that only the newer version has stay in the folder; they are not removed.'),
   msg('You already have that build.'),
   msg('Going back to an older build needs your confirmation first. Nothing was changed.'),
@@ -287,6 +287,10 @@ const TEXTS = [
   msg("Could not find the launcher's own file."),
   msg('The new launcher did not start ({1}). The update was undone.'),
   msg('The new launcher did not start ({1}). {2}'),
+  msg('The game could not be prepared for the update: {1} Nothing was changed. The details are in setup.log.'),
+  msg('The new game build could not be put in place: {1} Nothing was changed.'),
+  msg('The new game build could not be put in place: {1} {2}'),
+  msg('The earlier game build could not be put back ({1}): press Set up to build it again.'),
 
   // writecheck.rs: can the launcher write in the game folder
   msg('Windows is blocking writes in the game folder'),

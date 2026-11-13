@@ -355,7 +355,7 @@ pub fn downgrade_risk(current: &str, tag: &str) -> (String, Vec<String>) {
             }
         }
     }
-    reasons.push("The game files may have to be built again for the older version, so Set up again can be asked (about 15 to 20 minutes).".into());
+    reasons.push("The game code may have to be built again for the older version, before it is installed or with Set up again after it: from a few minutes to an hour, depending on your PC.".into());
     reasons.push("Files that only the newer version has stay in the folder; they are not removed.".into());
     let line = |v: &Version| (v.core[0], v.core[1]);
     let level = if crossed || line(&t) != line(&c) { "high" } else { "low" };
