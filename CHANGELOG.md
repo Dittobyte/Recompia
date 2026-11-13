@@ -6,11 +6,17 @@
 
 **Update:** press Update, then Set up again once (the game code is translated again, several minutes). Shaders and saves are kept.
 
+### Highlights
+- Mods are here: browse and install Modtopia mods right in the launcher, and manage them in the game's Settings
+- Achievements are here: earn community achievements and see how your progress compares with every other player
+- Linux runs natively: no Proton or Wine
+- macOS runs natively on Apple silicon: VERY EXPERIMENTAL, expect bugs
+
 ### Added
 - Native Linux build, no Proton or Wine (`PokopiaRecomp-0.12.0-linux-x64.tar.gz`, glibc 2.35+)
-- Native macOS build for Apple silicon (`Recompia-0.12.0-macos-arm64.zip`)
+- Native macOS build for Apple silicon, very experimental (`Recompia-0.12.0-macos-arm64.zip`)
 - Browse tab on the Mods page: the Modtopia mod hub's list, with groups, details and one-click install or update
-- Achievements page: the community tracker, with what you earned and how many players have each one
+- Achievements page: what you earned, and the progress every player shares (how many have each one, the rarest right now)
 - Mods tab in the game's own Settings
 - Aspect Ratio setting (Auto, 16:9, 16:10, 21:9, 32:9) in the game and the launcher (#564)
 - Item editor (experimental, off by default) in Settings > Gameplay
@@ -35,7 +41,7 @@
 
 ### Known issues
 - Linux: no FSR 3 or DLSS (FSR 1 and NIS work)
-- macOS: the two in-game movies do not play yet
+- macOS is very experimental and likely still has many bugs; the two in-game movies do not play yet
 
 ## 0.11.1 (build O: Ocelot Hotfix a1)
 
