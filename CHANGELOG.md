@@ -16,6 +16,7 @@
 - **Link Play remembers Internet**
   - Before: every time the launcher started, it put Link Play back on Same network, so players who only play over the internet had to pick Internet again each time
   - Now: Internet through the public relay or a friend's relay stays chosen. A direct address, a relay on this PC (off until you turn it on again) and old room codes are still cleared at start
+  - Thanks to Sakamoto on Discord for the report
 
 
 New in this Testing build: **seamless co-op** (experimental). In a Link Play session every player plays their own story in the host's world, with their own requests, talks and progress, kept in their own save. Turn on **Visitors can talk to story characters** on the launcher's Link Play page; every player of the session needs it on and needs this build.
