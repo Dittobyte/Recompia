@@ -317,23 +317,39 @@ def libs_current(lib, stamp):
         os.path.isfile(os.path.join(lib, 'pkp_%s.a' % m[0])) for m in MODULES)
 
 
-def check(game):
-    """Whether pkp.exe and <game>/build/done.json were built with this package's tools: (current, reason, relink).
-    relink: not current, but the kept libraries match this package (the dump done.json names, lib_stamp()), so Set up only
-    links again (minutes become seconds, and the launcher says so)."""
-    if not os.path.isfile(os.path.join(game, EXE)):
+class Layout:
+    """Where a build reads and writes in a game folder: the executable (and on Linux and macOS the files link() puts beside it)
+    in `dest`, the lift, obj and lib folders, state.json, zig-cache, done.json and MOD_BUILT in `work`. The installed build,
+    which the game plays from, has dest = the game folder and work = build/. Every build shares build/objcache (content-keyed),
+    build/lock and build/cancel (one build per game folder at a time)."""
+
+    def __init__(self, game):
+        self.game = game
+        self.build = os.path.join(game, 'build')
+        self.work = self.build
+        self.dest = game
+
+    def at(self, *parts):
+        return os.path.join(self.work, *parts)
+
+
+def check(out):
+    """Whether the executable and done.json of the build `out` (a Layout) were made with this package's tools:
+    (current, reason, relink). relink: not current, but its kept libraries match this package (the dump done.json names,
+    lib_stamp()), so Set up only links again (minutes become seconds, and the launcher says so)."""
+    if not os.path.isfile(os.path.join(out.dest, EXE)):
         return False, '%s is not built yet' % EXE, False
-    done = read_json(os.path.join(game, 'build', 'done.json'))
+    done = read_json(out.at('done.json'))
     if not isinstance(done, dict):
         return False, '%s has no finished build record' % EXE, False
     if done.get('format') != FORMAT or not isinstance(done.get('tools'), dict):
         return False, '%s was built by an older release' % EXE, False
     want = tool_stamp()
     changed = [k for k in want if done['tools'].get(k) != want[k]]
-    plan_hash = modplan.read_hash(os.path.join(game, MOD_PLAN))
+    plan_hash = modplan.read_hash(os.path.join(out.game, MOD_PLAN))
     if changed:
         # the kept libraries were archived with a plan's hash: only the current plan's make this a relink
-        relink = libs_current(os.path.join(game, 'build', 'lib'), lib_stamp(done, want, compiler_id(), plan_hash))
+        relink = libs_current(out.at('lib'), lib_stamp(done, want, compiler_id(), plan_hash))
         return False, 'this release changes ' + ', '.join(changed), relink
     if done.get('mod_hooks', '') != plan_hash:
         return False, "the mods' hook points changed", False
@@ -908,7 +924,8 @@ def write_identity(lib, game):
     return path
 
 
-def link(runner, lib, game, env):
+def link(runner, lib, out, env):
+    """Links the executable of the build `out` (a Layout) from the libraries in lib, with the files it needs beside it."""
     libs = [os.path.join(lib, 'pkp_%s.a' % m[0]) for m in MODULES]
     exe = 'pkp' if (DARWIN or LINUX) else 'pkp.exe'
     tmp = os.path.join(lib, exe)
@@ -918,7 +935,7 @@ def link(runner, lib, game, env):
         # __info_plist is the executable's own identity (write_identity): Metal's shader cache is keyed on it.
         cmd = list(CLANGXX) + CXXFLAGS + ['-I', SDK, '-I', os.path.join(lib, 'gen'), os.path.join(SDK, 'pkp_stub.cpp')] + libs + [
             os.path.join(SDK, RUNTIME_LIB), '-o', tmp, '-Wl,-stack_size,0x8000000', '-Wl,-rpath,@executable_path',
-            '-Wl,-sectcreate,__TEXT,__info_plist,' + write_identity(lib, game),
+            '-Wl,-sectcreate,__TEXT,__info_plist,' + write_identity(lib, out.game),
             # guest_segment.py adds a load command for __GUEST after the link, which needs room in the header.
             '-Wl,-headerpad,0x4000']
         rc, tail = runner.run(cmd, env=env, cwd=SDK)
@@ -946,37 +963,175 @@ def link(runner, lib, game, env):
         if rc != 0:
             raise Fail('Linking pkp.exe failed (exit %d):\n%s' % (rc, tail))
         clear_high_entropy_va(tmp)
-    dst = os.path.join(game, exe)
+    dst = os.path.join(out.dest, exe)
     flush_replace(tmp, dst)                             # done.json then makes it trusted (check())
     if DARWIN or LINUX:
         # The exe loads the runtime from its own folder (-rpath @executable_path / $ORIGIN), as pkp.exe finds pkp_rt.dll beside it.
-        replace_file(os.path.join(SDK, RUNTIME_LIB), os.path.join(game, RUNTIME_LIB))
+        replace_file(os.path.join(SDK, RUNTIME_LIB), os.path.join(out.dest, RUNTIME_LIB))
         if DARWIN:
             # volk dlopen()s libvulkan.1.dylib from the same place: the package ships MoltenVK under that name. Linux uses the
             # system Vulkan loader and its ICDs, so there is nothing to copy.
             vulkan = os.path.join(SDK, 'libvulkan.1.dylib')
             if os.path.isfile(vulkan):
-                replace_file(vulkan, os.path.join(game, 'libvulkan.1.dylib'))
+                replace_file(vulkan, os.path.join(out.dest, 'libvulkan.1.dylib'))
         # What the game reads next to its executable: the keyboard and mouse prompt icons (pkp_kbm.cpp, without them the
         # prompts keep the game's own Switch sprites) and the shared font.
         # (names of their own: `dst` is the executable this function returns, and main hashes it)
         icons = os.path.join(SDK, 'kbm_icons')
         if os.path.isdir(icons):
-            icons_dst = os.path.join(game, 'assets', 'kbm_icons')
+            icons_dst = os.path.join(out.dest, 'assets', 'kbm_icons')
             os.makedirs(icons_dst, exist_ok=True)
             for f in os.listdir(icons):
                 if f.endswith('.png'):
                     replace_file(os.path.join(icons, f), os.path.join(icons_dst, f))
         font = os.path.join(SDK, 'fonts', 'DejaVuSans.ttf')
         if os.path.isfile(font):
-            font_dst = os.path.join(game, 'fonts')
+            font_dst = os.path.join(out.dest, 'fonts')
             os.makedirs(font_dst, exist_ok=True)
             replace_file(font, os.path.join(font_dst, 'DejaVuSans.ttf'))
-    built = os.path.join(game, 'build', MOD_BUILT)      # the mod hook points this pkp.exe has, for the runtime
+    built = out.at(MOD_BUILT)                           # the mod hook points this pkp.exe has, for the runtime
     shutil.copyfile(os.path.join(lib, MOD_BUILT), built + '.tmp')
     flush_replace(built + '.tmp', built)
     progress('link', 1, 1, '%s built' % exe)
     return dst
+
+
+def take_lock(build):
+    """One build at a time per game folder: two used to wipe lift/ and obj/ under each other (the stamp check clears them),
+    which showed up as a compiler error on a source that had just been generated. Returns the lock file."""
+    lock_file = os.path.join(build, 'lock')
+    if os.path.exists(lock_file):
+        try:
+            pid = int(open(lock_file).read().strip() or 0)
+        except (OSError, ValueError):
+            pid = 0
+        if pid and pid != os.getpid() and _build_alive(pid):
+            raise Fail('Another Set up is building this game folder already (process %d).' % pid)
+    open(lock_file, 'w').write(str(os.getpid()))
+    return lock_file
+
+
+def exclusive(game, work):
+    """Runs work(cancel_file) holding the game folder's lock and turns its end into the exit code and the launcher's line:
+    0 done, 1 error (@error), 2 cancelled (@cancelled)."""
+    build = os.path.join(game, 'build')
+    lock_file = None
+    try:
+        os.makedirs(build, exist_ok=True)
+        cancel_file = os.path.join(build, 'cancel')
+        if os.path.exists(cancel_file):
+            os.remove(cancel_file)
+        lock_file = take_lock(build)
+        _end_group_on_sigterm()
+        return work(cancel_file)
+    except Cancelled:
+        say('cancelled', 'Build paused. Set up again continues where it stopped.')
+        return 2
+    except Fail as e:
+        say('error', str(e).replace('\n', '\\n'))
+        return 1
+    except Exception as e:            # an unexpected failure: say what it was, plainly
+        say('error', '%s: %s' % (type(e).__name__, str(e).replace('\n', '\\n')))
+        return 1
+    finally:
+        if lock_file:
+            _release_lock(lock_file)
+
+
+def build(a, out, cancel_file):
+    """Verifies the dump, lifts, compiles, archives and links the build `out` (a Layout); 0 when it is done."""
+    t0 = time.time()
+    times = {}
+    # The link needs the runtime library from the package's sdk folder. A payload staged without it fails at the link,
+    # after the lift and the compile: say so now instead.
+    runtime_lib = os.path.join(SDK, RUNTIME_LIB)
+    if not os.path.isfile(runtime_lib):
+        raise Fail('The package is missing %s, which the link needs: extract the release zip again, or copy the runtime '
+                   'library into %s.' % (RUNTIME_LIB, os.path.dirname(runtime_lib)))
+    if DARWIN:
+        if subprocess.run(['xcrun', '--find', 'clang++'], capture_output=True).returncode != 0:
+            raise Fail('Apple clang was not found: run "xcode-select --install" and press Set up again.')
+    elif not os.path.isfile(ZIG):
+        raise Fail('The bundled compiler is missing (%s). Extract the release zip again.' % ZIG)
+    want = verify(a.exefs)
+    tools = tool_stamp()
+    plan = modplan.read_plan(os.path.join(out.game, MOD_PLAN))
+    mod_hooks = plan.hash if plan else ''
+    stamp = {'format': FORMAT, 'main_build_id': want['main_build_id'], 'sha256': want['sha256'], 'tools': tools,
+             'mod_hooks': mod_hooks}
+    compiler = compiler_id()
+    libstamp = lib_stamp(want, tools, compiler, mod_hooks)
+    times['verify'] = round(time.time() - t0, 1)
+    runner = Runner(cancel_file)
+    env = dict(os.environ)
+    if not DARWIN:
+        # zig's cache lasts one run, as after linking: a stopped run's can hold an object a power cut left as zeros under a
+        # manifest that survived, which zig hands back as compiled. The objects themselves are kept in obj/ and objcache/
+        zig_cache = out.at('zig-cache')
+        shutil.rmtree(zig_cache, ignore_errors=True)
+        env['ZIG_GLOBAL_CACHE_DIR'] = zig_cache
+        env['ZIG_LOCAL_CACHE_DIR'] = zig_cache
+    gen, obj, lib = out.at('lift'), out.at('obj'), out.at('lib')
+    reuse = libs_current(lib, libstamp)
+    if reuse:                        # only the runtime or the SDK files changed: link the kept libraries again
+        progress('lift', len(MODULES), len(MODULES), 'Game code unchanged')
+        progress('compile', 1, 1, 'Game code unchanged')
+    else:
+        # the lift and obj folders belong to the modules' stamps in state.json: a module whose stamp changed (or with no
+        # readable state, or one from an older release) starts over, the others keep their lift and objects. A module
+        # whose kept library has its current stamp is not lifted or compiled at all
+        state_p = out.at('state.json')
+        state = read_json(state_p)
+        state = state if isinstance(state, dict) else {}
+        if state.get('mods') != libstamp:           # the generated mod-hooks folder is made from the whole library stamp
+            shutil.rmtree(os.path.join(gen, 'mod-hooks'), ignore_errors=True)
+        extra = mod_sites(plan, a.exefs, gen)
+        mod_stamps = {}
+        for name, nso, _, _, _ in MODULES:
+            text = ''
+            if name in extra:
+                with open(extra[name], encoding='utf-8', newline='') as f:
+                    text = f.read()
+            mod_stamps[name] = module_stamp(name, nso, want, tools, compiler, text)
+        old = state.get('modules') if isinstance(state.get('modules'), dict) else {}
+        for name in mod_stamps:
+            if old.get(name) != mod_stamps[name]:
+                for d in (gen, obj):
+                    shutil.rmtree(os.path.join(d, name), ignore_errors=True)
+        write_json(state_p, {'mods': libstamp, 'modules': mod_stamps})
+        kept = read_json(os.path.join(lib, MODULE_STAMPS))
+        kept = kept if isinstance(kept, dict) else {}
+        skip = {n for n in mod_stamps if kept.get(n) == mod_stamps[n] and os.path.isfile(os.path.join(lib, 'pkp_%s.a' % n))}
+        for n in sorted(skip):
+            print('Game code of %s unchanged: its kept library is used' % n, flush=True)
+        t = time.time()
+        lift(runner, a.exefs, gen, a.jobs, extra, skip)
+        times['lift'] = round(time.time() - t, 1)
+        t = time.time()
+        compile_all(runner, gen, obj, a.jobs, env, make_cache(os.path.join(out.build, 'objcache'), a.cache_mb, compiler, env), skip)
+        times['compile'] = round(time.time() - t, 1)
+    t = time.time()
+    progress('link', 0, 1, 'Linking %s' % EXE)
+    if not reuse:
+        archive(runner, obj, lib, libstamp, env, os.path.join(gen, 'mod-hooks', MOD_BUILT), mod_stamps, skip)
+    try:
+        exe = link(runner, lib, out, env)
+    except Fail:
+        if reuse:                    # a kept library may be damaged: the next Set up builds them again
+            try:
+                os.remove(os.path.join(lib, 'stamp.json'))
+            except OSError:
+                pass
+        raise
+    times['link'] = round(time.time() - t, 1)
+    if not a.keep:
+        progress('finish', 0, 1, 'Removing the build files')
+        for d in ('lift', 'obj', 'zig-cache'):
+            shutil.rmtree(out.at(d), ignore_errors=True)
+    done = dict(stamp, exe_sha256=sha256(exe), seconds=times, finished=time.strftime('%Y-%m-%d %H:%M:%S'))
+    write_json(out.at('done.json'), done)
+    progress('finish', 1, 1, '%s is ready (%d s)' % (EXE, time.time() - t0))
+    return 0
 
 
 def main():
@@ -996,7 +1151,7 @@ def main():
         if not a.game:
             ap.error('--check needs --game')
         try:
-            current, reason, relink = check(os.path.abspath(a.game))
+            current, reason, relink = check(Layout(os.path.abspath(a.game)))
         except OSError as e:                 # a tool file that cannot be read: Set up then runs and names it
             current, reason, relink = False, 'cannot read the build tools: %s' % e, False
         print(json.dumps({'current': current, 'reason': reason, 'relink': relink}), flush=True)
@@ -1006,130 +1161,8 @@ def main():
     # The lifter runs as a child process in another directory, so a relative --exefs would not resolve there (it failed with
     # FileNotFoundError in nxrecomp, after the game files had been verified).
     a.exefs = os.path.abspath(a.exefs)
-    game = os.path.abspath(a.game)
-    build = os.path.join(game, 'build')
-    os.makedirs(build, exist_ok=True)
-    cancel_file = os.path.join(build, 'cancel')
-    if os.path.exists(cancel_file):
-        os.remove(cancel_file)
-    # One build at a time per game folder: two used to wipe lift/ and obj/ under each other (the stamp check clears them),
-    # which showed up as a compiler error on a source that had just been generated.
-    lock_file = os.path.join(build, 'lock')
-    if os.path.exists(lock_file):
-        try:
-            pid = int(open(lock_file).read().strip() or 0)
-        except (OSError, ValueError):
-            pid = 0
-        if pid and pid != os.getpid() and _build_alive(pid):
-            raise Fail('Another Set up is building this game folder already (process %d).' % pid)
-    open(lock_file, 'w').write(str(os.getpid()))
-    _end_group_on_sigterm()
-    t0 = time.time()
-    times = {}
-    try:
-        # The link needs the runtime library from the package's sdk folder. A payload staged without it fails at the link,
-        # after the lift and the compile: say so now instead.
-        runtime_lib = os.path.join(SDK, RUNTIME_LIB)
-        if not os.path.isfile(runtime_lib):
-            raise Fail('The package is missing %s, which the link needs: extract the release zip again, or copy the runtime '
-                       'library into %s.' % (RUNTIME_LIB, os.path.dirname(runtime_lib)))
-        if DARWIN:
-            if subprocess.run(['xcrun', '--find', 'clang++'], capture_output=True).returncode != 0:
-                raise Fail('Apple clang was not found: run "xcode-select --install" and press Set up again.')
-        elif not os.path.isfile(ZIG):
-            raise Fail('The bundled compiler is missing (%s). Extract the release zip again.' % ZIG)
-        want = verify(a.exefs)
-        tools = tool_stamp()
-        plan = modplan.read_plan(os.path.join(game, MOD_PLAN))
-        mod_hooks = plan.hash if plan else ''
-        stamp = {'format': FORMAT, 'main_build_id': want['main_build_id'], 'sha256': want['sha256'], 'tools': tools,
-                 'mod_hooks': mod_hooks}
-        compiler = compiler_id()
-        libstamp = lib_stamp(want, tools, compiler, mod_hooks)
-        times['verify'] = round(time.time() - t0, 1)
-        runner = Runner(cancel_file)
-        env = dict(os.environ)
-        if not DARWIN:
-            # zig's cache lasts one run, as after linking: a stopped run's can hold an object a power cut left as zeros under a
-            # manifest that survived, which zig hands back as compiled. The objects themselves are kept in obj/ and objcache/
-            zig_cache = os.path.join(build, 'zig-cache')
-            shutil.rmtree(zig_cache, ignore_errors=True)
-            env['ZIG_GLOBAL_CACHE_DIR'] = zig_cache
-            env['ZIG_LOCAL_CACHE_DIR'] = zig_cache
-        gen, obj, lib = os.path.join(build, 'lift'), os.path.join(build, 'obj'), os.path.join(build, 'lib')
-        reuse = libs_current(lib, libstamp)
-        if reuse:                        # only the runtime or the SDK files changed: link the kept libraries again
-            progress('lift', len(MODULES), len(MODULES), 'Game code unchanged')
-            progress('compile', 1, 1, 'Game code unchanged')
-        else:
-            # the lift and obj folders belong to the modules' stamps in state.json: a module whose stamp changed (or with no
-            # readable state, or one from an older release) starts over, the others keep their lift and objects. A module
-            # whose kept library has its current stamp is not lifted or compiled at all
-            state_p = os.path.join(build, 'state.json')
-            state = read_json(state_p)
-            state = state if isinstance(state, dict) else {}
-            if state.get('mods') != libstamp:           # the generated mod-hooks folder is made from the whole library stamp
-                shutil.rmtree(os.path.join(gen, 'mod-hooks'), ignore_errors=True)
-            extra = mod_sites(plan, a.exefs, gen)
-            mod_stamps = {}
-            for name, nso, _, _, _ in MODULES:
-                text = ''
-                if name in extra:
-                    with open(extra[name], encoding='utf-8', newline='') as f:
-                        text = f.read()
-                mod_stamps[name] = module_stamp(name, nso, want, tools, compiler, text)
-            old = state.get('modules') if isinstance(state.get('modules'), dict) else {}
-            for name in mod_stamps:
-                if old.get(name) != mod_stamps[name]:
-                    for d in (gen, obj):
-                        shutil.rmtree(os.path.join(d, name), ignore_errors=True)
-            write_json(state_p, {'mods': libstamp, 'modules': mod_stamps})
-            kept = read_json(os.path.join(lib, MODULE_STAMPS))
-            kept = kept if isinstance(kept, dict) else {}
-            skip = {n for n in mod_stamps if kept.get(n) == mod_stamps[n] and os.path.isfile(os.path.join(lib, 'pkp_%s.a' % n))}
-            for n in sorted(skip):
-                print('Game code of %s unchanged: its kept library is used' % n, flush=True)
-            t = time.time()
-            lift(runner, a.exefs, gen, a.jobs, extra, skip)
-            times['lift'] = round(time.time() - t, 1)
-            t = time.time()
-            compile_all(runner, gen, obj, a.jobs, env, make_cache(os.path.join(build, 'objcache'), a.cache_mb, compiler, env), skip)
-            times['compile'] = round(time.time() - t, 1)
-        t = time.time()
-        progress('link', 0, 1, 'Linking %s' % EXE)
-        if not reuse:
-            archive(runner, obj, lib, libstamp, env, os.path.join(gen, 'mod-hooks', MOD_BUILT), mod_stamps, skip)
-        try:
-            exe = link(runner, lib, game, env)
-        except Fail:
-            if reuse:                    # a kept library may be damaged: the next Set up builds them again
-                try:
-                    os.remove(os.path.join(lib, 'stamp.json'))
-                except OSError:
-                    pass
-            raise
-        times['link'] = round(time.time() - t, 1)
-        if not a.keep:
-            progress('finish', 0, 1, 'Removing the build files')
-            for d in ('lift', 'obj', 'zig-cache'):
-                shutil.rmtree(os.path.join(build, d), ignore_errors=True)
-        done = dict(stamp, exe_sha256=sha256(exe), seconds=times, finished=time.strftime('%Y-%m-%d %H:%M:%S'))
-        write_json(os.path.join(build, 'done.json'), done)
-        progress('finish', 1, 1, '%s is ready (%d s)' % (EXE, time.time() - t0))
-        _release_lock(lock_file)
-        return 0
-    except Cancelled:
-        say('cancelled', 'Build paused. Set up again continues where it stopped.')
-        _release_lock(lock_file)
-        return 2
-    except Fail as e:
-        say('error', str(e).replace('\n', '\\n'))
-        _release_lock(lock_file)
-        return 1
-    except Exception as e:            # an unexpected failure: say what it was, plainly
-        say('error', '%s: %s' % (type(e).__name__, str(e).replace('\n', '\\n')))
-        _release_lock(lock_file)
-        return 1
+    out = Layout(os.path.abspath(a.game))
+    return exclusive(out.game, lambda cancel_file: build(a, out, cancel_file))
 
 
 if __name__ == '__main__':
