@@ -22,6 +22,11 @@
   - Now: Internet through the public relay or a friend's relay stays chosen. A direct address, a relay on this PC (off until you turn it on again) and old room codes are still cleared at start
   - Thanks to Sakamoto on Discord for the report
 
+### Gameplay
+- **Camera aim keeps the block you aimed at while a move plays** (#535)
+  - Before: Rototiller, Cut, Rock Smash and the other abilities followed the camera until their hit landed, so turning the camera right after pressing the button tilled, cut or smashed a different block
+  - Now: the aim is held from the moment the move starts until it ends, and the camera aims again for the next one
+
 
 New in this Testing build: **seamless co-op** (experimental). In a Link Play session every player plays their own story in the host's world, with their own requests, talks and progress, kept in their own save. Turn on **Visitors can talk to story characters** on the launcher's Link Play page; every player of the session needs it on and needs this build.
 
