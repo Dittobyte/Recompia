@@ -85,6 +85,7 @@ pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config, without_mods: bool)
         eprintln!("mods: the locks were not written to pkp.ini: {e}");
     }
 
+    let look = crate::branding::Branding::of(cfg);
     let app2 = app.clone();
     let dir = game_dir.to_path_buf();
     let tools = crate::paths::exe_dir().join("tools");
@@ -109,6 +110,10 @@ pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config, without_mods: bool)
                 _ => String::new(),
             }
         };
+        // Set up and updates write pkp.exe with no icon of ours; the game window takes the exe's icon
+        if let Err(e) = crate::branding::ensure_game_icon(&dir, &look) {
+            eprintln!("branding: {e}");
+        }
         // Calculate after shader preparation, immediately before the process starts, so a long preparation cannot age the offset.
         let mut cmd = match crate::events::override_for(&dir).and_then(|clock| game_command(&exe, &dir, clock, without_mods)) {
             Ok(c) => c,
