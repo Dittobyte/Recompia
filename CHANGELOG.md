@@ -35,6 +35,7 @@ This build is about **waiting less**. Building the game code takes about half th
 - Link Play: the game's own **Link Code** makes a room private. The room is still listed, and only players who type the code can join
 
 ### Changed
+- Native shader translation chooses workers and a bounded GC heap from available CPU and memory, uses server GC when there is room, and retries a silent or out-of-memory failure once with lighter settings. Previously Linux and macOS always used workstation GC; existing shader caches stay valid and this change only needs **Update**.
 - **Translating the game code** takes about 40 % less time: on a 24-thread PC the step went from about 110 s to about 65 s. The translator runs its passes in one set of worker processes instead of three, stops building C++ it throws away, and builds the statements it keeps with table lookups instead of formatting
 - **Finish update** and **Set up again** compile the game code in about half the time
 - One compile job per GB of free memory instead of per two, so PCs with little free memory build with more of their cores

@@ -2,6 +2,8 @@
 //! The launcher's shader setup without the window (development check):
 //!   cargo run --example shader_setup -- <game dir> <romfs> <exefs/main> <tools dir> [limit] [jobs]
 //! Builds <game dir>/shader_cache/spirv exactly as the launcher's Set up does; `limit` translates only that many blocks.
+//! Native translation only, into a separate output folder (no game run):
+//!   cargo run --example shader_setup -- --native <harness dll> <corpus> <out> [--gentle]
 
 // host.rs reaches the launcher's own modules, so an example carries the same set the binary declares (main.rs), by path.
 #[allow(dead_code, clippy::all)]
@@ -51,6 +53,18 @@ use std::sync::atomic::AtomicBool;
 
 fn main() {
     let a: Vec<String> = std::env::args().skip(1).collect();
+    if a.first().is_some_and(|arg| arg == "--native") && a.len() >= 4 {
+        let output = PathBuf::from(&a[3]);
+        std::fs::create_dir_all(&output).expect("create translation output folder");
+        let log: shaders::LogFn = std::sync::Arc::new(|text| println!("{text}"));
+        match harness::run_native(&PathBuf::from(&a[1]), &PathBuf::from(&a[2]), &output, &AtomicBool::new(false), a.iter().any(|a| a == "--gentle"), Some(&log), |line| println!("{line}")) {
+            Ok(true) => return,
+            result => {
+                eprintln!("{}", result.err().unwrap_or_else(|| "cancelled".into()));
+                std::process::exit(1);
+            }
+        }
+    }
     if a.len() < 4 {
         eprintln!("usage: shader_setup <game dir> <romfs> <exefs/main> <tools dir> [limit] [jobs]");
         std::process::exit(2);
