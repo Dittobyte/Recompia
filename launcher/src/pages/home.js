@@ -9,6 +9,7 @@ import { store } from '../store.js';
 import { canCancelUpdate, canUpdate, gamePhase, primaryAction, updatePlayable } from '../action.js';
 import { readIni, viewOf } from '../linkplay-model.js';
 import { formatDate, highlights, parseReleaseName } from '../markdown.js';
+import { playTimeLine } from '../play-time-model.js';
 
 const REPORT_LABEL = {
   'pkp_crash.txt': t('Crash report'),
@@ -175,8 +176,9 @@ export function render(el, ctx) {
   // a settings file that cannot be read just leaves the chip out
   let linkChip = '';
   let profileChip = '';
+  let timeChip = '';
   const discordChip = `<button class="chip on-art" id="discord-chip">${icon('globe')}Discord</button>`;
-  const drawChips = () => { part('link').innerHTML = profileChip + linkChip + discordChip; };
+  const drawChips = () => { part('link').innerHTML = profileChip + timeChip + linkChip + discordChip; };
   drawChips();
   api.readSettings().then((data) => {
     linkChip = `<button class="chip on-art" id="link-chip">${icon('users')}${esc(t('Link Play: {mode}', { mode: LINK_PLAY_LABEL[viewOf(readIni(data.pkp))] }))}</button>`;
@@ -185,11 +187,22 @@ export function render(el, ctx) {
   // with more than one profile the player picks who plays here; the choice is the Settings > Saves list
   const profileSelect = (list, busy) => `<select class="chip on-art" id="profile-pick" aria-label="${esc(t('Profile'))}" ${busy ? 'disabled' : ''}>${
     list.profiles.map((p) => `<option value="${esc(p.id)}" ${p.id === list.active ? 'selected' : ''}>${esc(t('Profile: {name}', { name: p.name }))}</option>`).join('')}</select>`;
-  const loadProfiles = () => api.profilesList().then((list) => {
+  // the play time is the active profile's save's, as the game counted it; a save not played since that count began shows none
+  const loadProfiles = () => Promise.all([api.profilesList(), api.profilesPlayTime().catch(() => ({}))]).then(([list, times]) => {
     profileChip = list.profiles.length > 1 ? profileSelect(list, ['starting', 'running', 'finishing'].includes(gamePhase(store.state.game))) : '';
+    const played = playTimeLine(times, list.active);
+    timeChip = played ? `<span class="chip on-art">${icon('clock')}${esc(played)}</span>` : '';
     drawChips();
   }).catch((e) => console.warn('profiles_list', e));
   loadProfiles();
+  // the game writes its play time while it runs: read it again once the game has ended (the profile pick is enabled again then too)
+  let lastPhase = gamePhase(store.state.game);
+  ctx.on((s) => {
+    const phase = gamePhase(s.game);
+    if (phase === lastPhase) return;
+    if (lastPhase === 'running' || lastPhase === 'finishing') loadProfiles();
+    lastPhase = phase;
+  });
   el.addEventListener('change', async (e) => {
     if (e.target.id !== 'profile-pick') return;
     try {

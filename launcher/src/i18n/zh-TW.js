@@ -895,4 +895,8 @@ export default {
   "Classic": "經典",
   "Classic is the bubble-letter logo and R icon of earlier versions. The icon changes for the launcher, the game and the Steam shortcut (Steam shows it after a restart). Windows can take a moment to redraw an icon it has already shown.": "經典是早期版本的泡泡字標誌和 R 圖示。圖示會在啟動器、遊戲和 Steam 捷徑中變更（Steam 重新啟動後顯示）。Windows 重新繪製已顯示過的圖示可能需要一點時間。",
   "The new icon is not everywhere yet: {error}": "新圖示尚未在所有位置生效：{error}",
+  '{n} min': '{n} 分鐘',
+  '{h} h {m} min': '{h} 小時 {m} 分鐘',
+  '{h} h': '{h} 小時',
+  'Play time: {time}': '遊戲時數：{time}',
 };

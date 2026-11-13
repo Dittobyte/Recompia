@@ -67,6 +67,7 @@ export const api = {
   repairUndo: () => invoke('repair_undo'),
   repairLast: () => invoke('repair_last'),
   profilesList: () => invoke('profiles_list'),
+  profilesPlayTime: () => invoke('profiles_play_time'),   // { [profile id]: seconds played }, only profiles with a time
   profileAdd: (args) => invoke('profile_add', args),   // { name }
   profileRename: (args) => invoke('profile_rename', args),   // { id, name }
   profileRemove: (args) => invoke('profile_remove', args),   // { id }

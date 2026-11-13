@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- Play time: Home and Settings > Saves > Profiles show how long each profile has played. It is the game's own count from the save, so it includes the time from before this update; a profile shows it once you have played it with this version (the game code changes, so Finish update once; no shader is translated again)
+
 ### Fixed
 - An update no longer stops with "The prepared game code cannot be put in place (this release changes lifter)" in a game folder first installed from 0.9.0 or older
 
