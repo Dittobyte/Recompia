@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- The launcher in Brazilian Portuguese: it follows a Portuguese system on its own, or pick Português (Brasil) in Settings > About > Language
+
 ### Fixed
 - A crash from an internal error now names the error in pkp.log
 - Linux: the game no longer closes at once without a message when the game folder or a game file has a name that is not valid UTF-8; it says which folder
