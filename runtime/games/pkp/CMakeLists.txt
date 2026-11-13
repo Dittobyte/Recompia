@@ -80,6 +80,7 @@ if(TARGET nxrt_gfx)
         "${_pkp}/ui/pkp_title.cpp"
         "${_pkp}/ui/pkp_sort.cpp"
         "${_pkp}/ui/pkp_craft.cpp"
+        "${_pkp}/ui/pkp_save_now.cpp"
         "${_pkp}/ui/pkp_item_edit.cpp"
         "${_pkp}/ui/pkp_time.cpp")
     if(NXRT_TESTTOOLS)

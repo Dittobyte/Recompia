@@ -44,11 +44,12 @@ constexpr uintmax_t kJournalMax = 2u << 20;   // past this the journal becomes <
 
 constexpr uint32_t kEntryWord = 0x51000428u;  // sub w8, w1, #1: the first instruction of both setters
 
-constexpr uint64_t kSaveManager = 0x35619d0;  // main: -> the save manager
-constexpr uint64_t kSaveRequest = 0x241324;   // (manager, request, mode, flag) -> 1 when queued
-constexpr uint64_t kRootHome = 0xa4;          // save root: u8, the request's second byte
-constexpr uint64_t kStateAutosave = 0x3bb5e0; // game state: u32, 1..4 while the autosave works
-constexpr uint64_t kStateEvent = 0xd0, kEventBusy = 0x6ea;
+using layout::kEventBusy;
+using layout::kSaveManager;
+using layout::kSaveRequest;
+using layout::kSaveRootHome;
+using layout::kStateAutosave;
+using layout::kStateEvent;
 constexpr int kSaveSettle = 120;              // game frames from the last change of a step to the request
 constexpr int kSaveTries = 3600;              // then the request is given up (the next step asks again)
 
@@ -172,14 +173,14 @@ void game_frame(::Ctx* c) {
     const uint64_t game = guest::rd<uint64_t>(s.base + layout::kGameState);
     const uint64_t manager = guest::rd<uint64_t>(s.base + kSaveManager);
     const uint64_t root = guest::rd<uint64_t>(s.base + layout::kSaveRoot);
-    if (!guest::ok(game, kStateAutosave + 4) || !guest::ok(manager, 0x40) || !guest::ok(root, kRootHome + 1)) return;
+    if (!guest::ok(game, kStateAutosave + 4) || !guest::ok(manager, 0x40) || !guest::ok(root, kSaveRootHome + 1)) return;
     if (guest::rd<uint32_t>(game + kStateAutosave) - 1 < 4) return;
     const uint64_t event = guest::rd<uint64_t>(game + kStateEvent);
     if (event && guest::ok(event, kEventBusy + 1) && guest::rd<uint8_t>(event + kEventBusy)) return;
     const uint32_t type = 5, kind = 2;
     std::memset(s.request, 0, sizeof s.request);
     std::memcpy(s.request, &type, 4);
-    s.request[5] = guest::rd<uint8_t>(root + kRootHome);
+    s.request[5] = guest::rd<uint8_t>(root + kSaveRootHome);
     std::memcpy(s.request + 8, &kind, 4);
     if (!(guest::call(c, s.base + kSaveRequest, manager, reinterpret_cast<uint64_t>(s.request), 0, 0) & 1)) return;
     s.save_in = 0;

@@ -347,6 +347,7 @@ export default {
   'Sort button in the bag and containers': 'Botão Ordenar na bolsa e nos baús',
   'Sort each time the bag opens': 'Ordenar sempre que a bolsa abrir',
   'Search in the crafting screen': 'Busca na tela de criação',
+  'Save button in the pause menu': 'Botão Salvar no menu de pausa',
   'More Pokémon in town': 'Mais Pokémon na cidade',
   'Pokémon in town': 'Pokémon na cidade',
   'Experimental. Visitors and temporary spawns share the game\'s 64 slots with your residents, so a high number leaves them less room.': 'Experimental. Visitantes e aparições temporárias dividem os 64 espaços do jogo com seus moradores, então um número alto deixa menos espaço para eles.',
@@ -893,4 +894,8 @@ export default {
   'Classic': 'Clássico',
   'Classic is the bubble-letter logo and R icon of earlier versions. The icon changes for the launcher, the game and the Steam shortcut (Steam shows it after a restart). Windows can take a moment to redraw an icon it has already shown.': 'Clássico é o logotipo de letras de bolha e o ícone de R das versões anteriores. O ícone muda no launcher, no jogo e no atalho do Steam (o Steam mostra depois de reiniciar). O Windows pode demorar um pouco para redesenhar um ícone que já mostrou.',
   'The new icon is not everywhere yet: {error}': 'O novo ícone ainda não está em todo lugar: {error}',
+  '{n} min': '{n} min',
+  '{h} h {m} min': '{h} h {m} min',
+  '{h} h': '{h} h',
+  'Play time: {time}': 'Tempo de jogo: {time}',
 };

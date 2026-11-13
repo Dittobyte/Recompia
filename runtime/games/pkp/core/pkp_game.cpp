@@ -26,6 +26,7 @@
 #include "render/pkp_quality.h"
 #include "core/pkp_pokemon_cap.h"
 #include "core/pkp_save_uuid.h"
+#include "ui/pkp_save_now.h"
 #include "core/pkp_story_guard.h"
 #include "core/pkp_story_hold.h"
 #include "core/pkp_story_pickups.h"
@@ -99,7 +100,7 @@ constexpr Entry kEntries[] = {
 #endif
     port(&kShoulderCameraFeature),
     mod(&kJumpFeature, JumpMomentum), mod(&kAimFeature, CameraAim), port(&kAimDebugFeature), mod(&kTitleFeature, TitleQuit), mod(&kSortFeature, InventorySort),
-    mod(&kCraftFeature, CraftSearch), mod(&kItemEditFeature, ItemEditor), mod(&kPokemonCapFeature, PokemonCap),
+    mod(&kCraftFeature, CraftSearch), mod(&kItemEditFeature, ItemEditor), mod(&kPokemonCapFeature, PokemonCap), mod(&kSaveNowFeature, SaveNow),
     port(&key_guide::kKeyGuideFeature),
     port(&kOptionsFeature),
     port(&kPlayTimeFeature),

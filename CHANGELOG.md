@@ -5,6 +5,7 @@
 ### Added
 - Play time: Home and Settings > Saves > Profiles show how long each profile has played. It is the game's own count from the save, so it includes the time from before this update; a profile shows it once you have played it with this version (the game code changes, so Finish update once; no shader is translated again)
 - The launcher in Brazilian Portuguese: it follows a Portuguese system on its own, or pick Português (Brasil) in Settings > About > Language
+- The pause menu's key guide gets a **Save** prompt that writes the save and stays in the world, next to the game's own Save and Quit (#354)
 
 ### Fixed
 - A crash from an internal error now names the error in pkp.log

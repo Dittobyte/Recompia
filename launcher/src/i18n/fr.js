@@ -340,6 +340,7 @@ export default {
   'Sort button in the bag and containers': 'Bouton de tri dans le sac et les coffres',
   'Sort each time the bag opens': 'Trier à chaque ouverture du sac',
   'Search in the crafting screen': 'Recherche dans l\'écran de fabrication',
+  'Save button in the pause menu': 'Bouton Sauvegarder dans le menu pause',
   'More Pokémon in town': 'Plus de Pokémon en ville',
   'Pokémon in town': 'Pokémon en ville',
   'Experimental. Visitors and temporary spawns share the game\'s 64 slots with your residents, so a high number leaves them less room.': 'Expérimental. Les visiteurs et les apparitions temporaires partagent les 64 emplacements du jeu avec vos résidents : un nombre élevé leur laisse moins de place.',

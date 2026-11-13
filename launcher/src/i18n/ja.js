@@ -340,6 +340,7 @@ export default {
   'Sort button in the bag and containers': 'バッグとコンテナの整理ボタン',
   'Sort each time the bag opens': 'バッグを開くたびに整理',
   'Search in the crafting screen': 'クラフト画面での検索',
+  'Save button in the pause menu': 'ポーズメニューにセーブボタン',
   'More Pokémon in town': '町に住めるポケモンを増やす',
   'Pokémon in town': '町のポケモンの数',
   'Experimental. Visitors and temporary spawns share the game\'s 64 slots with your residents, so a high number leaves them less room.': '実験的な機能です。訪問者や一時的な出現は、住人とゲームの64枠を共有するため、数を多くするとその分の余裕が減ります。',
