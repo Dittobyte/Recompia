@@ -163,11 +163,11 @@ Se o download tiver uma pasta externa (por exemplo `2.0.1/romfs/...`), escolha a
 
 Your saves, settings and shaders stay.
 
-**From 0.7.5 on:** press **Update** on Home (or in Settings > About). The launcher downloads the new release, checks it, swaps its own files and restarts.
+**From 0.7.5 on:** press **Update** on Home (or in Settings > About). The launcher downloads the new release, checks it, swaps its own files and restarts. When the release changes the game code, the launcher first builds the new game program (`pkp.exe`) next to the one you have, with the new release's own tools. That takes from a few minutes to an hour, depending on your PC, and you can keep playing the whole time: Home shows the progress, and the update installs once the game is closed. **Cancel** stops it until then and changes nothing; the next **Update** picks up where it stopped.
 
 **From 0.7.0 or older:** download the new zip (Windows) or `PokopiaRecomp-<version>-linux-x64.tar.gz` (Linux) from the [latest release](https://github.com/featureJosh/pokopia-recomp/releases/latest), close the game and the launcher, and extract it over your install, into the same folder. It holds no saves, settings, shader cache or game files, so nothing of yours is replaced.
 
-**If Home shows Finish update after an update:** that release changed the game code, so the launcher builds the game program (`pkp.exe`) again from your game files. It also happens when you skipped such a release earlier and update later. This is a short wait, about 7 minutes on most PCs and a bit longer on a handheld, because your shaders and saves are kept. It is not the long first setup: shaders are only translated again when the release notes say so, and then only the ones that changed. The old `pkp.exe` stays until the new one is ready.
+**If Home shows Finish update after an update:** that release changed the game code and it could not be built before the update (an install that was extracted by hand, or an older version picked in Settings), so the launcher builds the game program (`pkp.exe`) again from your game files. It also happens when you skipped such a release earlier and update by hand later. This takes from a few minutes to an hour, depending on your PC, and your shaders and saves are kept. It is not the long first setup: shaders are only translated again when the release notes say so, and then only the ones that changed. The old `pkp.exe` stays until the new one is ready.
 
 Copy the `save` folder somewhere first if you want a backup. A save that a newer version wrote may not load in an older one.
 

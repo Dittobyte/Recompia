@@ -46,7 +46,14 @@ compile with the bundled Zig, link against `pkp_rt.dll`; then the shader steps b
 done. Pause works in every step and Continue setup resumes. A built pkp.exe counts only while `build\done.json` matches
 the tools of the release in use (`pkp_build.py --check`: lifter, `main.sites`, compile flags, SDK files, `pkp_rt.lib`), so
 an update extracted over an install that changes any of them turns Play off with "This update changes the game code"
-until Set up rebuilds pkp.exe (the shader cache is kept). Headless check of the whole first run:
+until Set up rebuilds pkp.exe (the shader cache is kept). The one-click update avoids that wait: between unpacking and
+swapping its files it runs the downloaded package's own `pkp_build.py --prepare` (`src-tauri/src/update_game.rs`), which
+builds into `build
+ext` with the shared object cache while the installed game stays playable; the swap waits for the game
+to close, then `--adopt` moves the prepared build into place (journaled, so a power cut resumes it) and keeps the old one in
+`build\prev` until the new launcher runs (`--revert` if it does not). Cancel before the swap changes nothing, and the next
+update continues from the cache. Installs never set up, development trees and releases whose script has no `--prepare`
+skip the step. Headless check of the whole first run:
 `cargo run --release --example first_run -- <game dir> <exefs> <romfs> <tools dir> [shader limit] [jobs]`.
 
 ## Release folder
