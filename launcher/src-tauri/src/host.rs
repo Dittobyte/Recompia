@@ -16,6 +16,9 @@ use std::sync::atomic::AtomicBool;
 
 use crate::download::{self, Pinned};
 
+#[path = "host_memory.rs"]
+pub mod memory;
+
 /// macOS and Linux run the game as the native binary built from this tree: there is no pkp.exe, no Proton and none of the
 /// release's Windows tools (Python, Zig, the shader translator), so every host decision below has this one branch.
 pub fn native_game() -> bool {
@@ -72,7 +75,7 @@ pub fn has_decoder_dlls() -> bool {
 /// Linux and macOS: the hidden run Windows does at Set up (shaders::warm_up). The romfs corpus cannot hold the blocks the game builds
 /// while it runs, so one headless run collects them and the translator merges them: without it the first real start draws
 /// with unlinked programs (models that never appear). A scratch save folder, so the player's own save is never touched.
-pub fn native_warm_up(game_dir: &Path, cancel: &std::sync::atomic::AtomicBool) -> Result<Option<String>, String> {
+pub fn native_warm_up(game_dir: &Path, cancel: &std::sync::atomic::AtomicBool, gentle: bool, log: Option<&crate::shaders::LogFn>) -> Result<Option<String>, String> {
     use std::sync::atomic::Ordering;
     let exe = game_exe(game_dir);
     if !exe.is_file() {
@@ -116,13 +119,13 @@ pub fn native_warm_up(game_dir: &Path, cancel: &std::sync::atomic::AtomicBool) -
         std::thread::sleep(std::time::Duration::from_millis(500));
     }
     let _ = std::fs::remove_dir_all(&scratch);
-    native_translate_shaders(game_dir)
+    native_translate_shaders(game_dir, cancel, gentle, log)
 }
 
 /// Linux and macOS: the shader cache is built by the C# harness in `tools/shaders`, not by the release's Windows tools. Runs it over
 /// the corpus the game dumped (`[nvn] dump_missing`, shaders::MISSING_REL), writing `<game>/shader_cache/spirv`.
 /// Returns the harness's last line, or None when there is nothing to translate or no harness to run.
-pub fn native_translate_shaders(game_dir: &Path) -> Result<Option<String>, String> {
+pub fn native_translate_shaders(game_dir: &Path, cancel: &AtomicBool, gentle: bool, log: Option<&crate::shaders::LogFn>) -> Result<Option<String>, String> {
     // The game writes the blocks it has no translation for to [nvn] dump_missing, which Set up sets to shader_cache/missing
     // (shaders::MISSING_REL). This used to read shader_corpus, a folder only the development ini ever used, so the blocks the
     // game dumped were never translated and every one of them stayed an unlinked program (black geometry, missing prompts).
@@ -157,35 +160,21 @@ pub fn native_translate_shaders(game_dir: &Path) -> Result<Option<String>, Strin
     let Some(dll) = dll else {
         return Err("the shader translator (spirv_harness.dll) was not found: set PKP_SPIRV_HARNESS or put it in <game>/tools".into());
     };
-    // Two jobs and the workstation collector: the harness allocates heavily per worker and the server GC grows its heap with
-    // the worker count (six workers measured 751 MiB; the point is to stay far below the game's own footprint on a 16 GB host).
     // Into a scratch folder, never straight into the cache: the harness writes results.tsv for the blocks it was given, so a
     // translation of the dumped shaders alone would replace the cache's table with just those (it did: a full 99,012-row
     // table became 6,064 after one Play). The new rows are merged below.
     let scratch = game_dir.join("shader_cache").join(".translate");
     let _ = std::fs::remove_dir_all(&scratch);
     std::fs::create_dir_all(&scratch).map_err(|e| format!("cannot create {}: {}", scratch.display(), e))?;
-    // A self-contained publish ships its own runtime: run its apphost next to the dll instead of the system's dotnet.
-    let apphost = dll.with_file_name("spirv_harness");
-    let mut runner = if apphost.is_file() { command(&apphost) } else { command("dotnet") };
-    if !apphost.is_file() {
-        runner.arg(&dll);
-    }
-    let out = runner
-        .arg("--batch")
-        .arg(&corpus)
-        .arg("--out")
-        .arg(&scratch)
-        .args(["--jobs", "2", "--host", harness_host(), "--no-val"])
-        .env("DOTNET_gcServer", "0")
-        .env("DOTNET_GCHeapHardLimit", "0x60000000")   // 1.5 GiB ceiling for the translation
-        .output()
-        .map_err(|e| format!("could not run the shader translator: {}", e))?;
-    let text = String::from_utf8_lossy(&out.stdout);
-    let last = text.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").to_string();
-    if !out.status.success() {
-        let _ = std::fs::remove_dir_all(&scratch);
-        return Err(format!("the shader translator failed: {}", last));
+    let mut last = String::new();
+    match crate::harness::run_native(&dll, &corpus, &scratch, cancel, gentle, log, |line| {
+        if !line.trim().is_empty() { last = line.to_string(); }
+    }) {
+        Ok(true) => {}
+        result => {
+            let _ = std::fs::remove_dir_all(&scratch);
+            return Err(result.err().unwrap_or_else(|| "cancelled".into()));
+        }
     }
     let merged = merge_translation(&scratch, &cache);
     // The scratch's results.tsv says which blocks failed: keep the folder for the next run only if some did.
@@ -305,6 +294,7 @@ pub fn native_setup_tools(game_dir: &Path) -> Result<SetupTools, String> {
 /// (phase, done, total, message), as the shader job's own.
 pub fn native_set_up_install(
     cfg: &crate::config::Config,
+    log: Option<&crate::shaders::LogFn>,
     cancel: &std::sync::atomic::AtomicBool,
     progress: &mut dyn FnMut(&str, u64, u64, &str),
 ) -> Result<usize, String> {
@@ -332,7 +322,7 @@ pub fn native_set_up_install(
             }
         }
     }
-    native_set_up(&dir, cancel, progress)
+    native_set_up(&dir, cancel, cfg.gentle_build, log, progress)
 }
 
 /// Linux and macOS: the exefs the game build reads, `[fs] exefs` of the pkp.ini Set up wrote (relative to the game folder).
@@ -347,9 +337,10 @@ pub fn native_exefs(dir: &Path) -> PathBuf {
 pub fn native_set_up(
     game_dir: &Path,
     cancel: &std::sync::atomic::AtomicBool,
+    gentle: bool,
+    log: Option<&crate::shaders::LogFn>,
     progress: &mut dyn FnMut(&str, u64, u64, &str),
 ) -> Result<usize, String> {
-    use std::sync::atomic::Ordering;
     let cfg = crate::settings::read(game_dir);
     let get = |k: &str| cfg.pkp.get(k).map(String::as_str).filter(|v| !v.is_empty()).map(str::to_string);
     // The ini's paths may be relative to the game folder (the runtime resolves them itself); the extractor and the harness
@@ -400,82 +391,31 @@ pub fn native_set_up(
     let have = std::fs::read_to_string(spirv.join("results.tsv")).map(|t| t.lines().count().saturating_sub(1)).unwrap_or(0);
     if have >= blocks {
         progress("translate", blocks as u64, blocks as u64, "Every shader is translated already.");
-        warm_up_run(game_dir, cancel, progress);
+        warm_up_run(game_dir, cancel, gentle, log, progress);
         crate::shaders::mark_complete(game_dir, &romfs.to_string_lossy(), blocks)?;
         return Ok(blocks);
     }
 
     progress("translate", 0, blocks as u64, &format!("Translating {} shaders...", blocks));
-    // The package ships a self-contained harness: run its apphost, not the system's dotnet, which a launcher started from
-    // Finder does not have on its PATH (that was "could not run the shader translator: No such file or directory").
-    let apphost = t.harness.with_file_name("spirv_harness");
-    let mut runner = if apphost.is_file() { command(&apphost) } else { command("dotnet") };
-    if !apphost.is_file() {
-        runner.arg(&t.harness);
-    }
-    runner
-        .arg("--batch")
-        .arg(&corpus)
-        .arg("--out")
-        .arg(&spirv)
-        .args(["--jobs", "6", "--host", harness_host(), "--no-val"])   // as the Windows setup
-        .env("DOTNET_gcServer", "0")
-        .env("DOTNET_GCHeapHardLimit", "0x60000000")
-        .stdout(std::process::Stdio::piped());
-    let mut child = crate::proc_tree::spawn(&mut runner).map_err(|e| format!("could not run the shader translator: {}", e))?;
-    // The harness prints "  <n>/<total>  <s> s" every 500 blocks: that is the progress (counting .spv files stalls while a
-    // second run overwrites the ones a stopped run left behind).
-    let now = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
-    let reader = {
-        let now = now.clone();
-        let out = child.stdout.take();
-        std::thread::spawn(move || {
-            use std::io::BufRead;
-            if let Some(out) = out {
-                for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {
-                    if let Some((n, _)) = line.trim().split_once('/') {
-                        if let Ok(v) = n.trim().parse::<u64>() {
-                            now.store(v, Ordering::Relaxed);
-                        }
-                    }
-                }
+    let completed = crate::harness::run_native(&t.harness, &corpus, &spirv, cancel, gentle, log, |line| {
+        if let Some((n, _)) = line.trim().split_once('/') {
+            if let Ok(done) = n.trim().parse::<u64>() {
+                let done = done.min(blocks as u64);
+                progress("translate", done, blocks as u64, &format!("Translating shaders: {} of {}...", done, blocks));
             }
-        })
-    };
-    loop {
-        if cancel.load(Ordering::SeqCst) {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err("cancelled".into());
         }
-        match child.try_wait() {
-            Ok(Some(st)) => {
-                if !st.success() {
-                    // The harness appends what went wrong to harness_error.txt in --out: name it, not just the exit status.
-                    let detail = std::fs::read_to_string(spirv.join("harness_error.txt")).unwrap_or_default();
-                    let first = detail.lines().next().unwrap_or("");
-                    return Err(format!("the shader translator failed ({}): {}", st, first));
-                }
-                break;
-            }
-            Ok(None) => {}
-            Err(e) => return Err(format!("lost track of the shader translator: {}", e)),
-        }
-        let done = now.load(Ordering::Relaxed).min(blocks as u64);
-        progress("translate", done, blocks as u64, &format!("Translating shaders: {} of {}...", done, blocks));
-        std::thread::sleep(std::time::Duration::from_secs(2));
-    }
-    let _ = reader.join();
-    warm_up_run(game_dir, cancel, progress);
+    })?;
+    if !completed { return Err("cancelled".into()); }
+    warm_up_run(game_dir, cancel, gentle, log, progress);
     crate::shaders::mark_complete(game_dir, &romfs.to_string_lossy(), blocks)?;
     Ok(blocks)
 }
 
 /// The warm-up as Set up reports it: a phase of its own, and a failure is only a message (the first Play then collects the
 /// blocks and the launcher translates them when it exits, as it always did).
-fn warm_up_run(game_dir: &Path, cancel: &std::sync::atomic::AtomicBool, progress: &mut dyn FnMut(&str, u64, u64, &str)) {
+fn warm_up_run(game_dir: &Path, cancel: &std::sync::atomic::AtomicBool, gentle: bool, log: Option<&crate::shaders::LogFn>, progress: &mut dyn FnMut(&str, u64, u64, &str)) {
     progress("warmup", 0, 0, "Playing the opening once, to collect the shaders it builds...");
-    match native_warm_up(game_dir, cancel) {
+    match native_warm_up(game_dir, cancel, gentle, log) {
         Ok(Some(line)) => progress("warmup", 1, 1, &line),
         Ok(None) => progress("warmup", 1, 1, "No shader was missing."),
         Err(e) if e == "cancelled" => {}
@@ -488,29 +428,8 @@ fn warm_up_run(game_dir: &Path, cancel: &std::sync::atomic::AtomicBool, progress
 /// compress and swap, or the whole machine stops responding (a hard reboot, twice).
 #[cfg(target_os = "macos")]
 pub fn free_memory_ratio() -> Option<f64> {
-    unsafe {
-        let mut memsize: u64 = 0;
-        let mut len = std::mem::size_of::<u64>();
-        if libc::sysctlbyname(c"hw.memsize".as_ptr(), &mut memsize as *mut _ as *mut _, &mut len, std::ptr::null_mut(), 0) != 0
-            || memsize == 0
-        {
-            return None;
-        }
-        let mut page_size: u64 = 0;
-        let mut plen = std::mem::size_of::<u64>();
-        if libc::sysctlbyname(c"hw.pagesize".as_ptr(), &mut page_size as *mut _ as *mut _, &mut plen, std::ptr::null_mut(), 0) != 0 {
-            page_size = 16384;
-        }
-        let mut stats: libc::vm_statistics64 = std::mem::zeroed();
-        let mut count = libc::HOST_VM_INFO64_COUNT;
-        if libc::host_statistics64(libc::mach_host_self(), libc::HOST_VM_INFO64, &mut stats as *mut _ as *mut _, &mut count)
-            != libc::KERN_SUCCESS
-        {
-            return None;
-        }
-        let pages = stats.free_count as u64 + stats.inactive_count as u64 + stats.speculative_count as u64;
-        Some((pages.saturating_mul(page_size)) as f64 / memsize as f64)
-    }
+    let m = memory::probe()?;
+    (m.total > 0).then_some(m.available as f64 / m.total as f64)
 }
 
 /// The kernel's memory-pressure level on macOS: 1 normal, 2 warning, 4 critical (kern.memorystatus_vm_pressure_level).
@@ -884,7 +803,7 @@ mod tests {
     #[ignore = "needs PKP_GAME_DIR; plays the opening headless for a minute and translates what it built"]
     fn native_warm_up_collects_the_opening() {
         let dir = std::path::PathBuf::from(std::env::var("PKP_GAME_DIR").expect("PKP_GAME_DIR"));
-        let line = native_warm_up(&dir, &std::sync::atomic::AtomicBool::new(false)).expect("the warm-up run ends");
+        let line = native_warm_up(&dir, &std::sync::atomic::AtomicBool::new(false), false, None).expect("the warm-up run ends");
         println!("{:?}", line);
     }
 
@@ -892,7 +811,7 @@ mod tests {
     #[ignore = "needs PKP_GAME_DIR and PKP_SPIRV_HARNESS; translates the game folder's dumped blocks into its cache"]
     fn macos_translation_merges_the_dumped_blocks() {
         let dir = std::path::PathBuf::from(std::env::var("PKP_GAME_DIR").expect("PKP_GAME_DIR"));
-        let line = native_translate_shaders(&dir).expect("the dumped blocks translate");
+        let line = native_translate_shaders(&dir, &AtomicBool::new(false), false, None).expect("the dumped blocks translate");
         println!("{:?}", line);
         assert!(!dir.join("shader_cache").join("missing").join("manifest.tsv").exists(), "the dumped corpus is cleared once translated");
     }

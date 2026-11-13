@@ -63,7 +63,8 @@ pub fn setup_status(app: AppHandle, state: SetupArg) -> SetupStatus {
 #[tauri::command]
 pub fn start_setup(app: AppHandle, state: SetupArg, gentle: Option<bool>) -> Result<(), String> {
     ensure_idle(&app, &[Need::Update, Need::Storage])?;
-    let cfg = load_config(&app);
+    let mut cfg = load_config(&app);
+    cfg.gentle_build = gentle.unwrap_or(cfg.gentle_build);
     // Linux and macOS: the player's dump is the source of everything. The same flow as the Windows Set up, from
     // host.rs native_set_up_install: pkp.ini from the chosen dump, the tools, the game build, then the shader corpus.
     if host::native_game() {
@@ -94,7 +95,7 @@ pub fn start_setup(app: AppHandle, state: SetupArg, gentle: Option<bool>) -> Res
                 *st.progress.lock().unwrap() = p.clone();
                 let _ = app.emit("setup-status", p);
             };
-            let result = host::native_set_up_install(&cfg, &st.cancel, &mut |phase, done, total, message| {
+            let result = host::native_set_up_install(&cfg, Some(&log), &st.cancel, &mut |phase, done, total, message| {
                 emit(shaders::Progress { state: RunState::Running, phase: phase.to_string(), done, total, message: message.to_string() })
             });
             let end = match result {
