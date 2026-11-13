@@ -68,7 +68,12 @@ export function savedLanguage() {
   return LANGUAGES.some((l) => l.code === v) ? v : AUTO;
 }
 
-const systemTags = () => globalThis.navigator?.languages?.length ? [...globalThis.navigator.languages] : [globalThis.navigator?.language].filter(Boolean);
+// The webview's languages. Node 21 and later has a navigator too, with the PC's language: outside a window (the tests and the check
+// scripts) there are none, so they get English on every PC, as their English expectations need.
+const systemTags = () => {
+  const nav = globalThis.window ? globalThis.navigator : undefined;
+  return nav?.languages?.length ? [...nav.languages] : [nav?.language].filter(Boolean);
+};
 
 export const language = resolveLanguage(savedLanguage(), systemTags());
 const catalog = LANGUAGES.find((l) => l.code === language).catalog;
