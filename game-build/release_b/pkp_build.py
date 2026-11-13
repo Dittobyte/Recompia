@@ -2,7 +2,9 @@
 """First-run game build of release model (b): turns the player's own dump into pkp.exe on their PC.
 
     python -I tools/build/pkp_build.py --exefs <dump>/updates/<v>/exefs --game <install folder> [--jobs N] [--keep]
-    python -I tools/build/pkp_build.py --check --game <install folder>
+    python -I tools/build/pkp_build.py --check [--next] --game <install folder>
+    python -I tools/build/pkp_build.py --prepare --exefs <dump>/updates/<v>/exefs --game <install folder> [--jobs N]
+    python -I tools/build/pkp_build.py --adopt | --revert --game <install folder>
 
 The package ships no game code. This script
   1. verifies the dump's ExeFS against dump_hashes.json (the supported build: sha256 of every module + main's build ID),
@@ -26,7 +28,18 @@ changed (a plan with main-only points leaves sdk, subsdk0 and rtld alone); the o
 done.json is the full stamp (the dump plus tool_stamp(): everything in this package that goes into pkp.exe). --check
 compares it with this package's tools only (no dump check, about a second) and prints one JSON line
 {"current": bool, "reason": text, "relink": bool}; exit 0 current, 4 not but the kept libraries match (Set up only links), 3 not.
-It also compares the hash of the mods' hook plan: another plan is never a relink.
+It also compares the hash of the mods' hook plan: another plan is never a relink. --check --next asks the same about
+build/next/ (below).
+
+Updates (class Layout): the launcher runs the downloaded release's copy of this script with --prepare before it puts that
+release in place. The build then goes to <game>/build/next/ (pkp.exe, lib/, done.json, MOD_BUILT, its lift and obj folders,
+and on Linux and macOS the files link() puts beside the executable, listed in OUTPUTS), so the installed build stays as it is
+and playable meanwhile. Its lib/ starts as hard links of the installed libraries (seed_lib()), so unchanged modules are not
+built again and a runtime-only release only links; build/objcache, the lock and the cancel file are shared, so a stopped
+prepare continues where it stopped. After the swap, --adopt moves build/next/ into place by renames (seconds), the replaced
+build to build/prev/ (for --revert, until the launcher's update has finished); a journal (ADOPTING) lets any later run finish
+an adoption a power cut stopped, so a half-adopted folder never stays. A normal Set up adopts a finished build/next/ that
+matches its tools instead of building again.
 
 Mod hook points: <game>/mods/.modtopia/hooks.tsv (the Modtopia plan the launcher writes before Set up; absent = none) lists stops
 the mods need. nxrecomp/modplan.py checks each point against the dump and maps it to a site; the lift takes those sites with the
@@ -128,6 +141,11 @@ else:
 MOD_PLAN = os.path.join('mods', '.modtopia', 'hooks.tsv')     # under <game>: the mods' hook plan (Modtopia "hooks 1")
 MODULE_STAMPS = 'modules.json'          # in lib/: {module: module_stamp()} of the kept libraries
 MOD_BUILT = 'mod-hooks-built.tsv'       # the points built in: in <game>/build/ for the runtime, in lib/ with the libraries
+# in <game>/build/: a prepared build (--prepare) and the build --adopt replaced (until the launcher's update ends; --revert)
+NEXT, PREV = 'next', 'prev'
+ADOPTING = 'adopting.json'              # in <game>/build/: the moves of an adoption under way; every run finishes it first
+ADOPTED = 'adopted.json'                # in build/prev/: the moves of the last adoption, which --revert undoes
+OUTPUTS = 'outputs.json'                # in build/next/: what link() wrote beside the executable, for --adopt
 # guest registers and flags in C locals (recomp/nxrecomp/locals.py): the game config's reg_locals; PKP_LOCALS=off|exact|aapcs
 # overrides it for a test build. In the stamps, so another mode lifts and compiles again
 try:
@@ -320,14 +338,16 @@ def libs_current(lib, stamp):
 class Layout:
     """Where a build reads and writes in a game folder: the executable (and on Linux and macOS the files link() puts beside it)
     in `dest`, the lift, obj and lib folders, state.json, zig-cache, done.json and MOD_BUILT in `work`. The installed build,
-    which the game plays from, has dest = the game folder and work = build/. Every build shares build/objcache (content-keyed),
-    build/lock and build/cancel (one build per game folder at a time)."""
+    which the game plays from, has dest = the game folder and work = build/. A prepared one (prepared=True) has both in
+    build/next/, so the installed build stays playable until --adopt moves it into place. Every build shares build/objcache
+    (content-keyed), build/lock and build/cancel (one build per game folder at a time)."""
 
-    def __init__(self, game):
+    def __init__(self, game, prepared=False):
         self.game = game
         self.build = os.path.join(game, 'build')
-        self.work = self.build
-        self.dest = game
+        self.prepared = prepared
+        self.work = os.path.join(self.build, NEXT) if prepared else self.build
+        self.dest = self.work if prepared else game
 
     def at(self, *parts):
         return os.path.join(self.work, *parts)
@@ -365,11 +385,14 @@ def read_json(path):
         return None
 
 
-def write_json(path, value):
-    """Write through a temporary file and rename, so a stop mid-write never leaves half a file behind."""
+def write_json(path, value, durable=False):
+    """Write through a temporary file and rename, so a stop mid-write never leaves half a file behind. durable: its data is on
+    the disk before the rename (flush()), for a file a later run acts on without another check."""
     tmp = path + '.tmp'
     with open(tmp, 'w', encoding='utf-8') as f:
         json.dump(value, f, indent=1)
+    if durable:
+        flush(tmp)
     os.replace(tmp, path)
 
 
@@ -893,8 +916,10 @@ def archive(runner, obj, lib, stamp, env, record, mod_stamps, skip=()):
         if rc != 0:
             raise Fail('Archiving %s failed (exit %d):\n%s' % (name, rc, tail))
         flush(a)                          # the stamps below make it trusted
-    shutil.copyfile(record, os.path.join(lib, MOD_BUILT))
-    flush(os.path.join(lib, MOD_BUILT))
+    # through a new file: a prepared build's lib/ starts as hard links of the installed one (seed_lib()), which a write in
+    # place would change too
+    shutil.copyfile(record, os.path.join(lib, MOD_BUILT) + '.tmp')
+    flush_replace(os.path.join(lib, MOD_BUILT) + '.tmp', os.path.join(lib, MOD_BUILT))
     write_json(os.path.join(lib, MODULE_STAMPS), mod_stamps)
     write_json(os.path.join(lib, 'stamp.json'), stamp)
 
@@ -925,7 +950,8 @@ def write_identity(lib, game):
 
 
 def link(runner, lib, out, env):
-    """Links the executable of the build `out` (a Layout) from the libraries in lib, with the files it needs beside it."""
+    """Links the executable of the build `out` (a Layout) from the libraries in lib, with the files it needs beside it.
+    Returns (the executable, every file written in out.dest as a path relative to it, the executable first)."""
     libs = [os.path.join(lib, 'pkp_%s.a' % m[0]) for m in MODULES]
     exe = 'pkp' if (DARWIN or LINUX) else 'pkp.exe'
     tmp = os.path.join(lib, exe)
@@ -965,35 +991,174 @@ def link(runner, lib, out, env):
         clear_high_entropy_va(tmp)
     dst = os.path.join(out.dest, exe)
     flush_replace(tmp, dst)                             # done.json then makes it trusted (check())
+    written = [exe]
+
+    def beside(src, rel):
+        os.makedirs(os.path.dirname(os.path.join(out.dest, rel)), exist_ok=True)
+        replace_file(src, os.path.join(out.dest, rel))
+        written.append(rel)
     if DARWIN or LINUX:
         # The exe loads the runtime from its own folder (-rpath @executable_path / $ORIGIN), as pkp.exe finds pkp_rt.dll beside it.
-        replace_file(os.path.join(SDK, RUNTIME_LIB), os.path.join(out.dest, RUNTIME_LIB))
+        beside(os.path.join(SDK, RUNTIME_LIB), RUNTIME_LIB)
         if DARWIN:
             # volk dlopen()s libvulkan.1.dylib from the same place: the package ships MoltenVK under that name. Linux uses the
             # system Vulkan loader and its ICDs, so there is nothing to copy.
             vulkan = os.path.join(SDK, 'libvulkan.1.dylib')
             if os.path.isfile(vulkan):
-                replace_file(vulkan, os.path.join(out.dest, 'libvulkan.1.dylib'))
+                beside(vulkan, 'libvulkan.1.dylib')
         # What the game reads next to its executable: the keyboard and mouse prompt icons (pkp_kbm.cpp, without them the
         # prompts keep the game's own Switch sprites) and the shared font.
-        # (names of their own: `dst` is the executable this function returns, and main hashes it)
         icons = os.path.join(SDK, 'kbm_icons')
         if os.path.isdir(icons):
-            icons_dst = os.path.join(out.dest, 'assets', 'kbm_icons')
-            os.makedirs(icons_dst, exist_ok=True)
-            for f in os.listdir(icons):
+            for f in sorted(os.listdir(icons)):
                 if f.endswith('.png'):
-                    replace_file(os.path.join(icons, f), os.path.join(icons_dst, f))
+                    beside(os.path.join(icons, f), 'assets/kbm_icons/' + f)
         font = os.path.join(SDK, 'fonts', 'DejaVuSans.ttf')
         if os.path.isfile(font):
-            font_dst = os.path.join(out.dest, 'fonts')
-            os.makedirs(font_dst, exist_ok=True)
-            replace_file(font, os.path.join(font_dst, 'DejaVuSans.ttf'))
+            beside(font, 'fonts/DejaVuSans.ttf')
     built = out.at(MOD_BUILT)                           # the mod hook points this pkp.exe has, for the runtime
     shutil.copyfile(os.path.join(lib, MOD_BUILT), built + '.tmp')
     flush_replace(built + '.tmp', built)
     progress('link', 1, 1, '%s built' % exe)
-    return dst
+    return dst, written
+
+
+def seed_lib(out):
+    """A prepared build starts from the installed module libraries, as Set up again does: a module whose library is current
+    keeps it (module_stamp()), and a release that changes only the runtime or the SDK only links. Hard links, so they cost no
+    time and no disk space (a copy where the drive has none). Nothing writes a library or a stamp in place (archive() and
+    write_json() write new files), so the installed ones never change through them; the link's own by-products (a .pdb, an
+    import library) are not taken, the linker may write those in place. Only for a lib/ not started yet: one a stopped
+    prepare left keeps its own state."""
+    src, dst = os.path.join(out.build, 'lib'), out.at('lib')
+    if os.path.isdir(dst) or not os.path.isdir(src):
+        return
+    tmp = dst + '.tmp'
+    shutil.rmtree(tmp, ignore_errors=True)
+    os.makedirs(tmp)
+    for n in os.listdir(src):
+        f = os.path.join(src, n)
+        if os.path.isfile(f) and (n.endswith('.a') or n in ('stamp.json', MODULE_STAMPS, MOD_BUILT)):
+            try:
+                os.link(f, os.path.join(tmp, n))
+            except OSError:
+                shutil.copy2(f, os.path.join(tmp, n))
+                flush(os.path.join(tmp, n))
+    os.replace(tmp, dst)
+
+
+def _under(root, rel):
+    return os.path.join(root, *rel.split('/'))
+
+
+def _remove(path):
+    if os.path.isdir(path) and not os.path.islink(path):
+        shutil.rmtree(path)
+    elif os.path.lexists(path):
+        os.remove(path)
+
+
+def _move(src, dst):
+    """os.replace within one drive, made to wait for a file the system holds a moment (a virus scanner, a game that just
+    exited): Windows refuses those renames for a few hundred milliseconds."""
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    for i in range(40):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if i == 39:
+                raise
+            time.sleep(0.25)
+
+
+def _adopt_moves(game, journal):
+    """The moves of an adoption, each done only if it is still to do, so a run cut off anywhere (a power cut) is finished by
+    running them again: the old done.json first (moved aside, the installed build reads as unfinished until the end), then
+    each item (the old one to build/prev, the prepared one into place), the new done.json last. Renames only, within the game
+    folder's drive: seconds, and no step needs disk space. Every file moved was flushed when it was written.
+    journal: {'items': [[path under build/next, path under the game folder]], 'outputs': the prepared build's OUTPUTS}."""
+    build = os.path.join(game, 'build')
+    nxt, prev = os.path.join(build, NEXT), os.path.join(build, PREV)
+    if os.path.lexists(os.path.join(nxt, 'done.json')) and os.path.lexists(os.path.join(build, 'done.json')):
+        _remove(os.path.join(prev, 'done.json'))
+        _move(os.path.join(build, 'done.json'), os.path.join(prev, 'done.json'))
+    for src, dst in journal['items']:
+        s, d = _under(nxt, src), _under(game, dst)
+        if not os.path.lexists(s):
+            continue
+        if os.path.lexists(d):
+            _remove(_under(prev, src))
+            _move(d, _under(prev, src))
+        _move(s, d)
+    if os.path.lexists(os.path.join(nxt, 'done.json')):
+        _move(os.path.join(nxt, 'done.json'), os.path.join(build, 'done.json'))
+    os.makedirs(prev, exist_ok=True)
+    write_json(os.path.join(prev, ADOPTED), journal, durable=True)
+    os.remove(os.path.join(build, ADOPTING))
+    shutil.rmtree(nxt, ignore_errors=True)
+
+
+def finish_adoption(game):
+    """An adoption cut off (a power cut, a crash) is finished before anything else runs in the game folder. True if there was one."""
+    journal = read_json(os.path.join(game, 'build', ADOPTING))
+    if not isinstance(journal, dict) or not isinstance(journal.get('items'), list):
+        return False
+    print('Finishing an earlier adoption of a prepared build', flush=True)
+    _adopt_moves(game, journal)
+    return True
+
+
+def adopt(game):
+    """--adopt: moves a finished build/next/ into place, the build it replaces to build/prev/ (for --revert). Refused unless
+    build/next/ is current with these tools (check()); nothing to do when there is none and the installed build already is."""
+    finish_adoption(game)
+    nxt = Layout(game, prepared=True)
+    if not os.path.isdir(nxt.work) and check(Layout(game))[0]:
+        progress('finish', 1, 1, '%s already matches this release' % EXE)
+        return 0
+    current, reason, _ = check(nxt)
+    if not current:
+        raise Fail('The prepared game code cannot be put in place (%s). Nothing was changed.' % reason)
+    outputs = read_json(nxt.at(OUTPUTS))
+    if not isinstance(outputs, list) or not all(isinstance(f, str) for f in outputs):
+        raise Fail('The prepared game code has no list of its files. Nothing was changed.')
+    items = [['lib', 'build/lib'], [MOD_BUILT, 'build/' + MOD_BUILT]] + [[f, f] for f in outputs]
+    journal = {'items': items, 'outputs': outputs}
+    shutil.rmtree(os.path.join(nxt.build, PREV), ignore_errors=True)
+    write_json(os.path.join(nxt.build, ADOPTING), journal, durable=True)
+    _adopt_moves(game, journal)
+    progress('finish', 1, 1, '%s is in place' % EXE)
+    return 0
+
+
+def revert(game):
+    """--revert: puts the build the last --adopt replaced back (the launcher's update could not finish), and the adopted one
+    back in build/next/. Its done.json moves first and the old one is restored last: a revert cut off reads as an unfinished
+    build, which Set up builds again, never as a current one."""
+    finish_adoption(game)
+    build = os.path.join(game, 'build')
+    nxt, prev = os.path.join(build, NEXT), os.path.join(build, PREV)
+    journal = read_json(os.path.join(prev, ADOPTED))
+    if not isinstance(journal, dict) or not isinstance(journal.get('items'), list):
+        raise Fail('There is no earlier game build to put back.')
+    if os.path.lexists(os.path.join(build, 'done.json')):
+        _remove(os.path.join(nxt, 'done.json'))
+        _move(os.path.join(build, 'done.json'), os.path.join(nxt, 'done.json'))
+    for src, dst in journal['items']:
+        d, b, s = _under(game, dst), _under(prev, src), _under(nxt, src)
+        if os.path.lexists(d):
+            _remove(s)
+            _move(d, s)
+        if os.path.lexists(b):
+            _move(b, d)
+    write_json(os.path.join(nxt, OUTPUTS), journal.get('outputs', []), durable=True)     # build/next/ can be adopted again
+    os.remove(os.path.join(prev, ADOPTED))
+    if os.path.lexists(os.path.join(prev, 'done.json')):
+        _move(os.path.join(prev, 'done.json'), os.path.join(build, 'done.json'))
+    shutil.rmtree(prev, ignore_errors=True)
+    progress('finish', 1, 1, 'The earlier %s is back in place' % EXE)
+    return 0
 
 
 def take_lock(build):
@@ -1115,7 +1280,7 @@ def build(a, out, cancel_file):
     if not reuse:
         archive(runner, obj, lib, libstamp, env, os.path.join(gen, 'mod-hooks', MOD_BUILT), mod_stamps, skip)
     try:
-        exe = link(runner, lib, out, env)
+        exe, written = link(runner, lib, out, env)
     except Fail:
         if reuse:                    # a kept library may be damaged: the next Set up builds them again
             try:
@@ -1128,10 +1293,50 @@ def build(a, out, cancel_file):
         progress('finish', 0, 1, 'Removing the build files')
         for d in ('lift', 'obj', 'zig-cache'):
             shutil.rmtree(out.at(d), ignore_errors=True)
+    if out.prepared:
+        write_json(out.at(OUTPUTS), written, durable=True)
     done = dict(stamp, exe_sha256=sha256(exe), seconds=times, finished=time.strftime('%Y-%m-%d %H:%M:%S'))
-    write_json(out.at('done.json'), done)
+    write_json(out.at('done.json'), done, durable=True)
     progress('finish', 1, 1, '%s is ready (%d s)' % (EXE, time.time() - t0))
     return 0
+
+
+def set_up(a, game, cancel_file):
+    """The normal build (Set up). A finished build/next/ made with these tools (an update that prepared it, then stopped
+    before adopting it) is put in place instead of building again; another one (another release's, or unfinished) goes, its
+    objects are in the cache. build/prev/ is only kept while the launcher's update runs."""
+    if finish_adoption(game) and check(Layout(game))[0]:
+        return 0
+    shutil.rmtree(os.path.join(game, 'build', PREV), ignore_errors=True)
+    nxt = Layout(game, prepared=True)
+    if os.path.isdir(nxt.work):
+        if check(nxt)[0]:
+            adopt(game)
+            shutil.rmtree(os.path.join(game, 'build', PREV), ignore_errors=True)
+            return 0
+        shutil.rmtree(nxt.work)
+    return build(a, Layout(game), cancel_file)
+
+
+def prepare(a, game, cancel_file):
+    """--prepare: the build an update needs, made in build/next/ with this package's tools while the installed one stays as it
+    is and playable (the launcher runs the downloaded release's copy of this script). Seconds when build/next/ is already
+    current, or when the installed build already matches these tools (nothing to prepare)."""
+    finish_adoption(game)
+    shutil.rmtree(os.path.join(game, 'build', PREV), ignore_errors=True)
+    out = Layout(game, prepared=True)
+    if check(out)[0]:
+        progress('finish', 1, 1, 'The prepared %s matches this release' % EXE)
+        return 0
+    if check(Layout(game))[0]:
+        shutil.rmtree(out.work, ignore_errors=True)
+        progress('finish', 1, 1, '%s already matches this release' % EXE)
+        return 0
+    for f in ('done.json', OUTPUTS):         # a stopped prepare must never read as finished
+        if os.path.lexists(out.at(f)):
+            os.remove(out.at(f))
+    seed_lib(out)
+    return build(a, out, cancel_file)
 
 
 def main():
@@ -1142,27 +1347,35 @@ def main():
     ap.add_argument('--cache-mb', type=int, default=CACHE_MB, help='size cap of the compiled-object cache in MiB (0 = off)')
     ap.add_argument('--keep', action='store_true', help='keep the generated sources and objects')
     ap.add_argument('--check', action='store_true', help='only say whether <game>/build/done.json matches these tools')
+    ap.add_argument('--next', action='store_true', help='with --check: ask about the prepared build in <game>/build/next')
+    ap.add_argument('--prepare', action='store_true', help='build into <game>/build/next, leaving the installed build alone')
+    ap.add_argument('--adopt', action='store_true', help='move a finished <game>/build/next into place')
+    ap.add_argument('--revert', action='store_true', help='put back the build the last --adopt replaced')
     ap.add_argument('--lift-one', help=argparse.SUPPRESS)
     a = ap.parse_args()
     if a.lift_one:                       # child process: one lifter run (keeps the lifter's own pool out of this process)
         from nxrecomp.__main__ import main as nx_main
         return nx_main(json.loads(a.lift_one)) or 0
+    if not a.game:
+        ap.error('--game is required')
+    game = os.path.abspath(a.game)
     if a.check:
-        if not a.game:
-            ap.error('--check needs --game')
         try:
-            current, reason, relink = check(Layout(os.path.abspath(a.game)))
+            current, reason, relink = check(Layout(game, prepared=a.next))
         except OSError as e:                 # a tool file that cannot be read: Set up then runs and names it
             current, reason, relink = False, 'cannot read the build tools: %s' % e, False
         print(json.dumps({'current': current, 'reason': reason, 'relink': relink}), flush=True)
         return 0 if current else 4 if relink else 3
-    if not a.exefs or not a.game:
-        ap.error('--exefs and --game are required')
+    if a.adopt:
+        return exclusive(game, lambda _: adopt(game))
+    if a.revert:
+        return exclusive(game, lambda _: revert(game))
+    if not a.exefs:
+        ap.error('--exefs is required')
     # The lifter runs as a child process in another directory, so a relative --exefs would not resolve there (it failed with
     # FileNotFoundError in nxrecomp, after the game files had been verified).
     a.exefs = os.path.abspath(a.exefs)
-    out = Layout(os.path.abspath(a.game))
-    return exclusive(out.game, lambda cancel_file: build(a, out, cancel_file))
+    return exclusive(game, lambda cancel_file: (prepare if a.prepare else set_up)(a, game, cancel_file))
 
 
 if __name__ == '__main__':
