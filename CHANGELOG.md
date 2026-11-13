@@ -4,9 +4,14 @@
 
 **Update:** press **Update**, then **Finish update** once. This is the last update that makes you wait like this: it builds the game code one more time in full, already with the faster build (about half the time it took before). Your shaders and saves are kept; no shader is translated again.
 
+New in this Testing build: **seamless co-op** (experimental). In a Link Play session every player plays their own story in the host's world, with their own requests, talks and progress, kept in their own save. Turn on **Visitors can talk to story characters** on the launcher's Link Play page; every player of the session needs it on and needs this build.
+
+Coming from 0.13.0-beta.1, this is the first update that prepares in the background: press **Update** and keep playing.
+
 This build is about **waiting less**. Building the game code takes about half the time, updates stop rebuilding parts of the game that did not change, and from the next update on the launcher builds the new game code **while you keep playing**. Link Play over the internet also gets simpler: **no more room codes**, every room shows up in the game's own list.
 
 ### Highlights
+- **Seamless co-op (experimental).** Every player of a Link Play session plays their own story, the host and each visitor alike. Pokémon give each player the requests and story talks of that player's own progress, and it is saved in that player's own save. A story step that changes a town waits until you are back in your own world, a visitor cannot take a story item away from the host, and your save from before each start is kept
 - **Updates no longer take the game away.** From the next update on, the launcher builds the new game code before it installs the update, and the version you have stays playable the whole time. The update goes in once the game is closed, and you can cancel at any point before that without losing progress
 - **Building the game code takes about half the time.** A full build on a 16-thread PC went from 13 minutes to 7. PCs with little free memory gain more, because the build now runs twice as many jobs in the same memory
 - **Small updates stay small.** The launcher only builds the parts of the game code an update really changes. Two of the last releases rebuilt the whole game for a change that touched little or none of it; that no longer happens
@@ -37,6 +42,11 @@ This build is about **waiting less**. Building the game code takes about half th
 - Removed the touch screen Menu button, which could show up in the corner on desktop PCs
 
 ### What to test
+- **Seamless co-op, as a visitor:** talk to Pokémon in the host's world and open your Requests: they should be your own. Do a request the host has not reached and check that the host's list does not change
+- **Seamless co-op, a step that changes the town:** when a visitor meets the goal of a request that brings a Pokémon in, the request stays open with a message on screen. Go home and load your own world: it should complete there, with the Pokémon arriving
+- **Seamless co-op, items:** an important item a visitor picks up should stay in the host's world for the host. Drop an item for the other player: one of you has it afterwards, not both
+- **Seamless co-op, after a lost connection:** do a story step as a visitor, close the game without leaving the session, start again: the step should still be done
+- **Seamless co-op, reports:** attach `pkp.log` and the file in `story-journal` in your save folder from both players
 - **This update:** how long **Finish update** takes on your PC, next to what it took before (the launcher's Set up log has the times). Tell us your processor and memory with it
 - **The game after the rebuild:** play as usual. The game code is built with new compiler settings, so anything that behaves differently from 0.12.0 is worth a report
 - **Link Play over the internet:** host with **Internet**, and have a friend open **Visit a Friend**: your room should be in the list without any code. Then host again with a **Link Code** and check that only the right code gets in
@@ -44,6 +54,11 @@ This build is about **waiting less**. Building the game code takes about half th
 - **The next Testing build** is the first one that installs in the background: press **Update**, keep playing while it prepares, then close the game and watch it install. Try **Cancel** while it prepares, then **Update** again: it should continue, not start over
 
 ### Regressions and known problems
+- Seamless co-op is experimental. Your save from before each start is in `story-coop-backup` in the save folder (the newest 5): to go back, copy its account folder and `.meta` file over `account` with the game closed
+- Seamless co-op: an important item a visitor already took still lies in the host's world for that visitor, who cannot take it again
+- Seamless co-op: when the host picks an item up, it is gone for everyone, as in the game
+- Seamless co-op: what a visitor picks up or is given goes into the game's Link Play bag, not the bag you have at home
+- Seamless co-op: the launcher's switch still has its earlier name, **Visitors can talk to story characters**
 - This update itself still waits on **Finish update**: the launcher you have now runs it. The background build starts with the update after this one
 - While an update prepares in the background, the game can run slower on small PCs and handhelds. The Set up page's **Slower, keeps the PC usable** switch makes the build gentler
 - While an update is in progress, Set up, repair, profiles and mods are locked in the launcher until it has installed or you cancel it
