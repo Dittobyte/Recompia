@@ -34,8 +34,27 @@ fn command(exe: &Path, input: &Path, stage: &Path, jobs: usize, mode: Mode) -> R
     let mut cmd = crate::host::command(exe);
     cmd.arg("--batch").arg(input).arg("--out").arg(stage);
     cmd.args(["--jobs", &jobs.to_string(), "--no-val"]);
-    cmd.env("DOTNET_gcServer", if mode == Mode::Fast { "1" } else { "0" });
+    gc_env(&mut cmd, jobs, mode);
     Ok(cmd)
+}
+
+/// The translator's runtime settings for a translation `jobs` blocks wide.
+///
+/// A block's output is one ~263 KB byte[] and there are 99,012 of them, so at the default 85 KB large-object threshold all 26 GB of
+/// SPIR-V is large-object allocation that only gen2 collects. A 1 MiB threshold puts those arrays in gen0, and a gen0 wide enough to
+/// absorb them costs fewer collections still. Measured on the 2.0.1 corpus, 7,000 blocks at 23 jobs: 30 s before, 26.5 s with the
+/// threshold, 24 s with both. Server GC is the harness's own default and is what makes 23 workers worth having; the safe run is a
+/// diagnostic and keeps the runtime's own settings.
+fn gc_env(cmd: &mut Command, jobs: usize, mode: Mode) {
+    if mode != Mode::Fast {
+        cmd.env("DOTNET_gcServer", "0");
+        return;
+    }
+    cmd.env("DOTNET_gcServer", "1");
+    cmd.env("DOTNET_GCLOHThreshold", "0x100000");
+    // server GC gives every heap its own gen0, so this is 32 MB per translator thread, between 128 MB and 512 MB
+    let mb = (jobs * 32).clamp(128, 512);
+    cmd.env("DOTNET_GCgen0size", format!("0x{:x}", mb << 20));
 }
 
 /// A failed run: the message for setup.log, and whether the harness wrote an error report (an error it caught, not a process that
@@ -128,7 +147,7 @@ impl Worker {
         // the package's own build for this platform, run as it is: spirv_harness.exe on Windows, the native apphost elsewhere
         let mut cmd = crate::host::command(exe);
         cmd.arg("--serve").arg("--out").arg(stage).args(["--jobs", &jobs.to_string(), "--no-val"]);
-        cmd.env("DOTNET_gcServer", if mode == Mode::Fast { "1" } else { "0" });
+        gc_env(&mut cmd, jobs, mode);
         crate::shaders::quiet(&mut cmd, idle);
         let name = exe.to_string_lossy().to_string();
         let mut child = cmd

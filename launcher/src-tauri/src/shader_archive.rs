@@ -185,9 +185,9 @@ fn read_all(spirv: &Path, names: &[String], threads: usize) -> Vec<Option<Vec<u8
 }
 
 /// Compresses `items` (hash, SPIR-V) on every core and writes them as the next segment. Returns the segment's size on disk.
-fn write_segment(dir: &Path, items: &[(String, Vec<u8>)]) -> Result<u64, String> {
+fn write_segment(dir: &Path, items: &[(String, Vec<u8>)], threads: usize) -> Result<u64, String> {
     fs::create_dir_all(dir).map_err(|e| format!("cannot create {}: {}", dir.display(), e))?;
-    let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2).clamp(1, 16);
+    let threads = threads.clamp(1, 16);
     let per = items.len().div_ceil(threads).max(1);
     let mut frames: Vec<Result<Vec<u8>, String>> = std::thread::scope(|s| {
         // One compressor per thread, reused for its whole part: `zstd::bulk::compress` builds a context, and its match-finder
@@ -288,7 +288,14 @@ pub struct Moved {
 /// `src`: where the loose files are (None: `shader_cache/spirv`), which Set up points at its stage so a fresh translation is archived
 /// without being written to the game folder first. `progress(done, total)`. Stops between shaders when `cancel` is set (what is moved
 /// stays moved). A file that is not valid SPIR-V (empty, not whole words) stays loose. Ok((moved, finished)).
-pub fn compact(game_dir: &Path, src: Option<&Path>, only: Option<&[String]>, cancel: &AtomicBool, mut progress: impl FnMut(u64, u64)) -> Result<(Moved, bool), String> {
+pub fn compact(game_dir: &Path, src: Option<&Path>, only: Option<&[String]>, cancel: &AtomicBool, progress: impl FnMut(u64, u64)) -> Result<(Moved, bool), String> {
+    let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2).clamp(1, 16);
+    compact_with(game_dir, src, only, cancel, threads, progress)
+}
+
+/// `compact` on at most `threads` cores. Set up runs it beside the translator (`shaders::run`), which already holds every core, so
+/// there the archive step gets the few the translator leaves and the translation never waits for it.
+pub fn compact_with(game_dir: &Path, src: Option<&Path>, only: Option<&[String]>, cancel: &AtomicBool, threads: usize, mut progress: impl FnMut(u64, u64)) -> Result<(Moved, bool), String> {
     let t0 = std::time::Instant::now();
     let loose_dir = src.map(Path::to_path_buf).unwrap_or_else(|| game_dir.join(SPIRV_REL));
     let spirv: &Path = &loose_dir;
@@ -303,7 +310,7 @@ pub fn compact(game_dir: &Path, src: Option<&Path>, only: Option<&[String]>, can
     let total = todo.len() as u64;
     // The reads are handed out across the cores and run ahead of the segment writer: one `fs::read` after another pays the card's
     // latency 7,000 times per chunk, which on a Steam Deck's SD card is most of the time this function spends.
-    let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2).clamp(1, 16);
+    let threads = threads.clamp(1, 16);
     let window = threads * 4;
     let mut moved = Moved::default();
     let mut batch: Vec<(String, Vec<u8>)> = Vec::new();
@@ -314,7 +321,7 @@ pub fn compact(game_dir: &Path, src: Option<&Path>, only: Option<&[String]>, can
         if batch.is_empty() {
             return Ok(());
         }
-        moved.disk_bytes += write_segment(&dir, batch)?;
+        moved.disk_bytes += write_segment(&dir, batch, threads)?;
         // the loose copies go only now that the segment holding them is on disk, and on every core: the unlinks are as slow as the
         // reads were on a card
         let per = batch.len().div_ceil(threads).max(1);

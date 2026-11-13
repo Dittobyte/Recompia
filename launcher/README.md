@@ -18,7 +18,8 @@ files you extracted from your own copy, writes `pkp.ini` next to `pkp.exe` and b
      after its SPIR-V is in the cache.
    - Pack (on by default, "Packed shader files" on the Set up page): each chunk goes from the stage straight into
      `shader_cache\spirv.archive\NNNNNN.pack` (zstd segments the runtime reads, `src-tauri/src/shader_archive.rs`), so a fresh
-     translation is never written to `shader_cache\spirv\` loose. On Linux the stage is a RAM filesystem (`/dev/shm`) when it has
+     translation is never written to `shader_cache\spirv\` loose. It runs beside the translator: a chunk is packed while the next
+     one is translated, on the cores the translator leaves. On Linux the stage is a RAM filesystem (`/dev/shm`) when it has
      room and is writable, so on a Steam Deck's card a chunk costs one compressed write and no loose write at all; where it has
      not, the stage is the game folder. With packing off, the chunk is moved into `shader_cache\spirv\` instead. A cache that
      already has loose files keeps them until the player packs it.

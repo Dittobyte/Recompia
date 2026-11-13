@@ -723,6 +723,26 @@ pub fn prepare(game_dir: &Path, tools_dir: &Path, cancel: &AtomicBool) -> Result
     }
 }
 
+/// One chunk's archive work, handed to the thread that packs beside the translator (`run`).
+struct PackJob {
+    game_dir: PathBuf,
+    /// the stage this chunk was translated into (a RAM filesystem on Linux, the game folder elsewhere)
+    stage: PathBuf,
+    spirv: PathBuf,
+    /// the hashes this chunk translated, so the packer takes its files and not the next chunk's
+    hashes: Vec<String>,
+    header: String,
+    rows: Vec<String>,
+    threads: usize,
+}
+
+/// How many cores the archive step may use while it runs beside the translator: what the translator leaves, but at least two. It is
+/// mostly waiting on the card, so two threads keep up with a translation that lasts minutes (a chunk's segments are a fraction of it).
+fn pack_threads(jobs: usize) -> usize {
+    let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+    cores.saturating_sub(jobs).clamp(2, 16)
+}
+
 /// The whole setup. `report` gets every progress change. Ok(true) = finished (or the limit reached), Ok(false) = cancelled.
 pub fn run(job: &Job, tools: &Tools, cancel: &AtomicBool, mut report: impl FnMut(Progress)) -> Result<bool, String> {
     let cache = cache_dir(&job.game_dir);
@@ -835,6 +855,24 @@ pub fn run(job: &Job, tools: &Tools, cancel: &AtomicBool, mut report: impl FnMut
     // committed.
     let mut worker: Option<crate::harness::Worker> = None;
     let mut mode = crate::harness::Mode::Fast;
+    // The archive step runs beside the translator instead of after it: a chunk is packed while the next one is translated, so the
+    // segments' 6.6 GB are written during the minutes of translation rather than after them. On a Steam Deck that write is most of
+    // what the shader step spent outside the translator, and it is card time, not CPU: the packer asks for the cores the translator
+    // leaves (two on a Deck) and the translator never waits for it. One job is in flight at a time, so the stage never holds more
+    // than two chunks.
+    let pack_cores = pack_threads(job.jobs);
+    let (pack_tx, pack_rx) = mpsc::sync_channel::<PackJob>(1);
+    let packer = compact.then(|| {
+        std::thread::spawn(move || -> Result<(), String> {
+            for j in pack_rx.iter() {
+                crate::shader_archive::compact_with(&j.game_dir, Some(&j.stage), Some(&j.hashes), &AtomicBool::new(false), j.threads, |_, _| {})?;
+                // The rows go last, and only once their SPIR-V is in a segment: a row is what makes a block count as done, so it is
+                // written only once the block's SPIR-V is in the cache. A segment that cannot be written fails the whole setup.
+                append_rows(&j.spirv, &j.header, &j.rows)?;
+            }
+            Ok(())
+        })
+    });
     let ran = (|| -> Result<bool, String> {
         for chunk in todo.chunks(CHUNK) {
             let mut f = fs::File::create(corpus.join("unique.tsv")).map_err(|e| e.to_string())?;
@@ -891,15 +929,28 @@ pub fn run(job: &Job, tools: &Tools, cancel: &AtomicBool, mut report: impl FnMut
             }
             let kept = if compact {
                 // Straight from the stage into the archive: a fresh translation is never written loose to the game folder, so a chunk
-                // costs one compressed write instead of a loose write, a read back and a delete.
+                // costs one compressed write instead of a loose write, a read back and a delete. The packer does it while the next chunk
+                // is translated, and appends this chunk's rows once their SPIR-V is in a segment.
                 let (rheader, rrows) = stage_rows(&stage)?;
                 let hashes: Vec<String> = rrows.iter().map(|r| first_col(r).to_string()).collect();
-                crate::shader_archive::compact(&job.game_dir, Some(&stage), Some(&hashes), &AtomicBool::new(false), |_, _| {})?;
-                append_rows(&spirv, &rheader, &rrows)?
+                let n = rrows.len();
+                pack_tx
+                    .send(PackJob {
+                        game_dir: job.game_dir.clone(),
+                        stage: stage.clone(),
+                        spirv: spirv.clone(),
+                        hashes,
+                        header: rheader,
+                        rows: rrows,
+                        threads: pack_cores,
+                    })
+                    .map_err(|_| "the archive step stopped".to_string())?;
+                n
             } else {
-                commit_stage(&stage, &spirv)?
+                let n = commit_stage(&stage, &spirv)?;
+                let _ = fs::remove_dir_all(&stage);
+                n
             };
-            let _ = fs::remove_dir_all(&stage);
             if !ok {
                 if let Some(l) = &job.log {
                     l(&format!("paused: {} shaders translated before the pause are kept", kept));
@@ -914,7 +965,16 @@ pub fn run(job: &Job, tools: &Tools, cancel: &AtomicBool, mut report: impl FnMut
     if let Some(mut w) = worker.take() {
         w.stop();
     }
-    if !ran? {
+    // the last chunk's archive work finishes here: Set up reports nothing until every shader it counted is in a segment
+    drop(pack_tx);
+    let packed = match packer {
+        Some(h) => h.join().unwrap_or_else(|_| Err("the archive step stopped without a reason".into())),
+        None => Ok(()),
+    };
+    // the archive step's own failure is why a chunk could not be handed to it, so its reason is the one reported
+    packed?;
+    let done = ran?;
+    if !done {
         return Ok(false);
     }
     let _ = fs::remove_dir_all(&stage);
