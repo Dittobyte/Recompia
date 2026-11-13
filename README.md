@@ -185,7 +185,7 @@ Link Play puts several players on one island. Cross-play works with pokopia-nati
 |---|---|
 | Off | No Link Play. |
 | Same network | The default. Same Wi-Fi or network: the host is found by itself. If not, type the host's address, for example `192.0.2.10` (under **This PC** on the host's page), in **Join directly**. |
-| Internet | **Host** or **Visit** over the internet with a room code, through a relay or a forwarded port. |
+| Internet | Play over the internet. Every room shows up in the game's **Visit a Friend** list: no room code, nothing to forward. |
 
 Changes apply the next time the game starts.
 
@@ -193,7 +193,7 @@ Changes apply the next time the game starts.
 
 **Same network.** Everyone picks **Same network**. Steam Deck and other Proton or Linux devices find hosts and are found too, on whatever network they are on. Cafe, hotel and guest Wi-Fi often keeps devices apart: there, play over the internet instead.
 
-**Over the internet.** Nothing to forward: the launcher uses the project's public relay. The host picks **Internet** -> **Host** and sends the room code; the visitor picks **Internet** -> **Visit** and types it. Your own relay or a forwarded port are under **Advanced**; any pokopia-native co-op relay works there too, and `PokopiaLauncher --host` runs one on a server. **[Step by step, and what to check when it does not connect](docs/multiplayer/README.md#step-by-step-over-the-internet).** The relay checks the room code but does not encrypt the game's traffic.
+**Over the internet.** Everyone picks **Internet**. Nothing to forward and no code to type: the launcher uses the project's public relay, and every room on it shows up in the game's **Visit a Friend** list. For a private room, say yes when the game asks to set a **Link Code**: only players who type it can join. Your own relay or a forwarded port are under **Advanced**; any pokopia-native co-op relay works there too, and `PokopiaLauncher --host` runs one on a server. **[The Link Play guide](docs/link-play.md)** has the steps and what to check when it does not connect; [the full multiplayer page](docs/multiplayer/README.md) has relays and ports. The relay does not encrypt the game's traffic.
 
 **Ports and firewall.** The first time you host, Windows Firewall asks about `pkp.exe`: allow **Private networks**. Your network must be Private too (Settings, Network & internet, your connection, Network profile type: **Private**).
 
