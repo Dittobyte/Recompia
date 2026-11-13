@@ -231,7 +231,7 @@ constexpr Row kGameplay[] = {
     key_row("Camera aim", "Abilities and tools aim where the camera looks instead of where your character faces, and your character turns to the target when the ability starts.", Key::CameraAim),
     key_row("Extra reach in blocks", "With camera aim: extra blocks of reach. Off is the game's own range.", Key::CameraAimReach, 1, "%.0f", 1, "Off"),
     key_row("Camera aim: show the ray", "Draws camera aim's ray over the picture: the blocks it tested, the block it hit and the block it selected, with the reason in a panel at the top left. For finding aiming bugs.", Key::CameraAimDebug),
-    key_row("Sort button in the bag and containers", "A Sort button in the key guide of the bag and of the container screens.", Key::InventorySort),
+    key_row("Sort button in the bag and containers", "Click Hold to Sort in the bag and storage boxes to sort at once.", Key::InventorySort),
     key_row("Sort each time the bag opens", "Sorts the bag each time the bag or a container screen opens.", Key::InventoryAutosort),
     key_row("Search in the crafting screen", "A Search button in the key guide of the crafting screen.", Key::CraftSearch),
     key_row("Item editor (experimental)", "Adds an Items tab to this screen that changes how many of an item you hold. Not during Link Play.", Key::ItemEditor),
