@@ -53,7 +53,7 @@
 > **No game files are included.** You need your own extracted copy of the game, version **2.0.1a**. This project provides no game files, keys or dumping tools. Not affiliated with Nintendo, The Pokémon Company or Koei Tecmo; Pokémon is a trademark of Nintendo, Creatures Inc. and GAME FREAK inc. (see [LEGAL.md](LEGAL.md)).
 
 > [!NOTE]
-> **Built with AI, supervised by a human.** This project is developed primarily with AI, with me as the supervisor. I have a handful of years of development experience, so it's not all slop. Every commit is reviewed, verified and tested by me before it lands.
+> **Built with AI, supervised by humans.** This project is developed primarily with AI, with Dittobyte developers as the supervisors. Note on Josh - They say they have a handful of years of development experience, so it's not all slop. Every commit is reviewed, verified and tested by before it lands.
 
 ## Screenshots
 
