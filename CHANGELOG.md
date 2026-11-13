@@ -71,6 +71,7 @@ This build is about **waiting less**. Building the game code takes about half th
 - Set up no longer looks frozen while it translates the game code: the bar moves through that step, and the time left is shown beside it
 - The launcher no longer reports "The game stopped unexpectedly" (0xC0000409) when the game closes itself
 - Removed the touch screen Menu button, which could show up in the corner on desktop PCs
+- Sort in storage boxes is on ZR instead of R, so it no longer turns the bag page once the bag is expanded; on keyboard and mouse, click **Sort**
 
 ### What to test
 - **Seamless co-op, as a visitor:** talk to Pokémon in the host's world and open your Requests: they should be your own. Do a request the host has not reached and check that the host's list does not change

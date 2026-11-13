@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Inventory sort (#323): in the bag screen (X) and the container screens a "(Y) Sort" button sits in the screen's own key guide; Y
-// (keyboard F through the default btn_y binding; R (Space) where the screen uses Y itself) or a left click on the button sorts the items of the
+// (keyboard F through the default btn_y binding; ZR where the screen uses Y itself) or a left click on the button sorts the items of the
 // panel under the cursor: part-full stacks of the same item are merged up to the game's max stack, then the stacks are ordered by the
 // item table's kind byte, then by item id; empty slots go last. [pkp] inventory_sort (on by default: the button only acts when
 // pressed), [pkp] inventory_autosort (off by default: sorts the bag once each time the screen opens). Both do nothing during Link Play.
@@ -33,9 +33,10 @@
 //    The widget lays out at most six entries (six part slots at +0xa4), so before its layout pass places them the "Hold to Sort" entry (126, X held, the second X prompt next to "Swap"; in every browsing set, in
 //    no holding set) becomes key guide 92 ("Sort", the game's own text in every language). When its part is filled the icon is set to the
 //    sort button and the part's layout is handed to the menu pointer (the key guide's click routing, pkp_menu.cpp): a left click on it
-//    sorts. The sort button is the first of Y, R that no other prompt of the shown set uses (never L: it pages the screen's tabs
-//    without being in the set or the action list, so a Sort on L also turned the page; with Y and R taken the prompt is click only)
-//    (input manager table, below): Y in the bag, R in the container screens (set 186: Add (A), Swap (X), Add Stack (Y), Store All (+),
+//    sorts. The sort button is the first of Y, ZR that no other prompt of the shown set uses (never L or R: once the bag is expanded
+//    (Packing Tips) they page its tabs without being in the set or the action list, so a Sort on either also turned the page; with Y and
+//    ZR taken the prompt is click only)
+//    (input manager table, below): Y in the bag, ZR in the container screens (set 186: Add (A), Swap (X), Add Stack (Y), Store All (+),
 //    Info (-); registered there also B, ZL Transfer Half). Its button sorts only while no registered action of the screen is on it.
 //  * m_currentUseItemSlot (save common + 0xc070, u16) holds a bag slot index: after a bag sort it is moved to the new slot of the
 //    same item.
@@ -90,10 +91,12 @@ using items::kIdMask;
 using layout::kInputMgr;
 using layout::kActionButtons;
 // The sort button: the first of these whose button no prompt of the shown key guide set and no registered action of the screen uses.
-// Y in the bag; R in the container screens (Y is Add Stack / Remove All, (+) Store All / Retrieve All, ZL Transfer Half there). Never L: the screen pages
-// its tabs with L outside the shown set and the action list, so L would sort and page at once.
+// Y in the bag; ZR in the container screens (Y is Add Stack / Remove All, (+) Store All / Retrieve All, ZL Transfer Half there). Never L or R:
+// with the bag expanded the screen pages its tabs with them outside the shown set and the action list, so they would sort and page at once.
+// ZR's keyboard binding is the left mouse button, which play mode keeps from the game while the menu pointer is on (play_engine.cpp), so
+// a click on an item never sorts; keyboard players click the prompt. Action 0x01 is shown as ZR (glyph dump, modding notes).
 struct SortButton { uint16_t act; uint8_t button; hid::NpadButtonBit pad; const char* name; };   // an action shown as that button (the icon), the pad bit
-constexpr SortButton kSortButtons[] = {{0x97, 4, hid::kBtnY, "Y"}, {0x03, 0xb, hid::kBtnR, "R"}};
+constexpr SortButton kSortButtons[] = {{0x97, 4, hid::kBtnY, "Y"}, {0x01, 0xd, hid::kBtnZR, "ZR"}};
 constexpr int kNoButton = -1;   // click only
 constexpr auto kReopenGap = std::chrono::milliseconds(300);   // no screen frame for this long = the screen was closed
 // the key guide button
