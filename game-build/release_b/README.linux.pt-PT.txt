@@ -4,7 +4,7 @@ Esta é uma tradução automática do texto em inglês; pode conter erros. O tex
 Pokopia PC @VERSION@ para Linux, SteamOS e Steam Deck
 
 1. Precisas de um controlador Vulkan: os controladores Mesa para AMD e Intel ou o proprietário da NVIDIA. Nada mais, porque o jogo, o runtime e o tradutor de shaders são binários de Linux.
-2. Executa o PokopiaLauncher.AppImage e escolhe a pasta do teu dump (base/ e updates/<version>/, cada uma com exefs/ e romfs/) ou um ficheiro .nup. É necessária a versão 2.0.1a.
+2. Executa o PokopiaLauncher.AppImage e escolhe a pasta do teu dump (base/ e updates/<version>/, cada uma com exefs/ e romfs/) ou um ficheiro .nup ou .nx. É necessária a versão 2.0.1a.
 3. Carrega em Set up. Da primeira vez descarrega as ferramentas de compilação (Python e Zig, cerca de 100 MB) e depois compila o jogo e traduz os shaders neste PC. Podes pausar e continuar mais tarde.
 4. Carrega em Play. O jogo corre nativamente: sem Proton e sem Wine. Os upscalers FSR 3 e DLSS são só para Windows.
 

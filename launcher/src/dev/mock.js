@@ -291,7 +291,7 @@ function pauseSetup() {
 }
 
 let updateStop = null;
-let nupStop = false;
+let unpackStop = false;
 
 function runUpdate() {
   return new Promise((resolve, reject) => {
@@ -434,7 +434,7 @@ function handle(cmd, args) {
     case 'apply_branding': return null;
     case 'get_overview': return { game_dir: GAME_DIR, default_game_dir: GAME_DIR, exe_exists: sc.exe_exists, builds_exe: true };
     case 'pick_folder': return 'D:/Dumps/Pokopia';
-    case 'pick_nup': return 'D:/Downloads/pokopia-2.0.1a.nup';
+    case 'pick_package': return 'D:/Downloads/pokopia-2.0.1a.nup';
     case 'pick_nsp': return 'D:/Downloads/Pokopia DLC [0400A3A01EE4D001].nsp';
     case 'import_dlc': return ['0400A3A01EE4D001'];
     case 'validate_dump': return dumpReport(args.path);
@@ -442,13 +442,13 @@ function handle(cmd, args) {
       dumpDir = args.path;
       readiness = { kind: 'setup', detail: 'Press Set up to build the game and prepare its shaders.' };
       return null;
-    case 'import_nup':
-      nupStop = false;
-      return runTicks('nup-progress', (i, n) => {
-        if (nupStop) throw { code: 'nup_cancelled', message: 'Unpacking was cancelled.' };
+    case 'import_package':
+      unpackStop = false;
+      return runTicks('unpack-progress', (i, n) => {
+        if (unpackStop) throw { code: 'unpack_cancelled', message: 'Unpacking was cancelled.' };
         return { done: i, total: n, file: `romfs/data/pack_${i}.bin` };
       }).then(() => `${GAME_DIR}/nup_dump`);
-    case 'cancel_nup': nupStop = true; return null;
+    case 'cancel_unpack': unpackStop = true; return null;
     case 'read_settings': return structuredClone(settings);
     case 'prompt_icon_pack': throw 'assets/prompts/prompt_icons.pak not found in the game folder';   // the preview row says so
     case 'write_settings':

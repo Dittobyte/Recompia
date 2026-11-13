@@ -12,7 +12,7 @@ import { needsFinish, primaryAction, setupStepOf } from '../action.js';
 
 const GB = 2 ** 30;   // preflight.rs GB
 const SLOW_CHECK_MS = 200;   // a faster check never shows the "Checking" panel
-const NUP_CANCELLED = 'nup_cancelled';   // error.rs: the player stopped it, not a failure
+const UNPACK_CANCELLED = 'unpack_cancelled';   // error.rs: the player stopped it, not a failure
 const SETUP_BUSY = t('Setup is running. Pause it first.');
 
 const STEPS = [t('Build game'), t('Translate shaders'), t('First run')];
@@ -65,7 +65,7 @@ function etaOf(p, now = Date.now()) {
 const flow = {
   report: null,      // validate_dump of the last folder looked at
   error: null,       // why the last choice failed outside report.errors
-  checking: null,    // the path of a slow check, or true while a .nup is on its way
+  checking: null,    // the path of a slow check, or true while a package is on its way
   checkId: 0,        // the newest check; older answers are dropped
   loaded: false,     // the saved folder has been looked at
   saved: '',         // config dump_dir
@@ -122,10 +122,10 @@ async function unpack(path) {
   flow.checking = true;   // holds the panel between the last unpack tick and the check
   let dir = null;
   try {
-    dir = await store.importNup(path);
+    dir = await store.importPackage(path);
   } catch (e) {
     flow.checking = null;
-    if (errCode(e) !== NUP_CANCELLED) {
+    if (errCode(e) !== UNPACK_CANCELLED) {
       flow.error = errText(e);
       flow.report = null;
       flow.changing = false;
@@ -145,16 +145,16 @@ async function addDlc(path) {
   }
 }
 
-/** A folder, a .nup or the DLC .nsp, from a dialog, the path field or a drop. */
+/** A folder, a game package (.nup or .nx) or the DLC .nsp, from a dialog, the path field or a drop. */
 function take(path) {
   const s = store.state;
   const p = path.trim();
   if (!p) return;
   if (setupRunning(s)) return toast(SETUP_BUSY, 'error');
   if (s.update) return toast(t('The launcher is updating.'), 'error');
-  if (s.nup) return toast(t('Game files are being unpacked.'), 'error');
+  if (s.unpack) return toast(t('Game files are being unpacked.'), 'error');
   if (/\.nsp$/i.test(p)) return addDlc(p);
-  return /\.nup$/i.test(p) ? unpack(p) : check(p);
+  return /\.(nup|nx)$/i.test(p) ? unpack(p) : check(p);
 }
 
 async function pick(command, args) {
@@ -179,7 +179,7 @@ async function loadSaved() {
     flow.small = !cfg.loose_shaders;
     paint?.();
     // a .nup is no folder: readiness read it, app.dump has what there is to say
-    if (flow.saved && !/\.nup$/i.test(flow.saved) && !flow.checking && !store.state.nup) {
+    if (flow.saved && !/\.nup$/i.test(flow.saved) && !flow.checking && !store.state.unpack) {
       const id = flow.checkId;
       const report = await api.validateDump({ path: flow.saved });
       if (id === flow.checkId) flow.report = report;
@@ -223,7 +223,7 @@ function viewOf(s) {
   if (!s.app) return s.loadError ? 'down' : 'loading';
   const p = s.setup?.progress;
   if (p?.state === 'running') return 'running';
-  if (s.nup) return 'nup';
+  if (s.unpack) return 'unpack';
   if (flow.checking) return 'checking';
   if (flow.changing) return 'choose';
   if (flow.error || (flow.report && !flow.report.chosen)) return 'bad';
@@ -254,7 +254,7 @@ function factOf(s, view) {
 
 const chooseButtons = () => `<div class="setup-choices">
     <button class="btn primary big" data-act="folder" data-focus>${icon('folder-open')}${esc(t('Choose a folder'))}</button>
-    <button class="btn big" data-act="nup">${icon('file-archive')}${esc(t('Choose a .nup file'))}</button>
+    <button class="btn big" data-act="package">${icon('file-archive')}${esc(t('Choose a .nup or .nx file'))}</button>
   </div>`;
 
 const LAYOUT = `Pokopia/
@@ -292,8 +292,8 @@ function detailsHtml() {
       ${aoc.length ? `<p>${esc(t('Add-on content: {count} found', { count: aoc.length }))} (<span class="selectable">${aoc.map(esc).join(', ')}</span>)</p>` : ''}
       <pre class="path setup-tree">${esc(LAYOUT)}</pre>
       <p>${esc(t('The files must already be decrypted. The highest valid update is used, otherwise the base game.'))}</p>
-      <p>${esc(t('A .nup is unpacked once into nup_dump next to the game and needs the free space of the full game. Add-ons (DLC) in it are unpacked to nup_dump/aoc and found on their own.'))}</p>
-      <p>${esc(t('The launcher only reads this folder and never writes to it (a .nup is unpacked into its own copy).'))}</p>
+      <p>${esc(t('A .nup or .nx is unpacked once into nup_dump next to the game and needs the free space of the full game. Add-ons (DLC) in it are unpacked to nup_dump/aoc and found on their own.'))}</p>
+      <p>${esc(t('The launcher only reads this folder and never writes to it (a .nup or .nx is unpacked into its own copy).'))}</p>
       <p>${esc(t("DLC comes as a decrypted .nsp: press Add DLC (or drop the file here) and its add-on is unpacked into the folder pkp.ini's aoc_dir names, aoc next to the game when it names none."))}</p>
     </div>
   </details>`;
@@ -365,11 +365,11 @@ const VIEWS = {
       ${detailsHtml()}`;
   },
 
-  nup: () => `<h1>${esc(t('Unpacking your game files'))}</h1>
+  unpack: () => `<h1>${esc(t('Unpacking your game files'))}</h1>
     ${meterHtml(t('Unpacking progress'))}
     <div class="setup-foot">
-      <div class="path clip grow" id="nup-file"></div>
-      <button class="btn sm" data-act="cancel-nup" data-focus>${esc(t('Cancel'))}</button>
+      <div class="path clip grow" id="unpack-file"></div>
+      <button class="btn sm" data-act="cancel-unpack" data-focus>${esc(t('Cancel'))}</button>
     </div>`,
 
   noexe: (s) => `<h1>${esc(t('The game is missing'))}</h1>
@@ -424,7 +424,7 @@ const VIEWS = {
 export function render(el, ctx) {
   // ctx.change: Settings > Game "Change game files". ctx.again: "Set up again" over a finished setup.
   Object.assign(flow, { changing: !!ctx.change, again: !!ctx.again, typing: false, pausing: false, need: undefined });
-  if (!flow.checking && !store.state.nup) Object.assign(flow, { report: null, error: null });
+  if (!flow.checking && !store.state.unpack) Object.assign(flow, { report: null, error: null });
 
   el.innerHTML = `<div class="setup">
     ${ctx.firstRun ? `<div class="setup-brand">${brandImg('logo', 'alt="Pokopia"')}</div>` : ''}
@@ -435,7 +435,7 @@ export function render(el, ctx) {
   let shown = null;
 
   function live(s, view) {
-    panel.classList.toggle('dropping', !!s.dragging && !['running', 'nup', 'checking'].includes(view));
+    panel.classList.toggle('dropping', !!s.dragging && !['running', 'unpack', 'checking'].includes(view));
 
     const go = part('primary');
     if (go) {
@@ -482,11 +482,11 @@ export function render(el, ctx) {
       pause.disabled = flow.pausing;
       pause.querySelector('span').textContent = flow.pausing ? t('Pausing') : t('Pause');
     }
-    if (view === 'nup') {
-      const n = s.nup;
+    if (view === 'unpack') {
+      const n = s.unpack;
       meter(n.total ? Math.min(100, Math.floor((100 * n.done) / n.total)) : null, t('Reading'));
-      part('nup-file').textContent = n.file;
-      part('nup-file').title = n.file;
+      part('unpack-file').textContent = n.file;
+      part('unpack-file').title = n.file;
     }
   }
 
@@ -525,7 +525,7 @@ export function render(el, ctx) {
     const act = e.target.closest('[data-act]')?.dataset.act;
     switch (act) {
       case 'folder': return pick(api.pickFolder, { title: t('Choose your Pokopia game files folder'), start: flow.saved || null });
-      case 'nup': return pick(api.pickNup, { start: null });
+      case 'package': return pick(api.pickPackage, { start: null });
       case 'dlc': return pick(api.pickNsp);
       case 'type':
         flow.typing = true;
@@ -539,7 +539,7 @@ export function render(el, ctx) {
       case 'again': flow.again = true; return draw();
       case 'not-again': flow.again = false; return draw();
       case 'home': return ctx.go('home');
-      case 'cancel-nup': return store.cancelNup().catch((err) => toast(errText(err), 'error'));
+      case 'cancel-unpack': return store.cancelUnpack().catch((err) => toast(errText(err), 'error'));
       case 'pause': flow.pausing = true; draw(); return store.pauseSetup();
       case 'log': return api.openSetupLog().catch((err) => toast(errText(err), 'error'));
       case 'primary': {

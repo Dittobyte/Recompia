@@ -4,7 +4,7 @@
 Pokopia PC @VERSION@ Linux, SteamOS और Steam Deck के लिए
 
 1. आपको एक Vulkan ड्राइवर चाहिए: Mesa के AMD और Intel ड्राइवर या NVIDIA का proprietary ड्राइवर। इसके अलावा कुछ नहीं, क्योंकि गेम, रनटाइम और शेडर ट्रांसलेटर सभी Linux बाइनरी हैं।
-2. PokopiaLauncher.AppImage चलाएँ और अपना डंप फ़ोल्डर चुनें (base/ और updates/<version>/, दोनों में exefs/ और romfs/) या कोई .nup फ़ाइल। संस्करण 2.0.1a आवश्यक है।
+2. PokopiaLauncher.AppImage चलाएँ और अपना डंप फ़ोल्डर चुनें (base/ और updates/<version>/, दोनों में exefs/ और romfs/) या कोई .nup या .nx फ़ाइल। संस्करण 2.0.1a आवश्यक है।
 3. Set up दबाएँ। पहली बार यह अपने बिल्ड टूल डाउनलोड करता है (Python और Zig, लगभग 100 MB), फिर इसी PC पर गेम को कंपाइल करता है और उसके शेडर का अनुवाद करता है। आप रोककर बाद में जारी रख सकते हैं।
 4. Play दबाएँ। गेम मूल रूप से चलता है: न Proton, न Wine। FSR 3 और DLSS अपस्केलर केवल Windows के लिए हैं।
 

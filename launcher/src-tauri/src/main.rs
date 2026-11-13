@@ -34,6 +34,7 @@ mod mods_update;
 mod nsp;
 mod launch;
 mod nup;
+mod nx;
 mod open;
 mod paths;
 mod play;
@@ -67,6 +68,7 @@ mod states;
 mod storage;
 #[cfg(debug_assertions)]
 mod testhook;
+mod unpack;
 mod update;
 mod update_apply;
 mod update_game;
@@ -139,11 +141,11 @@ fn main() {
             readiness::get_overview,
             dialogs::pick_folder,
             dump_cmds::validate_dump,
-            dialogs::pick_nup,
+            dialogs::pick_package,
             dialogs::pick_nsp,
             dump_cmds::import_dlc,
-            dump_cmds::import_nup,
-            dump_cmds::cancel_nup,
+            dump_cmds::import_package,
+            dump_cmds::cancel_unpack,
             dump_cmds::save_dump,
             settings_cmds::read_settings,
             settings_cmds::write_settings,

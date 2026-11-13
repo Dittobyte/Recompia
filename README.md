@@ -83,7 +83,7 @@
 - If a save can't be written (a full disk, OneDrive or antivirus holding the file), your last good save is kept and the game tells you.
 
 ### Easy setup
-- **Use your dump as it comes:** a folder (with `base` and `updates`) or a single `.nup` file.
+- **Use your dump as it comes:** a folder (with `base` and `updates`) or a single `.nup` or `.nx` file.
 - **Clear messages if something is wrong with your dump:** the wrong game version, a missing update, or files damaged while copying. The launcher tells you what to do.
 - **Checks before it starts:** enough disk space, a working graphics driver, enough memory.
 - **Use fewer cores** keeps your PC usable while it builds. You can pause and carry on later.
@@ -214,7 +214,7 @@ Link Play: joining and walking around together work. See [docs/multiplayer](docs
 - **The launcher says it found no usable game files, or Set up says a file does not match.** Pick the folder that holds `base` and `updates` (for example `Pokopia_v2.0.1a`). Each needs `exefs` (`main`, `sdk`, `subsdk0`, `rtld`, `main.npdm`) and `romfs`. A file that does not match is damaged. Dump it again, or copy it again.
 - **The launcher says the game data (romfs) is incomplete, or the game closed at start with "pkp.exe exited with code 4".** Your dumping tool wrote the update's `romfs` without the base game's files under it (an update only holds the files it changes). Keep the base game in the same dump (`base` next to `updates`, each with `exefs` and `romfs`) and pick the folder that holds both: the launcher adds the missing files from `base` itself. Then press **Set up** once more. Otherwise dump the game again with the update merged into the base game.
 - **The launcher says the dump was copied in text mode.** You copied it with FTP in text mode, which damages `main`, `sdk` and `subsdk0`. Copy the `exefs` and `romfs` folders again with the transfer type set to **Binary** (FileZilla: Transfer, Transfer type, Binary).
-- **Your dump is one file** (`.nsp`, `.xci`). The launcher takes the game as folders, or as a `.nup`. Extract the `.nsp` or `.xci` to folders with your dumping tool.
+- **Your dump is one file** (`.nsp`, `.xci`). The launcher takes the game as folders, or as a `.nup` or `.nx` package (an `.nx` made from extracted files or from a `.nup`, not straight from the `.nsp` or `.xci`). Extract the `.nsp` or `.xci` to folders with your dumping tool.
 - **Setup stops with an error about a file that cannot be opened or removed.** Put the folder somewhere plain, like `C:\Pokopia`, not in a folder that OneDrive syncs. Your antivirus may be scanning the files it is building: wait for it, or allow the folder. **Open setup log** shows where it stopped.
 - **Set up warns before it starts.** It checks free disk space (about 14 GB with packed shader files, the default, or about 31 GB with loose ones), Vulkan, memory and the processor first. On an Intel 13th or 14th generation desktop CPU, update the BIOS before you set up: without Intel's fix these CPUs can crash under long full load. If the PC gets hot or hard to use while it builds, tick **Use fewer cores**.
 - **Low frame rate, or a blurry picture.** The picture size is fixed when the game starts. It is the size of the window or screen at that moment (**Settings**, **Display**).
@@ -239,7 +239,7 @@ All of these are in the game folder: the folder with `PokopiaLauncher.exe` and `
 | Log | `pkp.log`, written on every start from the launcher. A crash also writes `pkp_crash.txt`, `pkp_freeze.txt` or `pkp_fatal.txt`. |
 | Translated shaders | `shader_cache` (about 26 GB) |
 | Build files | `build` (the setup's work folder) |
-| Unpacked `.nup` | `nup_dump`, if you picked a `.nup` (its add-ons, if any, in `nup_dump/aoc`) |
+| Unpacked `.nup` or `.nx` | `nup_dump`, if you picked a `.nup` or `.nx` (its add-ons, if any, in `nup_dump/aoc`) |
 | Launcher settings | `%APPDATA%\org.pkp-recomp.launcher\launcher.json` (your dump folder and game folder) |
 
 Never attach game files, the `build` or `shader_cache` folders, or saves to an issue. `pkp.log` is enough.
