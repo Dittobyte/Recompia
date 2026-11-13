@@ -79,6 +79,12 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, FIRST_COMPLETED, wait
 
+# The launcher reads this script's stdout and stderr as UTF-8, and lift() reads its --lift-one children's the same way. Under -I
+# Python writes a pipe in the ANSI code page (cp1252 on a Portuguese Windows), so an @error naming a folder such as
+# "OneDrive\Área de Trabalho" reached the launcher as bytes it could not read, and Set up failed with no reason (#630).
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, 'reconfigure'):
+        _stream.reconfigure(encoding='utf-8', errors='replace')
 HERE = os.path.dirname(os.path.abspath(__file__))
 RECOMP = os.path.join(HERE, 'recomp')
 SDK = os.path.join(HERE, 'sdk')

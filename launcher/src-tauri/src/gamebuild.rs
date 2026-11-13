@@ -18,7 +18,6 @@
 //! Its crate-local imports are host.rs (with download.rs) and runtime_api.rs, so `examples/first_run.rs` can build the files alone.
 
 use std::fs;
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -293,11 +292,11 @@ pub fn run(job: &Job, tools: &Tools, cancel: &AtomicBool, mut report: impl FnMut
     let out = child.stdout.take().unwrap();
     let err = child.stderr.take().unwrap();
     let (tx, rx) = std::sync::mpsc::channel::<String>();
-    std::thread::spawn(move || BufReader::new(out).lines().map_while(Result::ok).for_each(|l| drop(tx.send(l))));
+    std::thread::spawn(move || crate::child_lines::lines(out).for_each(|l| drop(tx.send(l))));
     let elog = job.log.clone();
     let err_tail = std::thread::spawn(move || {
         let mut tail: Vec<String> = Vec::new();
-        for l in BufReader::new(err).lines().map_while(Result::ok) {
+        for l in crate::child_lines::lines(err) {
             if let Some(f) = &elog {
                 f(&format!("stderr: {}", l));
             }

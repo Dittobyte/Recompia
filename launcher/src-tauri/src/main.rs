@@ -4,6 +4,7 @@
 mod backup_cmds;
 mod branding;
 mod branding_cmds;
+mod child_lines;
 mod cli;
 mod config;
 mod dialogs;

@@ -5,6 +5,8 @@
 //! it fetches the Linux build tools first (host.rs). Prints each phase's time.
 
 // host.rs reaches the launcher's own modules, so an example carries the same set the binary declares (main.rs), by path.
+#[path = "../src/child_lines.rs"]
+mod child_lines;
 #[allow(dead_code, clippy::all)]
 #[path = "../src/config.rs"]
 mod config;
