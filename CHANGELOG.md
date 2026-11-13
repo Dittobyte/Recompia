@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Fixed
+- A crash from an internal error now names the error in pkp.log
+- Linux: the game no longer closes at once without a message when the game folder or a game file has a name that is not valid UTF-8; it says which folder
 - An update no longer stops with "The prepared game code cannot be put in place (this release changes lifter)" in a game folder first installed from 0.9.0 or older
 
 ## 0.13.0 (build Q: Quokka)
