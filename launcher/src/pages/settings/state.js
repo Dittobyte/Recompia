@@ -19,6 +19,7 @@ export function createState({ dump, cfg, dlss, overview, promptIcons }, ctx) {
     gameDir: dump.game_dir,
     sources: [],
     profiles: { active: 'default', profiles: [] },
+    playTimes: {},        // profile id -> seconds played (play_time.rs), only the profiles that have one
     repairBackup: null,   // the last repair's backup (name, files), when Undo has something to put back
     backups: null,        // savebackup.rs Status: the settings, how many copies and the newest
     steamBusy: false,
@@ -51,6 +52,7 @@ export function env(st) {
     taskBusy: !!s.task || s.starting,
     saveSources: st.sources,
     profiles: st.profiles,
+    playTimes: st.playTimes,
     repairBackup: st.repairBackup,
     backups: st.backups,
     backupLine: backupText(st.backups),

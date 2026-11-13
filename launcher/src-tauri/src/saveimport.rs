@@ -188,6 +188,11 @@ pub fn uid_key(uid_hex: &str) -> Option<String> {
     Some(format!("{}{}", le(&h[..16]), le(&h[16..])))
 }
 
+/// The account folder the runtime plays for [account] uid: that uid's, or the runtime's built-in user's when it is empty (or not a uid).
+pub fn account_key_of(uid_hex: &str) -> String {
+    uid_key(uid_hex).or_else(|| uid_key(DEFAULT_UID)).unwrap()
+}
+
 fn app_hex() -> String {
     PROGRAM_ID.to_le_bytes().iter().map(|b| format!("{:02x}", b)).collect()
 }
@@ -222,7 +227,7 @@ pub fn target_key(save_dir: &Path, ini_uid: &str) -> String {
     if let Some(stem) = metas.first().and_then(|m| m.file_stem()).and_then(|s| s.to_str()) {
         return stem.to_string();
     }
-    uid_key(ini_uid).or_else(|| uid_key(DEFAULT_UID)).unwrap()
+    account_key_of(ini_uid)
 }
 
 fn meta_text(key: &str) -> String {

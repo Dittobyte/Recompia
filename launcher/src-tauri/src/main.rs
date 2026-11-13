@@ -39,6 +39,7 @@ mod nx;
 mod open;
 mod paths;
 mod play;
+mod play_time;
 mod presence;
 mod proc_tree;
 mod preflight;
@@ -168,6 +169,7 @@ fn main() {
             saves::import_save,
             saves::open_save_dir,
             profile_cmds::profiles_list,
+            profile_cmds::profiles_play_time,
             profile_cmds::profile_add,
             profile_cmds::profile_rename,
             profile_cmds::profile_remove,

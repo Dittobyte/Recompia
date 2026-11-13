@@ -895,4 +895,8 @@ export default {
   "Classic": "クラシック",
   "Classic is the bubble-letter logo and R icon of earlier versions. The icon changes for the launcher, the game and the Steam shortcut (Steam shows it after a restart). Windows can take a moment to redraw an icon it has already shown.": "クラシックは、以前のバージョンのバブル文字のロゴと R アイコンです。アイコンはランチャー、ゲーム、Steam のショートカットで変わります（Steam では再起動後に表示されます）。表示済みのアイコンを Windows が描き直すまで少し時間がかかることがあります。",
   "The new icon is not everywhere yet: {error}": "新しいアイコンはまだすべてに反映されていません: {error}",
+  '{n} min': '{n}分',
+  '{h} h {m} min': '{h}時間{m}分',
+  '{h} h': '{h}時間',
+  'Play time: {time}': 'プレイ時間: {time}',
 };

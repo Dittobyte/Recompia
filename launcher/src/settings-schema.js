@@ -23,6 +23,7 @@
 // Rows that are not fields: info (label, value, actions), keycap (label, key), note (a line of text), and { expand } for rows made from env.
 
 import { num, t } from './i18n.js';
+import { playTimeLine } from './play-time-model.js';
 import { previewItem } from './prompt-pack-model.js';
 import controlsSchema from '../../runtime/docs/controls_schema.json' with { type: 'json' };
 import gameIniSchema from '../../runtime/docs/pkp_ini_schema.json' with { type: 'json' };
@@ -513,7 +514,8 @@ export const SECTIONS = [
             expand: (env) => (env.profiles?.profiles ?? []).map((p) => {
               const on = p.id === env.profiles.active;
               return {
-                id: `profile_${p.id}`, label: p.name, type: 'info', value: on ? t('Playing') : '',
+                id: `profile_${p.id}`, label: p.name, type: 'info',
+                value: [on ? t('Playing') : '', playTimeLine(env.playTimes, p.id)].filter(Boolean).join(' · '),
                 actions: [
                   ...(on ? [] : [{ act: 'profile-use', arg: p.id, name: p.name, label: t('Use'), icon: 'user-check', disabled: env.gameBusy }]),
                   { act: 'profile-rename', arg: p.id, name: p.name, label: t('Rename'), icon: 'pencil', disabled: env.gameBusy },

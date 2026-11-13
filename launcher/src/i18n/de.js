@@ -895,4 +895,8 @@ export default {
   "Classic": "Klassisch",
   "Classic is the bubble-letter logo and R icon of earlier versions. The icon changes for the launcher, the game and the Steam shortcut (Steam shows it after a restart). Windows can take a moment to redraw an icon it has already shown.": "Klassisch ist das Logo mit Ballonbuchstaben und das R-Symbol früherer Versionen. Das Symbol ändert sich für den Launcher, das Spiel und die Steam-Verknüpfung (Steam zeigt es nach einem Neustart). Windows braucht manchmal einen Moment, um ein bereits angezeigtes Symbol neu zu zeichnen.",
   "The new icon is not everywhere yet: {error}": "Das neue Symbol ist noch nicht überall: {error}",
+  '{n} min': '{n} Min.',
+  '{h} h {m} min': '{h} Std. {m} Min.',
+  '{h} h': '{h} Std.',
+  'Play time: {time}': 'Spielzeit: {time}',
 };

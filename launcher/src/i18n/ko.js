@@ -895,4 +895,8 @@ export default {
   "Classic": "클래식",
   "Classic is the bubble-letter logo and R icon of earlier versions. The icon changes for the launcher, the game and the Steam shortcut (Steam shows it after a restart). Windows can take a moment to redraw an icon it has already shown.": "클래식은 이전 버전의 버블 글자 로고와 R 아이콘입니다. 아이콘은 런처, 게임, Steam 바로 가기에서 바뀝니다(Steam은 다시 시작한 후 표시합니다). 이미 표시된 아이콘을 Windows가 다시 그리는 데 잠시 걸릴 수 있습니다.",
   "The new icon is not everywhere yet: {error}": "새 아이콘이 아직 모든 곳에 적용되지 않았습니다: {error}",
+  '{n} min': '{n}분',
+  '{h} h {m} min': '{h}시간 {m}분',
+  '{h} h': '{h}시간',
+  'Play time: {time}': '플레이 시간: {time}',
 };
