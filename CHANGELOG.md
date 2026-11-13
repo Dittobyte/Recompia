@@ -38,6 +38,7 @@ This build is about **waiting less**. Building the game code takes about half th
 - Story co-op: your own save is written after each story step in a session
 
 ### Fixed
+- The Ditto loading screen's black background reaches the top and bottom on taller screens such as the Steam Deck (#534). The game code is relinked and existing shaders are reused.
 - The launcher no longer reports "The game stopped unexpectedly" (0xC0000409) when the game closes itself
 - Removed the touch screen Menu button, which could show up in the corner on desktop PCs
 

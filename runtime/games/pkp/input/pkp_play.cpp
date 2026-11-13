@@ -232,6 +232,11 @@ play::DisplayLive play_display_live() {
     return l;
 }
 
+int play_ui_canvas_height() {
+    const uint64_t size = wide().ui_size;
+    return size ? rd<int32_t>(size + sizeof(int32_t)) : kTableH;
+}
+
 uint32_t play_display_calls() { return static_cast<uint32_t>(st().res_calls.load() + st().copy_calls.load()); }
 
 bool play_follow_live() {
