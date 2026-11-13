@@ -50,6 +50,10 @@ function Mirror([string]$from, [string]$to, [string[]]$exclude = @()) {
 # built here
 Put (Join-Path $RtDir 'pkp_rt.dll') 'pkp_rt.dll'
 Put (Join-Path $RtDir 'pkp_rt.lib') 'tools\build\sdk\pkp_rt.lib'
+# libusb 1.0.30, unchanged official build (runtime/cmake/gfx_deps.cmake copies it next to pkp_rt.dll): SDL loads it by name for
+# controllers it reaches over USB, so it sits next to pkp.exe, ahead of any other libusb-1.0.dll on PATH.
+Put (Join-Path $RtDir 'libusb-1.0.dll') 'libusb-1.0.dll'
+Put "$root\runtime\third_party\libusb\COPYING" 'licenses\LICENSE.libusb.LGPL-2.1.txt'
 Put $Launcher 'PokopiaLauncher.exe'
 Mirror $Harness 'tools\spirv_harness' @('*.pdb')
 # from the checkout

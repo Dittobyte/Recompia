@@ -66,7 +66,59 @@ set(SDL_INSTALL OFF CACHE BOOL "" FORCE)
 set(SDL_DISABLE_INSTALL ON CACHE BOOL "" FORCE)
 set(SDL_DISABLE_INSTALL_DOCS ON CACHE BOOL "" FORCE)
 set(SDL_VENDOR_INFO "nxrt" CACHE STRING "" FORCE)
+
+# libusb 1.0.30 (LGPL-2.1-or-later), Windows x64: on Windows SDL's HIDAPI reaches some controllers only through libusb (the
+# Switch 2 Pro Controller over USB, SDL_hidapi_switch2.c, #522). SDL loads libusb-1.0.dll by name at run time
+# (SDL_HIDAPI_LIBUSB_SHARED), so the runtime does not import it and runs without it; nxrt_bundle_libusb() puts it next to the
+# executable, the first place Windows looks. Only the import library and libusb.h are needed to build. The official binary
+# release is a .7z that CMake's bundled libarchive cannot unpack (its ARM64 builds use the ARM64 filter), so the system bsdtar
+# (Windows 10 1803 and later) extracts the three files used.
+set(NXRT_LIBUSB_DLL "" CACHE INTERNAL "libusb-1.0.dll that SDL loads at run time (empty: not used on this platform)")
+if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 8 AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|x86_64)$")
+    set(_nxrt_libusb_7z "${NXRT_DEPS_DIR}/libusb-1.0.30.7z")
+    file(DOWNLOAD https://github.com/libusb/libusb/releases/download/v1.0.30/libusb-1.0.30.7z "${_nxrt_libusb_7z}"
+        EXPECTED_HASH SHA256=7fb1dfec805b97983763d7d0ae244320da12add1003d4249c96cc4d586398c79)
+    set(_nxrt_libusb_dir "${CMAKE_BINARY_DIR}/_deps/libusb-1.0.30")
+    set(_nxrt_libusb_files include/libusb.h VS2022/MS64/dll/libusb-1.0.lib VS2022/MS64/dll/libusb-1.0.dll)
+    if(NOT EXISTS "${_nxrt_libusb_dir}/VS2022/MS64/dll/libusb-1.0.dll")
+        find_program(NXRT_BSDTAR tar PATHS "$ENV{SystemRoot}/System32" NO_DEFAULT_PATH REQUIRED)
+        file(MAKE_DIRECTORY "${_nxrt_libusb_dir}")
+        execute_process(COMMAND "${NXRT_BSDTAR}" -xf "${_nxrt_libusb_7z}" ${_nxrt_libusb_files}
+            WORKING_DIRECTORY "${_nxrt_libusb_dir}" RESULT_VARIABLE _nxrt_libusb_rc ERROR_VARIABLE _nxrt_libusb_err)
+        if(NOT _nxrt_libusb_rc EQUAL 0 OR NOT EXISTS "${_nxrt_libusb_dir}/VS2022/MS64/dll/libusb-1.0.dll")
+            file(REMOVE_RECURSE "${_nxrt_libusb_dir}")
+            message(FATAL_ERROR "could not extract ${_nxrt_libusb_7z} with ${NXRT_BSDTAR}: ${_nxrt_libusb_err}")
+        endif()
+    endif()
+    set(LibUSB_INCLUDE_PATH "${_nxrt_libusb_dir}/include" CACHE PATH "" FORCE)
+    set(LibUSB_LIBRARY "${_nxrt_libusb_dir}/VS2022/MS64/dll/libusb-1.0.lib" CACHE FILEPATH "" FORCE)
+    set(NXRT_LIBUSB_DLL "${_nxrt_libusb_dir}/VS2022/MS64/dll/libusb-1.0.dll" CACHE INTERNAL "")
+    set(SDL_HIDAPI ON CACHE BOOL "" FORCE)
+    set(SDL_HIDAPI_LIBUSB ON CACHE BOOL "" FORCE)
+    set(SDL_HIDAPI_LIBUSB_SHARED ON CACHE BOOL "" FORCE)
+endif()
+
 FetchContent_MakeAvailable(sdl3 vulkan_headers volk vma imgui zstd)
+
+# SDL drops to linking libusb directly when it cannot name the DLL behind the import library, which would make the runtime
+# fail to start on a PC without libusb-1.0.dll. Refuse that build instead.
+if(NXRT_LIBUSB_DLL)
+    # SDL configures this file, then copies it per build type at generate time; the configured one exists already.
+    file(STRINGS "${sdl3_BINARY_DIR}/CMakeFiles/SDL_build_config.h.intermediate" _nxrt_libusb_dynamic
+        REGEX "^#define SDL_LIBUSB_DYNAMIC \"libusb-1\\.0\\.dll\"")
+    if(NOT _nxrt_libusb_dynamic)
+        message(FATAL_ERROR "SDL did not set up libusb as a run-time load (SDL_LIBUSB_DYNAMIC); see its configure output above")
+    endif()
+endif()
+
+# Puts libusb-1.0.dll next to a target's output: SDL loads it by name, and the executable's folder is searched first, so a
+# different libusb-1.0.dll on PATH is never picked up instead. No-op where libusb is not used.
+function(nxrt_bundle_libusb target)
+    if(NXRT_LIBUSB_DLL)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${NXRT_LIBUSB_DLL}" "$<TARGET_FILE_DIR:${target}>")
+    endif()
+endfunction()
 
 file(GLOB NXRT_ZSTD_SOURCES "${zstd_SOURCE_DIR}/lib/common/*.c" "${zstd_SOURCE_DIR}/lib/compress/*.c" "${zstd_SOURCE_DIR}/lib/decompress/*.c")
 add_library(nxrt_zstd STATIC ${NXRT_ZSTD_SOURCES})

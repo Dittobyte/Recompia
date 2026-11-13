@@ -299,6 +299,7 @@ jobs:
           path: |
             build/rtdll/pkp_rt.dll
             build/rtdll/pkp_rt.lib
+            build/rtdll/libusb-1.0.dll
           compression-level: 6
 
   # The launcher: a Tauri app whose dependency tree is most of its build time.

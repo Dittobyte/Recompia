@@ -135,6 +135,7 @@ if(PKP_RT_DLL)
             add_custom_command(TARGET pkp_rt POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different "${dll}" "$<TARGET_FILE_DIR:pkp_rt>")
         endforeach()
     endif()
+    nxrt_bundle_libusb(pkp_rt)   # libusb-1.0.dll for SDL's USB controllers; make-release.ps1 ships it next to pkp.exe
     if(APPLE)
         # The game executable of model (b): src/pkp_stub.cpp and the lifted modules, linked against the dylib. It carries the
         # __GUEST segment (the main executable's header is what reserves the range before libmalloc runs), and finds the dylib
@@ -187,6 +188,7 @@ target_compile_definitions(pkp PRIVATE PKP_EXEFS_DEFAULT="${PKP_EXEFS_DEFAULT}")
 target_include_directories(pkp PRIVATE "${PKP_GEN_INCLUDE}")
 target_link_libraries(pkp PRIVATE ${PKP_MODULE_LIBS} nxrt_game_pkp nxrt_gfx nxrt)   # nxrt_game_pkp: runtime/games/pkp
 nxrt_add_guest_segment(pkp)   # macOS: reserve the guest address space in the Mach-O header (runtime/cmake/guest_segment.cmake)
+nxrt_bundle_libusb(pkp)       # Windows: libusb-1.0.dll, which SDL loads for USB controllers (runtime/cmake/gfx_deps.cmake)
 if(APPLE)
     # volk opens libvulkan.1.dylib next to the executable (src/gfx/vk_device.cpp): MoltenVK, as the demo target also gets it.
     add_custom_command(TARGET pkp POST_BUILD
