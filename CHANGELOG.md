@@ -68,6 +68,7 @@ This build is about **waiting less**. Building the game code takes about half th
 - Windows: a Switch 2 Pro Controller connected by USB cable is picked up, with Switch button prompts, rumble and gyro (#522). The game now ships `libusb-1.0.dll`, which SDL needs to reach it over USB. No shader is translated again.
 - Linux: the Steam Controller works again when the game is started from Steam, with no `SDL_VIDEO_DRIVER=x11` in the launch options. Since the game runs natively it opened a Wayland window, which Steam Input does not feed; under Steam it now opens through X11 (XWayland). A `SDL_VIDEO_DRIVER` you set yourself still wins
 - The Ditto loading screen's black background reaches the top and bottom on taller screens such as the Steam Deck (#534). The game code is relinked and existing shaders are reused.
+- The game no longer stays on the Ditto loading screen for good when the render scale is above 100% on a 4K screen. The game's graphics memory filled up on the title screen at such sizes, so the world could never load; the render size is now capped at 3840x2160 (your screen still shows the full picture)
 - Set up no longer looks frozen while it translates the game code: the bar moves through that step, and the time left is shown beside it
 - The launcher no longer reports "The game stopped unexpectedly" (0xC0000409) when the game closes itself
 - Removed the touch screen Menu button, which could show up in the corner on desktop PCs
