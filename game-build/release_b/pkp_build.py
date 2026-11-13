@@ -551,33 +551,50 @@ def mod_sites(plan, exefs, gen):
 
 def lift(runner, exefs, gen, jobs, extra_sites, skip=()):
     """One lifter process per module (the lifter itself runs `jobs` worker processes). extra_sites: {module: site list} to lift
-    with besides the game's own (mod_sites()). skip: modules whose kept library is current (module_stamp()): not lifted."""
-    for k, (name, nso, base, index, shards) in enumerate(MODULES):
+    with besides the game's own (mod_sites()). skip: modules whose kept library is current (module_stamp()): not lifted.
+
+    The launcher's bar: a module's share of the lift is its shard count (the shards are balanced by instruction count, so a
+    module with ten times the shards is about ten times the work), and within a module the lifter reports its own passes
+    (`@lift <done> <total> <text>`, --progress). Without that, the bar sat at one number for the whole of main, which is
+    most of the lift, and Set up looked frozen."""
+    todo = [m for m in MODULES if m[0] not in skip]
+    total = sum(m[4] for m in todo) or 1
+    at = 0
+    for k, (name, nso, base, index, shards) in enumerate(todo):
         out = os.path.join(gen, name)
-        if name in skip:
-            continue
         marker = os.path.join(out, '.lifted')
         if os.path.isfile(marker):
+            at += shards
             continue
-        progress('lift', k, len(MODULES), 'Translating the game code: %s (%d of %d)' % (name, k + 1, len(MODULES)))
+        said = 'Translating the game code: %s (%d of %d)' % (name, k + 1, len(todo))
+        progress('lift', at * 1000, total * 1000, said)
         if os.path.isdir(out):
             shutil.rmtree(out)
         os.makedirs(out)
         args = ['lift', os.path.join(exefs, nso), out, '--name', name, '--base', hex(base), '--shards', str(shards),
-                '--jobs', str(jobs), '--game', 'pkp', '--index', str(index), '--locals', LOCALS]
+                '--jobs', str(jobs), '--game', 'pkp', '--index', str(index), '--locals', LOCALS, '--progress']
         if name in SITES:
             args += ['--sites', os.path.join(RECOMP, *SITES[name].split('/'))]
         if name in extra_sites:
             args += ['--sites', extra_sites[name]]
         cmd = [sys.executable, '-I', os.path.abspath(__file__), '--lift-one', json.dumps(args)]
-        rc, tail = runner.run(cmd, cwd=RECOMP)
+
+        def on_line(line, at=at, shards=shards, said=said):
+            if not line.startswith('@lift '):
+                return
+            _, done, whole, text = (line.split(' ', 3) + ['', '', ''])[:4]
+            if done.isdigit() and whole.isdigit() and int(whole) > 0:
+                progress('lift', int((at + shards * int(done) / int(whole)) * 1000), total * 1000, said + ', ' + text)
+
+        rc, tail = runner.run(cmd, cwd=RECOMP, on_line=on_line)
         if rc != 0:
             raise Fail('Translating %s failed (exit %d):\n%s' % (name, rc, tail))
         for d, _, files in os.walk(out):     # the marker makes the sources trusted (flush())
             for n in files:
                 flush(os.path.join(d, n))
         open(marker, 'w').write('ok\n')
-    progress('lift', len(MODULES), len(MODULES), 'Game code translated')
+        at += shards
+    progress('lift', total * 1000, total * 1000, 'Game code translated')
 
 
 def free_memory():

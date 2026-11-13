@@ -4,6 +4,17 @@
 
 **Update:** press **Update**, then **Finish update** once. This is the last update that makes you wait like this: it builds the game code one more time in full, already with the faster build (about half the time it took before). Your shaders and saves are kept; no shader is translated again.
 
+### Launcher
+- **Set up translates the game's shaders much faster**, and a slow machine gains the most
+  - Before: the translator was started once per 1,000 blocks, 99 runs, each paying its own .NET start, its own cold JIT and thread-pool ramp, and each losing whatever it had finished when you paused. Every chunk's shaders were written loose into `shader_cache/spirv`, read back and deleted, the packed cache was compressed at zstd level 12 (about four times slower than level 6 for 1 % more space), and the archive step ran after the translation with every core idle. Measured on the 2.0.1 corpus (99,012 blocks) on a 24-thread PC: 925 s
+  - Now: one translator process for the whole translation, 7,000 blocks at a time, a results row written as each block finishes, and each chunk packed straight out of its staging folder into the archive while the next chunk is translated, on the cores the translator leaves. On Linux the staging folder is a RAM filesystem (`/dev/shm`), so a chunk is never written loose to the card, and the translator's own garbage collector is tuned for the 263 KB arrays it produces. The SPIR-V is byte-for-byte unchanged: 57 segments, 6,647,451,449 bytes, every segment's SHA-256 the same, 99,012 rows
+  - Measured: 925 s to 258 s on the same 24-thread PC, and 609 s to 236 s on 8 cores standing in for a Steam Deck
+  - Still not: the translator itself is still most of the time. Its type interning and block-predecessor work took the whole corpus from 413 s to 385 s; the rest of its profile is untouched
+- **Set up finds the shader translator on Linux and SteamOS**
+  - Before: the launcher looked for `tools/spirv_harness/spirv_harness.exe`, which the Linux and macOS packages do not ship (they ship `tools/harness/spirv_harness`), so Set up on Linux could not start the translator at all
+  - Now: it uses the folder and program the host really has, `spirv_harness.exe` on Windows and `spirv_harness` elsewhere, and starts the translator, the hidden warm-up run and the game as the native programs they are
+
+
 New in this Testing build: **seamless co-op** (experimental). In a Link Play session every player plays their own story in the host's world, with their own requests, talks and progress, kept in their own save. Turn on **Visitors can talk to story characters** on the launcher's Link Play page; every player of the session needs it on and needs this build.
 
 Coming from 0.13.0-beta.1, this is the first update that prepares in the background: press **Update** and keep playing.
@@ -25,6 +36,7 @@ This build is about **waiting less**. Building the game code takes about half th
 
 ### Changed
 - Native shader translation chooses workers and a bounded GC heap from available CPU and memory, uses server GC when there is room, and retries a silent or out-of-memory failure once with lighter settings. Previously Linux and macOS always used workstation GC; existing shader caches stay valid and this change only needs **Update**.
+- **Translating the game code** takes about 40 % less time: on a 24-thread PC the step went from about 110 s to about 65 s. The translator runs its passes in one set of worker processes instead of three, stops building C++ it throws away, and builds the statements it keeps with table lookups instead of formatting
 - **Finish update** and **Set up again** compile the game code in about half the time
 - One compile job per GB of free memory instead of per two, so PCs with little free memory build with more of their cores
 - An update that changes only comments or other platforms' parts of the translator no longer compiles the whole game again
@@ -39,6 +51,9 @@ This build is about **waiting less**. Building the game code takes about half th
 - Story co-op: your own save is written after each story step in a session
 
 ### Fixed
+- Linux: the Steam Controller works again when the game is started from Steam, with no `SDL_VIDEO_DRIVER=x11` in the launch options. Since the game runs natively it opened a Wayland window, which Steam Input does not feed; under Steam it now opens through X11 (XWayland). A `SDL_VIDEO_DRIVER` you set yourself still wins
+- The Ditto loading screen's black background reaches the top and bottom on taller screens such as the Steam Deck (#534). The game code is relinked and existing shaders are reused.
+- Set up no longer looks frozen while it translates the game code: the bar moves through that step, and the time left is shown beside it
 - The launcher no longer reports "The game stopped unexpectedly" (0xC0000409) when the game closes itself
 - Removed the touch screen Menu button, which could show up in the corner on desktop PCs
 

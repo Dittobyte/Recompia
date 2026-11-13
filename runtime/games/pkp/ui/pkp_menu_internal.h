@@ -37,8 +37,11 @@ constexpr size_t kPlaceableObj = 40, kObjLayout = 16;     // placeable +40 -> ob
 // layout
 constexpr size_t kLayPaneCount = 146, kLayFirstNode = 32, kLaySentinel = 64;   // u16 pane count; pane list: node +8 next, +16 pane
 // pane
-constexpr size_t kPaneName = 176, kPaneTag = 184, kPaneParent = 208, kPaneWorld = 224, kPaneSize = 240, kPaneFlags = 260,
-                 kPaneAnchor = 268, kPaneIndex = 270, kPaneNameLen = 272, kPaneAlpha = 275;
+using layout::kPaneName;
+using layout::kPaneNameLen;
+using layout::kPaneParent;
+using layout::kPaneWorld;
+constexpr size_t kPaneTag = 184, kPaneSize = 240, kPaneFlags = 260, kPaneAnchor = 268, kPaneIndex = 270, kPaneAlpha = 275;
 constexpr float kCanvasW = 1920.f, kCanvasH = 1080.f;
 constexpr size_t kMaxLayouts = 256, kMaxPanes = 4096;
 

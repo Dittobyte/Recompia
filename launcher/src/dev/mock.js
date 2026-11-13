@@ -224,30 +224,67 @@ async function runPlay() {
 }
 
 let setupTimer = null;
-const STEPS = [['verify', 'Checking your game files...'], ['lift', 'Reading the game code...'], ['compile', 'Building the game...'], ['translate', 'Translating shaders...']];
+
+// The real sequence, as the build script and the shader job report it (pkp_build.py's `@progress`, shaders.rs): every
+// phase has its own count, and the lift's message names the module and the step it is in. Compressed in time.
+const MODULES = [['main', 230], ['sdk', 45], ['subsdk0', 4], ['rtld', 1]];
+const LIFT_TOTAL = MODULES.reduce((n, m) => n + m[1], 0) * 1000;
+const DUMP_FILES = ['main', 'main.npdm', 'rtld', 'sdk', 'subsdk0'];
+
+/** pkp_build.py lift(): a module's shards are its share, and inside it the passes are 2 % discovery, 60 % flags, 38 % text. */
+function liftAt(f) {
+  const done = f * LIFT_TOTAL;
+  let k = 0;
+  let at = 0;
+  while (k < MODULES.length - 1 && done >= at + MODULES[k][1] * 1000) {
+    at += MODULES[k][1] * 1000;
+    k += 1;
+  }
+  const inner = Math.min(1, (done - at) / (MODULES[k][1] * 1000));
+  const step = inner < 0.02 ? 'reading the game code' : inner < 0.62 ? 'working out the flags' : 'writing the code';
+  return { done: Math.round(done), total: LIFT_TOTAL, message: `Translating the game code: ${MODULES[k][0]} (${k + 1} of ${MODULES.length}), ${step}` };
+}
+
+const PLAN = [
+  { phase: 'verify', ms: 500, ticks: 3, at: (f) => ({ done: Math.round(f * 5), total: 5, message: f >= 1 ? 'Game files match 2.0.1a' : `Checking your game files: ${DUMP_FILES[Math.min(4, Math.round(f * 5))]}` }) },
+  { phase: 'lift', ms: 7000, ticks: 140, at: liftAt },
+  { phase: 'compile', ms: 5000, ticks: 50, at: (f) => ({ done: Math.round(f * 284), total: 284, message: `Compiling: ${Math.round(f * 284)} of 284` }) },
+  { phase: 'link', ms: 700, ticks: 2, at: (f) => ({ done: f >= 1 ? 1 : 0, total: 1, message: f >= 1 ? 'pkp.exe built' : 'Linking pkp.exe' }) },
+  { phase: 'finish', ms: 700, ticks: 2, at: (f) => ({ done: f >= 1 ? 1 : 0, total: 1, message: f >= 1 ? 'pkp.exe is ready (68 s)' : 'Removing the build files' }) },
+  { phase: 'extract', ms: 1200, ticks: 6, at: (f) => ({ done: Math.round(f * 4), total: 4, message: f > 0 ? `Scanning game files: ${Math.round(f * 4)} of 4` : "Finding the game's shaders in your game files..." }) },
+  { phase: 'recheck', ms: 600, ticks: 3, at: (f) => ({ done: Math.round(f * 99012), total: 99012, message: 'Checking the shaders an earlier version translated...' }) },
+  { phase: 'translate', ms: 5000, ticks: 50, at: (f) => ({ done: Math.round(f * 99012), total: 99012, message: `Translating shaders: ${Math.round(f * 99012)} of 99,012` }) },
+];
 
 function runSetup() {
   if (setup.progress.state === 'running') throw 'Setup is already running.';
-  let done = setup.progress.done || 0;
-  const total = 1000;
-  const tick = () => {
-    done += 6;
-    const [phase, message] = STEPS[Math.min(STEPS.length - 1, Math.floor((done / total) * STEPS.length))];
-    setup.progress = progress('running', { phase, done, total, message: `${message} ${done} of ${total}` });
-    emit('setup-status', setup.progress);
-    if (done >= total) {
-      clearInterval(setupTimer);
+  let i = 0;
+  let n = 0;
+  const next = () => {
+    if (i >= PLAN.length) {
       setup = sstatus();
       readiness = { kind: 'ready', detail: '' };
       emit('setup-status', progress('done', { message: 'Setup finished.' }));
+      return;
     }
+    const p = PLAN[i];
+    n += 1;
+    const f = Math.min(1, n / p.ticks);
+    setup.progress = progress('running', { phase: p.phase, ...p.at(f) });
+    emit('setup-status', setup.progress);
+    if (f >= 1) {
+      i += 1;
+      n = 0;
+    }
+    setupTimer = setTimeout(next, p.ms / p.ticks);
   };
   setup.progress = progress('running', { message: 'Checking the setup tools...' });
-  setupTimer = setInterval(tick, 400);
+  emit('setup-status', setup.progress);
+  setupTimer = setTimeout(next, 400);
 }
 
 function pauseSetup() {
-  clearInterval(setupTimer);
+  clearTimeout(setupTimer);
   setup.progress = { ...setup.progress, state: 'cancelled', message: 'Paused. Finished work is kept.' };
   emit('setup-status', setup.progress);
 }
@@ -351,9 +388,7 @@ const mockCatalog = {
   offline: false, preview: false, game: '2.0.1', hub: 'https://pokopia-native.vercel.app/mods', submit: 'https://pokopia-native.vercel.app/mods/submit',
   groups: [{ key: 'qol', label: 'Quality of life' }, { key: 'gameplay', label: 'Gameplay' }, { key: 'community', label: 'Community' }],
   mods: [
-    { id: 'auto_run', name: 'Auto-Run', version: '1.0.0', summary: 'Tap once to keep running.', description: 'Tap once to keep running: your character goes on forward (you still steer) until you tap again, pull the stick back or open a menu.
-
-Works with the controller and the keyboard.',
+    { id: 'auto_run', name: 'Auto-Run', version: '1.0.0', summary: 'Tap once to keep running.', description: 'Tap once to keep running: your character goes on forward (you still steer) until you tap again, pull the stick back or open a menu.\n\nWorks with the controller and the keyboard.',
       settings: ['Controller button that starts and stops it (the game no longer sees that button)', 'Keyboard key that starts and stops it', 'Run (hold B) instead of walking', 'Say so on the screen'], tested: ['2.0.1', '1.0.5'], group: 'qol', source: 'https://github.com/example/auto-run', size: 77330,
       authors: ['The Modtopia contributors'], license: 'MIT', gameplay: false, network: false, page: 'https://pokopia-native.vercel.app/mods/auto-run', available: true, installed: '', newer: false },
     { id: 'bigger_stacks', name: 'Bigger Stacks', version: '1.1.0', summary: 'More of an item in one slot.', description: 'More of an item in one slot. The game still counts what you hold, only the limit moves.', settings: ['Stack limit'], tested: [], group: 'gameplay', source: '', size: 4096,

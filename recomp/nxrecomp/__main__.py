@@ -32,6 +32,12 @@ def build_info(game, arch=''):
             'clang_cl': cf.for_arch(arch, 'clang_cl'), 'clang': cf.for_arch(arch, 'clang')}
 
 
+def report(done, total, text):
+    """One progress tick of a lift (driver.lift_module), for the launcher: `@lift <done> <total> <text>`, on stdout, now
+    (a pipe buffers). pkp_build.py turns it into the bar's step of the whole build."""
+    print('@lift %d %d %s' % (done, total, text), flush=True)
+
+
 def main(argv=None):
     from .config import REG_LOCALS
     ap = argparse.ArgumentParser(prog='nxrecomp')
@@ -60,6 +66,9 @@ def main(argv=None):
         p.add_argument('--index', type=int, help='module index (NxModule.index, import ids); default: position in the game config')
         p.add_argument('--sites', action='append',
                        help='site list: patches, inline callouts, hooks (see sites.load_sites); repeat to merge several by address')
+        p.add_argument('--progress', action='store_true',
+                       help='report how far the lift is on stdout, one line per tick: @lift <done> <total> <text> '
+                            '(the launcher\'s bar; pkp_build.py reads it)')
     a = ap.parse_args(argv)
     if a.cmd == 'build-info':
         print(json.dumps(build_info(a.game, a.arch)))
@@ -72,7 +81,7 @@ def main(argv=None):
     spec = spec_from(a)
     from . import cover, driver
     if a.cmd == 'lift':
-        driver.lift_module(spec, a.outdir, a.jobs, a.shards)
+        driver.lift_module(spec, a.outdir, a.jobs, a.shards, progress=report if a.progress else None)
         return 0
     from .config import load_game
     img = driver.open_image(spec)

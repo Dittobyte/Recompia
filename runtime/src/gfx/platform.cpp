@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -18,7 +19,6 @@
 #include "nxrt/log.h"
 
 #if defined(__APPLE__)
-#include <cstdlib>
 #include <mach-o/dyld.h>
 #include <unistd.h>
 #endif
@@ -400,6 +400,13 @@ bool init(const InitOptions& opt) {
             if (::access(lib.c_str(), R_OK) == 0) ::setenv("SDL_VULKAN_LIBRARY", lib.c_str(), 1);
         }
     }
+#endif
+#if defined(__linux__)
+    // Steam Input (the Steam Controller, and any pad Steam remaps) only feeds the game's window when Steam can see it, which
+    // it can through X11 (XWayland) but not on a native Wayland surface; SDL 3 picks Wayland first on a compositor such as
+    // KDE Plasma 6, and the pad goes silent. Steam sets SteamGameId
+    // for its own games and non-Steam shortcuts alike. A hint only: SDL_VIDEO_DRIVER from the player still wins.
+    if (std::getenv("SteamGameId") || std::getenv("SteamAppId")) SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11,wayland");
 #endif
     // Hints must be set before SDL_Init. Raw, unaccelerated relative mouse; gamepads keep reporting when the window is
     // in the background.
