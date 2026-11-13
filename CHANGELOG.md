@@ -2,110 +2,81 @@
 
 ## Unreleased
 
-**Update:** press **Update**, then **Finish update** once. This is the last update that makes you wait like this: it builds the game code one more time in full, already with the faster build (about half the time it took before). Your shaders and saves are kept; no shader is translated again.
+## 0.13.0 (build Q: Quokka)
 
-### Launcher
-- **The game can be picked as an `.nx` archive** (#456, thanks renatoddias)
-  - Before: the launcher took a folder of extracted files or a `.nup`; an `.nx` ([NXFormat](https://github.com/fab918/nxformat)) had to be unpacked with another tool first
-  - Now: **Choose a .nup or .nx file** (or drop the file on the page) unpacks it once into `nup_dump`, checked file by file against the archive's own checksums, with its add-ons (DLC) in `nup_dump/aoc`. Picking another package replaces the unpacked one
-  - Still not: an `.nx` made straight from an `.nsp` or `.xci` holds the NCA packages, which the launcher does not read; it is refused with a message that says so. Make the `.nx` from extracted files or from a `.nup` (`nxconvert pack-tree` or `pack-nup`). The game still runs from the unpacked files, so an `.nx` saves no disk space while playing
-- **Set up translates the game's shaders much faster**, and a slow machine gains the most
-  - Before: the translator was started once per 1,000 blocks, 99 runs, each paying its own .NET start, its own cold JIT and thread-pool ramp, and each losing whatever it had finished when you paused. Every chunk's shaders were written loose into `shader_cache/spirv`, read back and deleted, the packed cache was compressed at zstd level 12 (about four times slower than level 6 for 1 % more space), and the archive step ran after the translation with every core idle. Measured on the 2.0.1 corpus (99,012 blocks) on a 24-thread PC: 925 s
-  - Now: one translator process for the whole translation, 7,000 blocks at a time, a results row written as each block finishes, and each chunk packed straight out of its staging folder into the archive while the next chunk is translated, on the cores the translator leaves. On Linux the staging folder is a RAM filesystem (`/dev/shm`), so a chunk is never written loose to the card, and the translator's own garbage collector is tuned for the 263 KB arrays it produces. The SPIR-V is byte-for-byte unchanged: 57 segments, 6,647,451,449 bytes, every segment's SHA-256 the same, 99,012 rows
-  - Measured: 925 s to 258 s on the same 24-thread PC, and 609 s to 236 s on 8 cores standing in for a Steam Deck
-  - Still not: the translator itself is still most of the time. Its type interning and block-predecessor work took the whole corpus from 413 s to 385 s; the rest of its profile is untouched
-- **Set up finds the shader translator on Linux and SteamOS**
-  - Before: the launcher looked for `tools/spirv_harness/spirv_harness.exe`, which the Linux and macOS packages do not ship (they ship `tools/harness/spirv_harness`), so Set up on Linux could not start the translator at all
-  - Now: it uses the folder and program the host really has, `spirv_harness.exe` on Windows and `spirv_harness` elsewhere, and starts the translator, the hidden warm-up run and the game as the native programs they are
-- **Link Play remembers Internet**
-  - Before: every time the launcher started, it put Link Play back on Same network, so players who only play over the internet had to pick Internet again each time
-  - Now: Internet through the public relay or a friend's relay stays chosen. A direct address, a relay on this PC (off until you turn it on again) and old room codes are still cleared at start
-  - Thanks to Sakamoto on Discord for the report
-- **Set up says why it failed when the game folder has an accent in its path** (#630)
-  - Before: with the game in a folder such as `OneDrive\Área de Trabalho`, a failed Set up showed only "The game build failed (exit code: 1)" and setup.log had no reason, because the reason named that folder in a form the launcher could not read
-  - Now: the game build writes its messages as UTF-8 and the launcher reads every line of a tool's output, so the real error reaches the screen and setup.log
-  - Still not: this shows the error, it does not fix it. A game folder inside OneDrive can still fail while OneDrive syncs the build files; a folder outside OneDrive (such as `C:\Games`) avoids that
-
-### Gameplay
-- **Camera aim keeps the block you aimed at while a move plays** (#535)
-  - Before: Rototiller, Cut, Rock Smash and the other abilities followed the camera until their hit landed, so turning the camera right after pressing the button tilled, cut or smashed a different block
-  - Now: the aim is held from the moment the move starts until it ends, and the camera aims again for the next one
-
-
-New in this Testing build: **seamless co-op** (experimental). In a Link Play session every player plays their own story in the host's world, with their own requests, talks and progress, kept in their own save. Turn on **Visitors can talk to story characters** on the launcher's Link Play page; every player of the session needs it on and needs this build.
-
-Coming from 0.13.0-beta.1, this is the first update that prepares in the background: press **Update** and keep playing.
-
-This build is about **waiting less**. Building the game code takes about half the time, updates stop rebuilding parts of the game that did not change, and from the next update on the launcher builds the new game code **while you keep playing**. Link Play over the internet also gets simpler: **no more room codes**, every room shows up in the game's own list.
+**Update:** press Update, then Finish update once. The game code is built in full one last time, in about half the time it took before. Shaders and saves are kept; no shader is translated again.
 
 ### Highlights
-- **Seamless co-op (experimental).** Every player of a Link Play session plays their own story, the host and each visitor alike. Pokémon give each player the requests and story talks of that player's own progress, and it is saved in that player's own save. A story step that changes a town waits until you are back in your own world, a visitor cannot take a story item away from the host, and your save from before each start is kept
-- **Updates no longer take the game away.** From the next update on, the launcher builds the new game code before it installs the update, and the version you have stays playable the whole time. The update goes in once the game is closed, and you can cancel at any point before that without losing progress
-- **Building the game code takes about half the time.** A full build on a 16-thread PC went from 13 minutes to 7. PCs with little free memory gain more, because the build now runs twice as many jobs in the same memory
-- **Small updates stay small.** The launcher only builds the parts of the game code an update really changes. Two of the last releases rebuilt the whole game for a change that touched little or none of it; that no longer happens
-- **The game build takes an eighth of the disk space**: 0.3 GB instead of 2.4 GB
-- **Link Play over the internet without room codes.** Every room on the public relay shows up in the game's **Visit a Friend** list: pick the host and join. For a private room, set a **Link Code** when the game asks; only players who type it can join
+- Building the game code is about twice as fast: a full build on a 16-thread PC went from 13 minutes to 7
+- Translating the game's shaders in Set up is 3.6 times faster: from over 15 minutes to about 4 on a 24-thread PC
+- Small updates stay small: only the parts of the game code an update really changes are built again
+- Updates no longer take the game away: from the next update on, the launcher builds the new game code in the background while you keep playing
+- Link Play over the internet needs no room code: every room shows up in the game's own Visit a Friend list
+- Private rooms use the game's own Link Code, set in the game when you host, not in the launcher
+- Only rooms you can join are listed: a room with another game version or other gameplay mods does not show up, so a join that would end in a communication error is never sent
+- Seamless co-op (experimental, off by default): every player in a Link Play session plays their own story in the host's world
 
 ### Added
-- The launcher prepares an update's game code in the background, with its progress on the Home page, and installs the update once the game is closed
-- Link Play: every room on the public relay is listed in the game's **Visit a Friend**, for players on the same release with the same **Same for everyone** switches
-- Link Play: the game's own **Link Code** makes a room private. The room is still listed, and only players who type the code can join
-- Settings > Game > **Logo and icon**: choose the Recompia or the Classic (bubble letters and R) logo and icon. The icon also changes for the launcher and game programs on Windows and for the Steam shortcut (#557, #621)
+- Seamless co-op (experimental): turn on Seamless co-op under Same for everyone on the launcher's Link Play page; every player of the session needs it on
+- Seamless co-op: Pokémon give each player the requests and story talks of that player's own progress, the host and each visitor alike
+- Seamless co-op: story progress is kept in each player's own save, and written after every story step
+- Seamless co-op: a story step that changes the town (a Pokémon moving in, its home) waits until you are back in your own world
+- Seamless co-op: an important item a visitor picks up stays in the host's world for the host, and each visitor takes it once
+- Seamless co-op: a copy of your save from before each session is kept (the newest 5, in `story-coop-backup` in the save folder), with a journal of every story quest change (`story-journal`)
+- Link Play: every room on the public relay is listed in the game's Visit a Friend, with how many players are in it
+- Link Play: the game's own Link Code makes a room private; the room is still listed, and only players who type the code get in
+- The launcher prepares an update's game code in the background, shows its progress on the Home page, and installs once the game is closed; you can cancel before that without losing progress
+- The game can be picked as an `.nx` archive, next to a folder or a `.nup` (#456, thanks renatoddias)
+- Settings > Game > Logo and icon: choose the Recompia or the Classic logo and icon, for the launcher, the game and the Steam shortcut (#557, #621)
+- A short Link Play guide: `docs/link-play.md`
 
 ### Changed
-- Native shader translation chooses workers and a bounded GC heap from available CPU and memory, uses server GC when there is room, and retries a silent or out-of-memory failure once with lighter settings. Previously Linux and macOS always used workstation GC; existing shader caches stay valid and this change only needs **Update**.
-- **Translating the game code** takes about 40 % less time: on a 24-thread PC the step went from about 110 s to about 65 s. The translator runs its passes in one set of worker processes instead of three, stops building C++ it throws away, and builds the statements it keeps with table lookups instead of formatting
-- **Finish update** and **Set up again** compile the game code in about half the time
+- Finish update and Set up again compile the game code in about half the time (794 s to 410 s on a 16-thread PC)
 - One compile job per GB of free memory instead of per two, so PCs with little free memory build with more of their cores
-- An update that changes only comments or other platforms' parts of the translator no longer compiles the whole game again
-- The game libraries the launcher keeps for the next update take 0.3 GB instead of 2.4 GB
-- Link Play over the internet needs no room code any more; the launcher's room code fields are gone
+- Translating the game code takes about 40 % less time: about 110 s to 65 s on a 24-thread PC (#625, thanks oopsmishap)
+- An update that changes only comments or other platforms' parts of the game code headers no longer compiles the whole game again
+- The game libraries kept for the next update take 0.3 GB instead of 2.4 GB
+- Set up translates shaders in one translator run and packs the cache while it translates: 925 s to 258 s on a 24-thread PC, 609 s to 236 s on 8 cores (#619, thanks oopsmishap)
+- A paused shader translation keeps every shader it finished
+- Shader translation on Linux and macOS picks its workers and memory from what the PC has free, and retries once with lighter settings when memory runs out (#616, thanks Piktrip)
+- Link Play over the internet needs no setup; the launcher's room code fields are gone, and your own relay or a direct address are under Advanced
+- Link Play rooms are listed only for players with the same game version, the same gameplay mods and the same Same for everyone switches
+- The launcher's Visitors can talk to story characters switch is now Seamless co-op; a player on the earlier Story co-op is not listed
+- The launcher keeps Link Play on Internet across restarts (thanks to Sakamoto on Discord for the report)
+- Sorting the bag or a storage box uses the game's own sort: hold X, or click Hold to Sort; it works in Link Play, and Y, ZR and F no longer sort
+- Camera aim keeps the block you aimed at while a move plays, so turning the camera after the press no longer hits another block (#535)
+- The render size is capped at 3840x2160; your screen still shows the full picture
 - If an update cannot finish, the launcher puts back the game build you had, not only its own files
 - The launcher no longer promises "about 7 minutes" for a rebuild: it says from a few minutes to an hour, depending on your PC
-- Story co-op (experimental): every player in a Link Play session now plays their own story, in the host's story areas too. Pokémon give each player the requests and story talks of that player's own progress, and the progress is kept in that player's own save. Every player of a session needs this build: an older Story co-op is refused
-- Story co-op keeps a copy of your save from each start (the newest 5, in `story-coop-backup` in the save folder) and a journal of every story quest change (`story-journal`)
-- Story co-op: a story step that changes the town (a Pokémon moving in, its home) waits until you are back in your own world
-- Story co-op: an important item a visitor picks up stays in the host's world, and each visitor takes it once
-- Story co-op: your own save is written after each story step in a session
 
 ### Fixed
-- Windows: a Switch 2 Pro Controller connected by USB cable is picked up, with Switch button prompts, rumble and gyro (#522). The game now ships `libusb-1.0.dll`, which SDL needs to reach it over USB. No shader is translated again.
-- Linux: the Steam Controller works again when the game is started from Steam, with no `SDL_VIDEO_DRIVER=x11` in the launch options. Since the game runs natively it opened a Wayland window, which Steam Input does not feed; under Steam it now opens through X11 (XWayland). A `SDL_VIDEO_DRIVER` you set yourself still wins
-- The Ditto loading screen's black background reaches the top and bottom on taller screens such as the Steam Deck (#534). The game code is relinked and existing shaders are reused.
-- The game no longer stays on the Ditto loading screen for good when the render scale is above 100% on a 4K screen. The game's graphics memory filled up on the title screen at such sizes, so the world could never load; the render size is now capped at 3840x2160 (your screen still shows the full picture)
-- Set up no longer looks frozen while it translates the game code: the bar moves through that step, and the time left is shown beside it
-- The launcher no longer reports "The game stopped unexpectedly" (0xC0000409) when the game closes itself
-- Removed the touch screen Menu button, which could show up in the corner on desktop PCs
-- Sorting the bag or a storage box uses the game's own sort: hold X (Hold to Sort), or click Hold to Sort with the mouse. It no longer turns the bag page once the bag is expanded, and it now works in Link Play
-- Seamless co-op: asking Drifloon for a Dream Island in a story area during a Link Play session no longer leaves the session in a broken "Dream Island" copy of the area. The trip is not available there in a session; it still is in Palette Town and on Cloud Islands
-- Seamless co-op: when a visitor digs up one of the host's gold-glowing buried spots, the host gets the item at the spot and the glow goes away, instead of the glow staying over an empty hole
-- Seamless co-op: after a visitor takes a memory piece, the host can take it too without loading the world again
+- Stuck on the Ditto loading screen for good with the render scale above 100% on a 4K screen
+- Windows: a Switch 2 Pro Controller on a USB cable not being picked up; it now works with Switch prompts, rumble and gyro (#522)
+- Linux: the Steam Controller not working when the game is started from Steam without `SDL_VIDEO_DRIVER=x11` in the launch options
+- Linux and SteamOS: Set up not finding the shader translator
+- The Ditto loading screen's black background not reaching the top and bottom on taller screens such as the Steam Deck (#534, thanks Piktrip)
+- Set up looking frozen while it translates the game code: the bar now moves through that step and shows the time left
+- Set up showing no reason for a failure when the game folder has an accent in its path (#630)
+- The launcher reporting "The game stopped unexpectedly" (0xC0000409) when the game closes itself
+- A touch screen Menu button showing up in the corner on desktop PCs; the button is removed
+- Sort turning the bag page in storage boxes once the bag is expanded
+- Seamless co-op: asking Drifloon for a Dream Island in a story area left the session in a broken copy of the area
+- Seamless co-op: a gold-glowing buried spot stayed over an empty hole after a visitor dug it up; the host now gets the item
+- Seamless co-op: the host could not take a memory piece after a visitor took it, until the world was loaded again
 
-### What to test
-- **Seamless co-op, as a visitor:** talk to Pokémon in the host's world and open your Requests: they should be your own. Do a request the host has not reached and check that the host's list does not change
-- **Seamless co-op, a step that changes the town:** when a visitor meets the goal of a request that brings a Pokémon in, the request stays open with a message on screen. Go home and load your own world: it should complete there, with the Pokémon arriving
-- **Seamless co-op, items:** an important item a visitor picks up should stay in the host's world for the host. Drop an item for the other player: one of you has it afterwards, not both
-- **Seamless co-op, after a lost connection:** do a story step as a visitor, close the game without leaving the session, start again: the step should still be done
-- **Seamless co-op, reports:** attach `pkp.log` and the file in `story-journal` in your save folder from both players
-- **This update:** how long **Finish update** takes on your PC, next to what it took before (the launcher's Set up log has the times). Tell us your processor and memory with it
-- **The game after the rebuild:** play as usual. The game code is built with new compiler settings, so anything that behaves differently from 0.12.0 is worth a report
-- **Link Play over the internet:** host with **Internet**, and have a friend open **Visit a Friend**: your room should be in the list without any code. Then host again with a **Link Code** and check that only the right code gets in
-- **Link Play on the same network** still finds hosts as before
-- **The next Testing build** is the first one that installs in the background: press **Update**, keep playing while it prepares, then close the game and watch it install. Try **Cancel** while it prepares, then **Update** again: it should continue, not start over
-- **Seamless co-op, Dream Island:** in a session in a story area, ask Drifloon for a Dream Island as the host and as a visitor: nobody should leave, the area should keep its name and map, and a message should say the trip is not available. In Palette Town the trip should still work
-- **Seamless co-op, buried spots:** as a visitor, dig up a block that glows gold for the host: the host should see the item drop there and the glow go away
-- **Seamless co-op, memory pieces:** after a visitor takes a memory piece, the host should be able to take it in the same session
-
-### Regressions and known problems
-- Seamless co-op is experimental. Your save from before each start is in `story-coop-backup` in the save folder (the newest 5): to go back, copy its account folder and `.meta` file over `account` with the game closed
+### Known issues
+- This update still waits on Finish update, because the launcher you have now runs it; the background build starts with the update after this one
+- While an update prepares in the background, the game can run slower on small PCs and handhelds; Slower, keeps the PC usable on the Set up page makes the build gentler
+- While an update is in progress, Set up, repair, profiles and mods are locked in the launcher until it has installed or you cancel it
+- A room with a Link Code still shows up in everyone's list; only joining it needs the code
+- Seamless co-op is experimental: to go back to a save from before a session, copy its account folder and `.meta` file from `story-coop-backup` over `account` with the game closed
+- Seamless co-op: story markers, story talks, buried spots and Pokémon traces follow each player's own story, so players do not see the same ones
+- Seamless co-op: the Dream Island trip is not available from a story area in a session; it still is in Palette Town and on Cloud Islands
 - Seamless co-op: an important item a visitor already took still lies in the host's world for that visitor, who cannot take it again
 - Seamless co-op: when the host picks an item up, it is gone for everyone, as in the game
 - Seamless co-op: what a visitor picks up or is given goes into the game's Link Play bag, not the bag you have at home
-- Seamless co-op: the launcher's switch still has its earlier name, **Visitors can talk to story characters**
-- This update itself still waits on **Finish update**: the launcher you have now runs it. The background build starts with the update after this one
-- While an update prepares in the background, the game can run slower on small PCs and handhelds. The Set up page's **Slower, keeps the PC usable** switch makes the build gentler
-- While an update is in progress, Set up, repair, profiles and mods are locked in the launcher until it has installed or you cancel it
-- Seamless co-op: story markers, story talks and the gold-glowing buried spots follow each player's own story, so the host and a visitor do not see the same ones. Pokémon traces are each player's own too: investigating one does not take it from the other players
+- An `.nx` made straight from an `.nsp` or `.xci` is refused; make it from extracted files or from a `.nup`
+- A game folder inside OneDrive can still fail in Set up while OneDrive syncs it; a folder such as `C:\Games` avoids that
 
 ## 0.12.0 (build P: Pitoy)
 

@@ -203,7 +203,7 @@ Changes apply the next time the game starts.
 | 47600 | the host | TCP and UDP |
 | 47610 | the relay | TCP, and UDP for the faster path |
 
-**Interact everywhere and Story co-op (experimental, off by default).** In the story areas the game puts visitors in Spectator Mode. **Interact everywhere** lets them use moves and items, pick up, place and build there. **Story co-op** lets them talk to the story characters, and turns Interact everywhere on. Every player needs the same two switches, or the host is not listed. Only the host's save keeps the story progress.
+**Interact everywhere and Seamless co-op (experimental, off by default).** In the story areas the game puts visitors in Spectator Mode. **Interact everywhere** lets them use moves and items, pick up, place and build there. **Seamless co-op** lets every player play their own story in the host's world, with their own requests and talks, saved in their own save; it turns Interact everywhere on. Every player needs the same two switches, or the host is not listed.
 
 Link Play: joining and walking around together work. See [docs/multiplayer](docs/multiplayer/README.md) for how it works and the `pkp.ini` keys.
 
