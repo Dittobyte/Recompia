@@ -1,7 +1,7 @@
 //! Running the shader translator (tools/shaders/harness, `spirv_harness.exe`) for `shaders`: a run, a worker that runs chunk after
 //! chunk in one process, and why a failed run failed.
 use std::fs;
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -164,12 +164,12 @@ impl Worker {
             .map_err(|e| format!("could not start {}: {}", name, e))?;
         let out = child.stdout.take().unwrap();
         let (tx, lines) = mpsc::channel::<String>();
-        std::thread::spawn(move || BufReader::new(out).lines().map_while(Result::ok).for_each(|l| drop(tx.send(l))));
+        std::thread::spawn(move || crate::child_lines::lines(out).for_each(|l| drop(tx.send(l))));
         let err = child.stderr.take().unwrap();
         let (etx, stderr) = mpsc::channel::<String>();
         std::thread::spawn(move || {
             let mut tail: Vec<String> = Vec::new();
-            for l in BufReader::new(err).lines().map_while(Result::ok) {
+            for l in crate::child_lines::lines(err) {
                 tail.push(l);
                 if tail.len() > 12 {
                     tail.remove(0);

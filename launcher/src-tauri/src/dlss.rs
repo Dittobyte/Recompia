@@ -4,7 +4,6 @@
 //! downloads the file from NVIDIA's own GitHub repository at a fixed tag and checks its sha256, into `<game>/upscalers/streamline`.
 
 use serde::Serialize;
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
@@ -76,9 +75,9 @@ pub fn fetch(game_dir: &Path, tools_dir: &Path, mut report: impl FnMut(Progress)
     }
     let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(|e| format!("could not start the download ({}): {}", py.display(), e))?;
     let err = child.stderr.take().unwrap();
-    let err_tail = std::thread::spawn(move || BufReader::new(err).lines().map_while(Result::ok).last().unwrap_or_default());
+    let err_tail = std::thread::spawn(move || crate::child_lines::lines(err).last().unwrap_or_default());
     let mut error: Option<String> = None;
-    for l in BufReader::new(child.stdout.take().unwrap()).lines().map_while(Result::ok) {
+    for l in crate::child_lines::lines(child.stdout.take().unwrap()) {
         if let Some(rest) = l.strip_prefix("@progress ") {
             let mut it = rest.splitn(4, ' ');
             let _phase = it.next();

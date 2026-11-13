@@ -22,7 +22,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -455,13 +455,13 @@ pub(crate) fn run_tool(mut cmd: Command, cancel: &AtomicBool, idle: bool, log: O
     let (tx, rx) = mpsc::channel::<String>();
     let out = child.stdout.take().unwrap();
     let tx2 = tx.clone();
-    std::thread::spawn(move || BufReader::new(out).lines().map_while(Result::ok).for_each(|l| drop(tx2.send(l))));
+    std::thread::spawn(move || crate::child_lines::lines(out).for_each(|l| drop(tx2.send(l))));
     let err = child.stderr.take().unwrap();
     let (etx, erx) = mpsc::channel::<String>();
     let elog = log.cloned();
     std::thread::spawn(move || {
         let mut tail: Vec<String> = Vec::new();
-        for l in BufReader::new(err).lines().map_while(Result::ok) {
+        for l in crate::child_lines::lines(err) {
             if let Some(f) = &elog {
                 f(&format!("stderr: {}", l));
             }

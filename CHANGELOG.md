@@ -21,6 +21,10 @@
   - Before: every time the launcher started, it put Link Play back on Same network, so players who only play over the internet had to pick Internet again each time
   - Now: Internet through the public relay or a friend's relay stays chosen. A direct address, a relay on this PC (off until you turn it on again) and old room codes are still cleared at start
   - Thanks to Sakamoto on Discord for the report
+- **Set up says why it failed when the game folder has an accent in its path** (#630)
+  - Before: with the game in a folder such as `OneDrive\Área de Trabalho`, a failed Set up showed only "The game build failed (exit code: 1)" and setup.log had no reason, because the reason named that folder in a form the launcher could not read
+  - Now: the game build writes its messages as UTF-8 and the launcher reads every line of a tool's output, so the real error reaches the screen and setup.log
+  - Still not: this shows the error, it does not fix it. A game folder inside OneDrive can still fail while OneDrive syncs the build files; a folder outside OneDrive (such as `C:\Games`) avoids that
 
 ### Gameplay
 - **Camera aim keeps the block you aimed at while a move plays** (#535)
