@@ -323,14 +323,9 @@ pub fn native_set_up_install(
         }
         if !crate::gamebuild::is_built(&dir, &tools_dir) {
             let tools = crate::gamebuild::find_tools(&tools_dir, &dir)?;
-            let exefs = {
-                let ini = crate::settings::read(&dir);
-                let p = ini.pkp.get("fs.exefs").cloned().unwrap_or_default();
-                let pb = std::path::PathBuf::from(&p);
-                if pb.is_absolute() { pb } else { dir.join(pb) }
-            };
+            let exefs = native_exefs(&dir);
             let jobs = std::thread::available_parallelism().map(|n| n.get().saturating_sub(1).max(1)).unwrap_or(2);
-            let job = crate::gamebuild::Job { game_dir: dir.clone(), exefs, jobs, idle: false, log: None };
+            let job = crate::gamebuild::Job { game_dir: dir.clone(), exefs, jobs, idle: false, log: None, prepare: false };
             let built = crate::gamebuild::run(&job, &tools, cancel, |t| progress(&t.phase, t.done, t.total, &t.message))?;
             if !built {
                 return Err("Setup paused.".into());
@@ -338,6 +333,13 @@ pub fn native_set_up_install(
         }
     }
     native_set_up(&dir, cancel, progress)
+}
+
+/// Linux and macOS: the exefs the game build reads, `[fs] exefs` of the pkp.ini Set up wrote (relative to the game folder).
+pub fn native_exefs(dir: &Path) -> PathBuf {
+    let ini = crate::settings::read(dir);
+    let p = PathBuf::from(ini.pkp.get("fs.exefs").cloned().unwrap_or_default());
+    if p.is_absolute() { p } else { dir.join(p) }
 }
 
 /// Linux and macOS: extract the game's shader corpus from its RomFS (extract_corpus.py) and translate every block

@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Changed
+- An update that changes the game code builds it before it installs, and you can keep playing meanwhile: no more waiting on **Finish update** after the restart. The update installs once the game is closed, and **Cancel** works until then
+- **Set up again** compiles the game code faster and keeps it in an eighth of the disk space (the kept game libraries: 2.4 GB to 0.3 GB); the first Set up after this update is a full one
+- An update that changes only comments or other platforms' parts of the translator no longer compiles the whole game again
 - Link Play over the internet needs no room code any more: every room on the public relay shows up in the game's Visit a Friend list. To keep a room private, set a Link Code when the game asks.
 
 ### Fixed

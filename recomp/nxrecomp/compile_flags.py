@@ -43,9 +43,13 @@ def for_arch(arch, kind):
     (CMAKE_SYSTEM_PROCESSOR, or the host's when a toolchain file leaves it empty)."""
     base = CLANG_CL if kind == 'clang_cl' else CLANG
     return base + _arch_flags(arch or platform.machine())
+# -g0: zig c++ writes debug info unless told not to, and nothing reads it (the player's pkp has no PDB; crash reports name
+# lifted functions from the module tables). Measured on one 3 MB unit of main: 6.3 s against 8.8 s to compile, the object
+# 0.8 MB against 5.2 MB, the same instructions. It also keeps header line numbers out of the objects.
+ZIG_DEBUG = ['-g0']
 ZIG_MINGW = (['-target', 'x86_64-windows-gnu', '-mcpu=x86_64+cx16', '-std=c++20', '-O1', '-w', '-fno-exceptions', '-fno-rtti']
-             + SEMANTIC + ['-fno-threadsafe-statics'])
+             + SEMANTIC + ['-fno-threadsafe-statics'] + ZIG_DEBUG)
 # The same object code for a Linux package: the guest code's meaning does not change with the host, only the target triple does
 # (x86_64-linux-gnu), and the flags stay identical to the mingw build's so a fix to one is a fix to both.
 ZIG_LINUX = (['-target', 'x86_64-linux-gnu', '-mcpu=x86_64+cx16', '-std=c++20', '-O1', '-w', '-fno-exceptions', '-fno-rtti']
-             + SEMANTIC + ['-fno-threadsafe-statics'])
+             + SEMANTIC + ['-fno-threadsafe-statics'] + ZIG_DEBUG)

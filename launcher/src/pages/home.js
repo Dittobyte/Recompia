@@ -6,7 +6,7 @@ import { num, t } from '../i18n.js';
 import { fromBackend } from '../backend-text.js';
 import { errText, esc, icon, toast } from '../ui.js';
 import { store } from '../store.js';
-import { canCancelUpdate, canUpdate, gamePhase, primaryAction } from '../action.js';
+import { canCancelUpdate, canUpdate, gamePhase, primaryAction, updatePlayable } from '../action.js';
 import { readIni, viewOf } from '../linkplay-model.js';
 import { formatDate, highlights, parseReleaseName } from '../markdown.js';
 
@@ -84,6 +84,7 @@ export function render(el, ctx) {
         <span class="pct num" id="task-pct"></span>
         <progress max="100" id="task-bar"></progress>
         <button class="btn sm" id="task-stop"></button>
+        <p class="note" id="task-note" hidden></p>
       </div>
       <div class="home-notices" id="notices"></div>
     </div>
@@ -117,6 +118,10 @@ export function render(el, ctx) {
     stop.dataset.act = update ? 'cancel' : kind === 'repack' ? 'stop-repack' : 'pause';
     patch(stop, update ? `${icon('x')}${esc(t('Cancel'))}` : kind === 'repack' ? `${icon('square')}${esc(t('Stop'))}` : `${icon('pause')}${esc(t('Pause'))}`);
     stop.hidden = update && !canCancelUpdate(s);
+    // the update prepares the game code beside the installed one (update.rs): say Play still works and when the swap comes
+    const note = part('task-note');
+    note.textContent = update && updatePlayable(s) ? t('You can play while the update is prepared. It is installed once the game is closed.') : '';
+    note.hidden = !note.textContent;
   }
 
   function draw(s) {
