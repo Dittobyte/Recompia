@@ -82,6 +82,7 @@ target_compile_definitions(nxrt_gfx PUBLIC VMA_STATIC_VULKAN_FUNCTIONS=0 VMA_DYN
 add_executable(nxrt_gfx_demo apps/gfx_demo.cpp)
 target_link_libraries(nxrt_gfx_demo PRIVATE nxrt_gfx)
 nxrt_add_guest_segment(nxrt_gfx_demo)
+nxrt_bundle_libusb(nxrt_gfx_demo)
 if(NXRT_WINDOWS)
     target_link_options(nxrt_gfx_demo PRIVATE /MAP /DEBUG /STACK:8388608)
     foreach(dll ${NXRT_A2B_DLLS})
