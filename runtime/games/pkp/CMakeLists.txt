@@ -29,6 +29,8 @@ if(TARGET nxrt_gfx)
     add_library(nxrt_game_pkp STATIC
         # core
         "${_pkp}/core/pkp_game.cpp"
+        "${_pkp}/core/pkp_link_digspots.cpp"
+        "${_pkp}/core/pkp_link_trips.cpp"
         "${_pkp}/core/pkp_linkplay.cpp"
         "${_pkp}/core/pkp_mods.cpp"
         "${_pkp}/core/pkp_pokemon_cap.cpp"

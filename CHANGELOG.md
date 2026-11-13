@@ -72,6 +72,9 @@ This build is about **waiting less**. Building the game code takes about half th
 - The launcher no longer reports "The game stopped unexpectedly" (0xC0000409) when the game closes itself
 - Removed the touch screen Menu button, which could show up in the corner on desktop PCs
 - Sort in storage boxes is on ZR instead of R, so it no longer turns the bag page once the bag is expanded; on keyboard and mouse, click **Sort**
+- Seamless co-op: asking Drifloon for a Dream Island in a story area during a Link Play session no longer leaves the session in a broken "Dream Island" copy of the area. The trip is not available there in a session; it still is in Palette Town and on Cloud Islands
+- Seamless co-op: when a visitor digs up one of the host's gold-glowing buried spots, the host gets the item at the spot and the glow goes away, instead of the glow staying over an empty hole
+- Seamless co-op: after a visitor takes a memory piece, the host can take it too without loading the world again
 
 ### What to test
 - **Seamless co-op, as a visitor:** talk to Pokémon in the host's world and open your Requests: they should be your own. Do a request the host has not reached and check that the host's list does not change
@@ -84,6 +87,9 @@ This build is about **waiting less**. Building the game code takes about half th
 - **Link Play over the internet:** host with **Internet**, and have a friend open **Visit a Friend**: your room should be in the list without any code. Then host again with a **Link Code** and check that only the right code gets in
 - **Link Play on the same network** still finds hosts as before
 - **The next Testing build** is the first one that installs in the background: press **Update**, keep playing while it prepares, then close the game and watch it install. Try **Cancel** while it prepares, then **Update** again: it should continue, not start over
+- **Seamless co-op, Dream Island:** in a session in a story area, ask Drifloon for a Dream Island as the host and as a visitor: nobody should leave, the area should keep its name and map, and a message should say the trip is not available. In Palette Town the trip should still work
+- **Seamless co-op, buried spots:** as a visitor, dig up a block that glows gold for the host: the host should see the item drop there and the glow go away
+- **Seamless co-op, memory pieces:** after a visitor takes a memory piece, the host should be able to take it in the same session
 
 ### Regressions and known problems
 - Seamless co-op is experimental. Your save from before each start is in `story-coop-backup` in the save folder (the newest 5): to go back, copy its account folder and `.meta` file over `account` with the game closed
@@ -94,6 +100,7 @@ This build is about **waiting less**. Building the game code takes about half th
 - This update itself still waits on **Finish update**: the launcher you have now runs it. The background build starts with the update after this one
 - While an update prepares in the background, the game can run slower on small PCs and handhelds. The Set up page's **Slower, keeps the PC usable** switch makes the build gentler
 - While an update is in progress, Set up, repair, profiles and mods are locked in the launcher until it has installed or you cancel it
+- Seamless co-op: story markers, story talks and the gold-glowing buried spots follow each player's own story, so the host and a visitor do not see the same ones. Pokémon traces are each player's own too: investigating one does not take it from the other players
 
 ## 0.12.0 (build P: Pitoy)
 

@@ -250,10 +250,21 @@ entryhook 0x71005d8774
 #   Story co-op holds a visitor's town-changing quests (pkp_story_hold.cpp): the quest pump 0x710011b600, at `tbz w0, #0` after the flag read
 midhook 0x710011b6a4
 #   Story co-op's items (pkp_story_pickups.cpp): the pickup 0x71009cdba0 and the removal 0x71009cb680 of an item lying in the world, and
-#   the host's removal of an item it gave a visitor, `bl 0x71009cb680` in the request handler 0x7100222a20
+#   the host's removal of an item it gave a visitor, `bl 0x71009cb680` in the request handler 0x7100222a20, and the end of that
+#   handler's memory-piece branch (`b` after the pickup; x21 = the item's entry)
 entryhook 0x71009cdba0
 entryhook 0x71009cb680
 midhook 0x7100222cf0
+midhook 0x7100222ba0
+#   Link Play, no Dream Island trip from a story area (pkp_link_trips.cpp): the poll's "this player goes" byte in w9, between its load
+#   and its `cbz`, in the three event callbacks 0x710049cc40, 0x710049d040, 0x710049d7c0; and the request for the island
+midhook 0x710049ccfc
+midhook 0x710049d274
+midhook 0x710049d894
+entryhook 0x71009a50ac
+#   Link Play, the host's story dig spots (pkp_link_digspots.cpp): the dig-spot manager's frame 0x710097d184, at `bl 0x710097d660`
+#   (the glows' refresh; x0 = the manager)
+midhook 0x710097d1c4
 # general value tween f_7100e51624: the frame counter steps by (u32)(multiplier + 0.5) once per frame (fadd s0, s0, s1 before the
 # fcvtzu), which is 0 above 120 fps with the frame-time fix; one site per counter (+0xc, +0x14). pkp_play.cpp hook_tween_step
 # replaces the step with whole 60 Hz frames.

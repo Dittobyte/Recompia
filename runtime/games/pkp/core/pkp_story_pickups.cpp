@@ -10,6 +10,9 @@
 // - 0x222a20: the host's handler of a visitor's request. After giving the item it removes the entry: 0x222cf0, `bl 0x9cb680` with
 //   x0 = the entry (the removal clears the save element and tells every player). The midhook there marks the entry and frees its
 //   claim (0x9cbacc, the game's own), and the entry hook on 0x9cb680 ends that one call.
+//   A memory piece takes the handler's other branch: claimed for the visitor (0x222b44), given (0x222b9c), left in the world, and
+//   the claim is never freed, so the host, whose own pickup needs a free entry, cannot take that piece until its world is loaded
+//   again. The midhook at 0x222ba0 (the branch's last instruction, x21 = the entry) frees it.
 // - 0x798720(item id): the item is a memory piece.
 #include "core/pkp_story_pickups.h"
 #include "core/pkp_guest.h"
@@ -41,7 +44,8 @@ constexpr const char* kTag = "pkp";
 constexpr const char* kFolder = "story-pickups";
 constexpr double kNoticeSeconds = 5.0;
 
-constexpr uint64_t kPickup = 0x9cdba0, kRemove = 0x9cb680, kHostRemoveSite = 0x222cf0;
+constexpr uint64_t kPickup = 0x9cdba0, kRemove = 0x9cb680, kHostRemoveSite = 0x222cf0, kHostPieceSite = 0x222ba0;
+constexpr uint64_t kPieceEntryReg = 21;
 constexpr uint64_t kIsMemoryPiece = 0x798720, kClaim = 0x9cbacc;
 constexpr uint64_t kEntrySize = 0xd0, kEntryList = 0xc6, kEntryClaim = 0xc7;
 constexpr uint8_t kListImportant = 2, kClaimFree = 0xff;
@@ -49,7 +53,7 @@ constexpr uint64_t kElementWord = 0x10, kElementPlace = 0x20, kElementFlags = 0x
 constexpr uint8_t kFlagBagDrop = 0x02;
 constexpr uint32_t kItemIdMask = 0x1fff, kItemIdMax = 0x11f7, kItemKeyMask = 0x1fffff;   // id and variant
 
-enum class SiteKind : uintptr_t { Pickup, Remove, HostRemove };
+enum class SiteKind : uintptr_t { Pickup, Remove, HostRemove, HostPiece };
 struct Site {
     uint64_t site;
     uint32_t word;
@@ -60,6 +64,7 @@ constexpr Site kSites[] = {
     {kPickup, 0xb40045e1u, SiteKind::Pickup, true},              // cbz x1, ...
     {kRemove, 0xd503237fu, SiteKind::Remove, true},              // pacibsp
     {kHostRemoveSite, 0x941ea264u, SiteKind::HostRemove, false}, // bl 0x9cb680
+    {kHostPieceSite, 0x17ffffcbu, SiteKind::HostPiece, false},   // b 0x222acc
 };
 constexpr size_t kSiteCount = sizeof kSites / sizeof kSites[0];
 
@@ -75,7 +80,7 @@ struct State {
     uint64_t keep = 0;                     // the host's entry whose removal, the next call of 0x9cb680, is ended
     uint8_t claim = 0;                     // 0x9cbacc's player byte
     double told_at = -1e9;
-    bool logged_host = false, logged_visitor = false, write_failed = false;
+    bool logged_host = false, logged_visitor = false, logged_piece = false, write_failed = false;
 };
 State& st() {
     static State s;
@@ -144,6 +149,26 @@ int on_pickup(::Ctx* c, State& s) {
     return 1;
 }
 
+// Frees the entry's claim with the game's own call; the entry is then free whatever that call did.
+void free_claim(::Ctx* c, State& s, uint64_t entry) {
+    s.claim = guest::rd<uint8_t>(entry + kEntryClaim);
+    if (s.claim != kClaimFree) guest::call(c, s.base + kClaim, entry, reinterpret_cast<uint64_t>(&s.claim), 0);
+    if (guest::rd<uint8_t>(entry + kEntryClaim) != kClaimFree) guest::wr<uint8_t>(entry + kEntryClaim, kClaimFree);
+}
+
+// The host gave a visitor a memory piece (x21 = the entry, which stays in the world): the claim made for the visitor is freed.
+void on_host_piece(::Ctx* c, State& s) {
+    const uint8_t host = layout::kSessionOnline | layout::kSessionHost;
+    if ((session(s, nullptr) & host) != host) return;
+    const uint64_t entry = c->x[kPieceEntryReg];
+    if (!guest::ok(entry, kEntrySize) || guest::rd<uint8_t>(entry + kEntryClaim) == kClaimFree) return;
+    free_claim(c, s, entry);
+    if (!s.logged_piece) {
+        s.logged_piece = true;
+        NXLOG_I(kTag, "Story co-op items: a memory piece a visitor takes stays free for the host to take");
+    }
+}
+
 // The host's removal of an item it gave a visitor (x0 = the entry): the next call of 0x9cb680 is ended, the claim is freed.
 void on_host_remove(::Ctx* c, State& s) {
     const uint8_t host = layout::kSessionOnline | layout::kSessionHost;
@@ -152,9 +177,7 @@ void on_host_remove(::Ctx* c, State& s) {
     const uint64_t entry = c->x[0];
     uint64_t element = 0;
     if (!instanced(c, s, entry, &element)) return;
-    s.claim = guest::rd<uint8_t>(entry + kEntryClaim);
-    if (s.claim != kClaimFree) guest::call(c, s.base + kClaim, entry, reinterpret_cast<uint64_t>(&s.claim), 0);
-    if (guest::rd<uint8_t>(entry + kEntryClaim) != kClaimFree) guest::wr<uint8_t>(entry + kEntryClaim, kClaimFree);
+    free_claim(c, s, entry);
     s.keep = entry;
     if (!s.logged_host) {
         s.logged_host = true;
@@ -168,6 +191,7 @@ int hook(::Ctx* c, uint64_t, void* user) {
     switch (static_cast<SiteKind>(reinterpret_cast<uintptr_t>(user))) {
         case SiteKind::Pickup: return on_pickup(c, s);
         case SiteKind::HostRemove: on_host_remove(c, s); return 0;
+        case SiteKind::HostPiece: on_host_piece(c, s); return 0;
         case SiteKind::Remove: {
             const uint64_t keep = s.keep;
             s.keep = 0;
