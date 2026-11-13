@@ -44,6 +44,7 @@ mod public_ip;
 mod readiness;
 use pokopia_relay as relay;
 mod relay_cmds;
+mod releases;
 mod repair;
 mod repair_cmds;
 mod rollback;
@@ -64,6 +65,8 @@ mod storage;
 #[cfg(debug_assertions)]
 mod testhook;
 mod update;
+mod update_apply;
+mod update_game;
 mod update_cmds;
 mod window;
 mod writecheck;

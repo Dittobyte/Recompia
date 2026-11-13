@@ -2,7 +2,7 @@
 // rows ask for (which rows are on, what a button says). Modules never keep page state of their own; they go through st.
 import { store } from '../../store.js';
 import { t } from '../../i18n.js';
-import { canUpdate, gamePhase } from '../../action.js';
+import { canUpdate, gamePhase, updatePlayable } from '../../action.js';
 import { makeSource } from '../../settings-schema.js';
 import { backupDetail, backupText } from '../backups.js';
 
@@ -45,7 +45,7 @@ export function env(st) {
     version: s.app?.version ?? '',
     gameBusy,
     canSetUp: !!s.app?.dump && !gameBusy && !s.task && !s.starting,
-    canPlay: s.app?.readiness?.kind === 'ready' && !gameBusy && !s.task && !s.starting,
+    canPlay: s.app?.readiness?.kind === 'ready' && !gameBusy && (!s.task || updatePlayable(s)) && !s.starting,
     storage: s.storage,
     repack: s.repack,
     taskBusy: !!s.task || s.starting,

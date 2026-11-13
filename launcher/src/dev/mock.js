@@ -133,7 +133,7 @@ let mockSteam = { found: true, running: false, accounts: 1, game_added: 0, launc
 let mockChannel = 'stable';
 let mockRepair = null;
 // the builds the launcher offers, as list_builds returns them, for a launcher that is 0.8.1-beta.6
-const BACK = ['The game files may have to be built again for the older version, so Set up again can be asked (about 15 to 20 minutes).', 'Files that only the newer version has stay in the folder; they are not removed.'];
+const BACK = ['The game code may have to be built again for the older version, before it is installed or with Set up again after it: from a few minutes to an hour, depending on your PC.', 'Files that only the newer version has stay in the folder; they are not removed.'];
 const MOCK_BUILDS = [
   { tag: 'v0.8.1-beta.7', name: 'Pokopia Recomp 0.8.1-beta.7 (Testing)', date: '2026-11-09T12:00:00Z', prerelease: true, installable: true, relation: 'newer', risk: 'none', reasons: [], url: 'https://github.com/featureJosh/Recompia/releases/tag/v0.8.1-beta.7',
     notes: '### Regressions and known problems\n- Going back to an older build has only been tried in tests so far\n\n### What to test\n- Open Choose a version and read a note. Report: what the list showed' },
@@ -265,8 +265,17 @@ function runUpdate() {
       if (done < total) return;
       clearInterval(timer);
       (async () => {
-        for (const phase of ['verify', 'extract', 'apply', 'restart']) {
-          emit('update-progress', { phase, done: 0, total: 0 });
+        for (const phase of ['verify', 'extract']) {
+          emit('update-progress', { phase, step: '', done: 0, total: 0 });
+          await sleep(1200);
+        }
+        // update.rs prepares the game code with the update's own build (pkp_build.py --prepare) while Play still works
+        for (let n = 0; n <= 284; n += 4) {
+          emit('update-progress', { phase: 'prepare', step: 'compile', done: n, total: 284 });
+          await sleep(60);
+        }
+        for (const phase of ['apply', 'adopt', 'restart']) {
+          emit('update-progress', { phase, step: '', done: 0, total: 0 });
           await sleep(1200);
         }
         location.search = '?s=ready';   // what a restart looks like from here

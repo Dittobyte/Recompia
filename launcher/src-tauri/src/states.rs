@@ -7,14 +7,14 @@
 use std::sync::Arc;
 use tauri::{App, AppHandle, Builder, Manager, Runtime, State, Window};
 
-use crate::{achievements, mods_catalog, mods_update, play, relay_cmds, setup_job, storage, update};
+use crate::{achievements, mods_catalog, mods_update, play, relay_cmds, releases, setup_job, storage, update};
 
 pub type PlayHandle = play::PlayState;
 pub type SetupHandle = Arc<setup_job::SetupState>;
 pub type StorageHandle = Arc<storage::StorageState>;
 pub type RelayHandle = relay_cmds::RelayState;
 pub type UpdateHandle = Arc<update::UpdateState>;
-pub type ReleasesHandle = update::ReleaseStore;
+pub type ReleasesHandle = releases::ReleaseStore;
 pub type CatalogHandle = mods_catalog::CatalogStore;
 pub type ModsUpdateHandle = mods_update::Session;
 pub type AchievementsHandle = achievements::StatsStore;
