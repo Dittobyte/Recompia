@@ -83,9 +83,7 @@ export const api = {
   relayStatus: () => invoke('relay_status'),
   lanReport: () => invoke('lan_report'),
   publicIp: () => invoke('public_ip'),
-  roomCodeNew: () => invoke('room_code_new'),
-  roomCodeCheck: (args) => invoke('room_code_check', args),   // { code }
-  roomCodeHost: () => invoke('room_code_host'),
+
 
   // Mods (Modtopia)
   modsList: () => invoke('mods_list'),

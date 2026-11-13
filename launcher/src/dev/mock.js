@@ -156,7 +156,7 @@ const settings = {
   controls_exists: !sc.noControls,
   pkp: {
     'fs.romfs': 'D:/Dumps/Pokopia/updates/2.0.1a/romfs', 'fs.save_dir': '', 'audio.volume': '0.8',
-    'net.protocol': 'native', 'net.mode': 'auto', 'net.internet': 'false', 'net.relay': '', 'net.room_code': '', 'net.server': 'auto',
+    'net.protocol': 'native', 'net.mode': 'auto', 'net.internet': 'false', 'net.relay': '', 'net.server': 'auto',
     'pkp.link_interact_everywhere': '0', 'pkp.link_story_coop': '0',
   },
   controls: sc.noControls ? {} : {
@@ -456,13 +456,7 @@ function handle(cmd, args) {
       return relay;
     case 'lan_report': return lanReport;
     case 'public_ip': return params.get('public') === 'none' ? null : '198.51.100.23';
-    case 'room_code_new': return Array.from({ length: 4 }, () => Array.from({ length: 4 }, () => '0123456789ABCDEFGHJKMNPQRSTVWXYZ'[Math.floor(Math.random() * 32)]).join('')).join('-');
-    case 'room_code_check': {
-      const c = args.code.replace(/[- ]/g, '').toUpperCase().replaceAll('O', '0').replace(/[IL]/g, '1');
-      if (!/^[0-9A-HJKMNP-TV-Z]{16}$/.test(c)) throw 'A room code has 16 letters and digits: XXXX-XXXX-XXXX-XXXX.';
-      return c.match(/.{4}/g).join('-');
-    }
-    case 'room_code_host': return params.get('gamecode');
+
     case 'mods_list': return markedMods();
     case 'mods_set_enabled': mockMods.mods.find((m) => m.id === args.id).enabled = args.on; return markedMods();
     case 'mods_move': {

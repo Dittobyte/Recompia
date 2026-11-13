@@ -21,7 +21,7 @@ starts. At the top of the page, pick one:
 |---|---|
 | Off | No Link Play. |
 | Same network | The default. On the same Wi-Fi or network the host is found by itself. **Join directly** takes one host's address (shown under **This PC** on the host's page) when it is not found. |
-| Internet | **Host** or **Visit** over the internet with a room code, through the project's public relay. Nothing else to set up. Your own relay or a forwarded port are under **Advanced**. |
+| Internet | Play over the internet through the project's public relay. Every room there shows up in the game's **Visit a Friend** list. Nothing else to set up. Your own relay or a forwarded port are under **Advanced**. |
 
 The page shows the menu path to take in the game. In the game: the PC in your first house -> Link Play (unlocked after Environment
 Level 2 in Withered Wasteland) -> **Local connection**. **Online connection** is Nintendo's own service and does not work here. The host
@@ -42,13 +42,16 @@ picks **Invite Others to Visit**, the others **Visit a Friend**.
 ## Step by step: over the internet
 
 The launcher uses the project's **public relay** by default: every player dials out to it, so nobody forwards a port or types an address.
+Every room on it shows up in **Visit a Friend** for every player with the same release and the same **Same for everyone** switches, so you
+can meet other players there.
 
 1. Everyone updates to the same release and starts the launcher.
-2. Host: **Link Play** -> **Internet** -> **Host**. Press **New code** if you want a fresh one (it stays the same until you press it again)
-   and send the room code to your friends (the copy button helps).
-3. Visitor: **Link Play** -> **Internet** -> **Visit**. Type the code in **Room code**.
-4. Everyone presses **Play**. In the game: PC -> Link Play -> Local connection. The host picks **Invite Others to Visit**, the visitors
-   **Visit a Friend**.
+2. Everyone opens **Link Play** and picks **Internet**.
+3. Everyone presses **Play**. In the game: PC -> Link Play -> Local connection. The host picks **Invite Others to Visit**, the visitors
+   **Visit a Friend** and choose the host's room from the list.
+
+**A private room:** when you host, the game asks "Would you like to set a Link Code?". Say yes and give the code to your friends: the room
+still shows up in the list, but only players who type the Link Code can join. The game checks the code itself, as on a Switch.
 
 **Advanced: without the public relay.** Under **Internet** -> **Advanced**, turn on **Use my own relay or address**. Then pick one way;
 both need one change on the router of the player who hosts (a port forward).
@@ -60,18 +63,19 @@ both need one change on the router of the player who hosts (a port forward).
 2. Host: **Host**, then under **Advanced** turn on **Run a relay on this PC**. Keep the launcher open while you play: the relay stops
    when it closes.
 3. Host: under **Share with visitors** the page shows the address to give out, for example `203.0.113.5:47610`. Send your friend that
-   address and the room code.
-4. Visitor: **Visit**, then under **Advanced** type the address in **Address** and turn on **Through a relay**. Type the code in **Room code**.
-5. Both press **Play** and go in the game as above.
+   address.
+4. Visitor: under **Advanced**, turn on **Use my own relay or address**, pick **Visit**, type the address in **Address** and turn on
+   **Through a relay**.
+5. Both press **Play** and go in the game as above. Every room on that relay shows up in **Visit a Friend**.
 
 Any other relay works the same way: the host types its address in **Relay address** instead of running one, and shares it.
 
 **Way B: no relay.** The host's router forwards the game's own port instead.
 
 1. Host: on the router, forward port **47600**, TCP and UDP, to the host's PC.
-2. Host: **Host**, then under **Advanced** leave **Relay address** empty and **Run a relay on this PC** off. Send your friend the address
-   under **Share with visitors** (for example `203.0.113.5:47600`) and the code.
-3. Visitor: **Visit**, then under **Advanced** type the address and leave **Through a relay** off. Type the code in **Room code**.
+2. Host: under **Advanced**, turn on **Use my own relay or address**, pick **Host**, leave **Relay address** empty and **Run a relay on this
+   PC** off. Send your friend the address under **Share with visitors** (for example `203.0.113.5:47600`).
+3. Visitor: under **Advanced**, turn on **Use my own relay or address**, pick **Visit**, type the address and leave **Through a relay** off.
 4. Both press **Play** and go in the game as above.
 
 **It still does not connect?**
@@ -93,7 +97,7 @@ see it too. Nothing to type, and nothing to change when you take the device to a
 
 What it cannot get past:
 - **Wi-Fi that keeps devices apart** (many cafes, hotels and guest networks: "client isolation"). Nobody on it can reach anybody. Use
-  **Internet** with a room code instead.
+  **Internet** instead.
 - **A host on another port.** When 47600 is taken on the host (a second copy of the game), it listens on a port the system picks, and the
   sweep does not find it. Visit it by address with the port from its log.
 
@@ -107,8 +111,8 @@ What it cannot get past:
 - The first time you host, Windows Firewall may ask about pkp.exe: allow it on **private** networks. If nobody finds you, check that your
   network is set to Private (Settings, Network & internet, your connection, Network profile type) and that pkp.exe is allowed.
 - **Internet through the public relay** (the default): every player only dials out; nothing to forward.
-- **Internet without a relay** (Advanced): the host forwards TCP and UDP 47600 on its router; visitors pick **Internet** -> **Visit** with the host's public
-  address and the host's room code, with **Through a relay** off.
+- **Internet without a relay** (Advanced): the host forwards TCP and UDP 47600 on its router; visitors turn on **Use my own relay or address** under **Advanced**, pick
+  **Visit** and type the host's public address, with **Through a relay** off.
 - **Internet through your own relay** (Advanced): nobody forwards anything except whoever runs the relay. Any pokopia-native coop relay works. The launcher can
   run one too: **Run a relay on this PC** on the Link Play page (while the launcher stays open), or `PokopiaLauncher --host` on a server
   (`--listen <IPv4>[:<port>]`, `--no-udp`, and pokopia-native's limits options), or the standalone `pokopia-relay` server
@@ -116,7 +120,7 @@ What it cannot get past:
 
 With the launcher's relay and this port's build on both ends of a link, the game's packets go over UDP through the relay instead of the TCP
 link, which avoids stalls on lossy connections. With pokopia-native's relay, or a pokopia-native player on the other end, they use the TCP
-link as pokopia-native does. Either way they are checked end to end with the room code: the relay only forwards them. Nothing is encrypted.
+link as pokopia-native does. Either way they are checked end to end by the players: the relay only forwards them. Nothing is encrypted.
 
 ## Old protocol
 

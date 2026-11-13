@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Changed
+- Link Play over the internet needs no room code any more: every room on the public relay shows up in the game's Visit a Friend list. To keep a room private, set a Link Code when the game asks.
+
 ### Fixed
 - The launcher no longer reports "The game stopped unexpectedly" (0xC0000409) when the game closes itself
 - Removed the touch screen Menu button, which could show up in the corner on desktop PCs
