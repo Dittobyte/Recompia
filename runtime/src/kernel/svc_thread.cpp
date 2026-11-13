@@ -51,7 +51,10 @@ void svc_exit_process(::Ctx* c) {
     }
     NXLOG_I("runtime", "state at svcExitProcess:\n%s", kernel::detail::state_report().c_str());
     log_flush();
-    ExitProcess(0);
+    // Not ExitProcess: it runs the DLLs' detach and static destructors while guest and render threads still run, which ends in a
+    // fail-fast (0xC0000409) that the launcher reports as a crash. Every other runtime exit terminates; os_posix's ExitProcess is _exit.
+    TerminateProcess(GetCurrentProcess(), 0);
+    for (;;) Sleep(1000);
 }
 
 void svc_create_thread(::Ctx* c) {            // x1 entry, x2 arg, x3 stack top, w4 priority, w5 core -> x1 handle
