@@ -492,16 +492,6 @@ bool minimized() { return window_flag(SDL_WINDOW_MINIMIZED); }
 
 bool focused() { return window_flag(SDL_WINDOW_INPUT_FOCUS); }
 
-// A touch screen on the machine (Steam Deck, ROG Ally and other handhelds, touch laptops): SDL lists it as a direct touch device. Not a touchpad.
-bool touchscreen_present() {
-    int n = 0;
-    SDL_TouchID* ids = SDL_GetTouchDevices(&n);
-    bool found = false;
-    for (int i = 0; ids && i < n; ++i) found = found || SDL_GetTouchDeviceType(ids[i]) == SDL_TOUCH_DEVICE_DIRECT;
-    SDL_free(ids);
-    return found;
-}
-
 bool visible() { return g_window != nullptr && !window_flag(SDL_WINDOW_HIDDEN); }
 
 // ---- fullscreen ---------------------------------------------------------------------------------------------------

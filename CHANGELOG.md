@@ -4,6 +4,7 @@
 
 ### Fixed
 - The launcher no longer reports "The game stopped unexpectedly" (0xC0000409) when the game closes itself
+- Removed the touch screen Menu button, which could show up in the corner on desktop PCs
 
 ## 0.12.0 (build P: Pitoy)
 
