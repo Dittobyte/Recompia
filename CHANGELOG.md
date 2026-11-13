@@ -9,6 +9,7 @@
 - A crash from an internal error now names the error in pkp.log
 - Linux: the game no longer closes at once without a message when the game folder or a game file has a name that is not valid UTF-8; it says which folder
 - An update no longer stops with "The prepared game code cannot be put in place (this release changes lifter)" in a game folder first installed from 0.9.0 or older
+- Menu tiles no longer have a thin vertical line down the middle at render resolutions below 1080p, such as **720p** in the launcher or a Steam Deck at its own size (#490). Below 1080p the game now keeps its own 1080p layout and the picture is drawn at the size you picked, with the same number of pixels as before; the dark band this way of scaling could leave along the bottom edge at some sizes is gone too. Render resolutions above 1080p that are not a whole multiple of it, such as 1440p, can still show a faint line. No shader is translated again
 
 ## 0.13.0 (build Q: Quokka)
 

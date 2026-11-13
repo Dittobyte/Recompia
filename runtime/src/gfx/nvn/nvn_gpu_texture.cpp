@@ -116,6 +116,12 @@ static bool read_only_layout(VkImageLayout l) {
            l == VK_IMAGE_LAYOUT_PRESENT_SRC_KHR || l == VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
 }
 
+// A side of an image made at a resolution scale: the whole pixels the scaled NVN side covers. Rounded down: a pass's viewport is the
+// NVN rectangle times the scale, so a side rounded up has a last row or column whose pixel centres lie outside it, and no draw reaches
+// them. An 80x45 target at 0.5 was 40x23 with 22.5 rows drawn; the 23rd row kept what the memory held, and the passes that sample the
+// target by UV spread it over the bottom of the frame as a band. The 0.001 keeps a product that is whole but for the float's error.
+static uint32_t scaled_side(uint32_t side, float scale) { return static_cast<uint32_t>(std::floor(static_cast<float>(side) * scale + 0.001f)); }
+
 TexGpu* create_texture_gpu(Texture* t, float want_scale) {
     auto* g = new TexGpu();
     { std::lock_guard<std::mutex> lk(g_live_mu); g_live_set.insert(g); }
@@ -235,7 +241,7 @@ TexGpu* create_texture_gpu(Texture* t, float want_scale) {
     Shape is = s;
     if (want_scale != 1.0f && !g->transcoded && !is_block_format(chosen)) {
         const uint32_t lim = device().properties().limits.maxImageDimension2D;
-        const uint32_t w = static_cast<uint32_t>(std::lround(s.base.width * want_scale)), h = static_cast<uint32_t>(std::lround(s.base.height * want_scale));
+        const uint32_t w = scaled_side(s.base.width, want_scale), h = scaled_side(s.base.height, want_scale);
         if (w >= 1 && h >= 1 && w <= lim && h <= lim) {
             is.base.width = w;
             is.base.height = h;
@@ -498,8 +504,8 @@ bool tex_rescale(Texture* t, Frame& f, float to, const char* why) {
     if (to != 1.0f && (g->scale_blocked || g->transcoded || is_block_format(g->format))) return false;
     Shape s = shape_of(*t);
     if (to != 1.0f) {
-        s.base.width = static_cast<uint32_t>(std::lround(s.base.width * to));
-        s.base.height = static_cast<uint32_t>(std::lround(s.base.height * to));
+        s.base.width = scaled_side(s.base.width, to);
+        s.base.height = scaled_side(s.base.height, to);
     }
     gfx::Image ni;
     std::string err;
