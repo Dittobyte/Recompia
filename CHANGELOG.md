@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- The launcher in Brazilian Portuguese: it follows a Portuguese system on its own, or pick Português (Brasil) in Settings > About > Language
+
 ### Fixed
 - An update no longer stops with "The prepared game code cannot be put in place (this release changes lifter)" in a game folder first installed from 0.9.0 or older
 
