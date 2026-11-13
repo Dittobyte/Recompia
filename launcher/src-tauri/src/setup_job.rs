@@ -22,8 +22,8 @@ use crate::{dump, gamebuild, host, mods, play, preflight, settings, setuplog, sh
 pub struct SetupState {
     pub progress: Mutex<shaders::Progress>,
     pub cancel: AtomicBool,
-    /// Cancel flag of a running .nup unpack.
-    pub nup_cancel: AtomicBool,
+    /// Cancel flag of a running game package unpack.
+    pub unpack_cancel: AtomicBool,
 }
 
 impl SetupState {

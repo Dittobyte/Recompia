@@ -70,10 +70,10 @@ export const store = {
     setup: null,          // setup_status
     game: null,           // game_status
     news: { releases: [], update: null },
-    task: null,           // derived: { kind: 'setup'|'update'|'nup'|'dlss', label, pct (null: unknown) } | null
+    task: null,           // derived: { kind: 'setup'|'update'|'unpack'|'dlss', label, pct (null: unknown) } | null
     update: null,         // last update-progress while an update runs
     updateError: null,
-    nup: null,            // last nup-progress while a .nup unpacks
+    unpack: null,         // last unpack-progress while a game package (.nup or .nx) unpacks
     dlss: null,           // last dlss-progress while DLSS downloads
     storage: null,        // shader_storage: how the translated shaders are kept (loose files or the shader archive), null until asked
     repack: null,         // { kind: 'compact'|'expand', done, total } while the shader files are being repacked
@@ -97,7 +97,7 @@ export const store = {
       on('setup-status', onSetupEvent),
       on('update-progress', (p) => set({ update: p }, 'update')),
       on('dlss-progress', (p) => store.state.dlss && set({ dlss: p }, 'task')),
-      on('nup-progress', (p) => store.state.nup && set({ nup: p }, 'task')),
+      on('unpack-progress', (p) => store.state.unpack && set({ unpack: p }, 'task')),
       on('shader-storage-progress', (p) => store.state.repack && set({ repack: p }, 'task')),
       on('tauri://drag-enter', () => set({ dragging: true, dropped: null }, 'drop')),
       on('tauri://drag-leave', () => set({ dragging: false, dropped: null }, 'drop')),
@@ -278,17 +278,17 @@ export const store = {
     }
   },
 
-  /** Unpacks a .nup through the sidebar task. Resolves to the unpacked folder; rejects like the command. */
-  async importNup(path) {
-    set({ nup: { done: 0, total: 0, file: '' } }, 'task');
+  /** Unpacks a .nup or .nx through the sidebar task. Resolves to the unpacked folder; rejects like the command. */
+  async importPackage(path) {
+    set({ unpack: { done: 0, total: 0, file: '' } }, 'task');
     try {
-      return await api.importNup({ path });
+      return await api.importPackage({ path });
     } finally {
-      set({ nup: null }, 'task');
+      set({ unpack: null }, 'task');
     }
   },
 
-  cancelNup: () => api.cancelNup(),
+  cancelUnpack: () => api.cancelUnpack(),
 
   /** Downloads NVIDIA's DLSS file through the sidebar task; rejects like the command. */
   async fetchDlss() {

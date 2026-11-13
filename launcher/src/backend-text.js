@@ -114,7 +114,7 @@ const TEXTS = [
   msg('If Windows Firewall asks about this program, allow it on Private networks. If it was answered wrongly once, remove the Block rules for the program in Windows Defender Firewall > Allow an app.'),
   msg('If visitors cannot connect, the firewall may block the ports (47600 for a host, 47610 for a relay). With firewalld (Fedora, Bazzite): sudo firewall-cmd --add-port=47600/tcp --add-port=47600/udp --add-port=47610/tcp --add-port=47610/udp'),
 
-  // nsp.rs, nup.rs: 'Cannot write {1} (disk full or blocked?): {2}' comes first, the plainer 'Cannot write {1}: {2}' would match it too
+  // nsp.rs, unpack.rs, nx.rs: 'Cannot write {1} (disk full or blocked?): {2}' comes first, the plainer 'Cannot write {1}: {2}' would match it too
   msg('Cannot write {1} (disk full or blocked?): {2}'),
   msg('The .nsp file is damaged or incomplete.'),
   msg('This is not an .nsp file (no PFS0 header).'),
@@ -122,19 +122,27 @@ const TEXTS = [
   msg('Add-on {1} is not for this game.'),
   msg('This .nsp holds no add-on content for this game.'),
 
-  // nup.rs
+  // unpack.rs: {1} is the package, .nup or .nx
   msg('Unpacking was cancelled.'),
+  msg('This {1} has no base game or update in it.'),
+  msg('{1} already exists and was not made by the launcher. Move or delete it, then try again.'),
+  msg('This {1} is not the game version this launcher supports (build {2}). It holds: {3}.'),
+  msg('The game program in this {1} has no RomFS (game data).'),
+  msg('Not enough free disk space to unpack the game: about {1} GB are needed on the drive of {2}, {3} GB are free.'),
+
+  // nup.rs
   msg('The .nup file is damaged or incomplete.'),
   msg('This is not a .nup package (wrong header).'),
   msg('This .nup was made with a newer format than this launcher knows. Update the launcher.'),
   msg('The .nup file is damaged or incomplete (it does not match its header). Download it again.'),
   msg('The .nup table of contents is damaged (checksum mismatch). Download the file again.'),
-  msg('This .nup has no base game or update in it.'),
-  msg('{1} already exists and was not made by the launcher. Move or delete it, then try again.'),
-  msg('This .nup is not the game version this launcher supports (build {1}). It holds: {2}.'),
   msg('This update only holds the files it changes and needs the base game, which is not in this .nup. Use a .nup that contains the base game too.'),
-  msg('The game program in this .nup has no RomFS (game data).'),
-  msg('Not enough free disk space to unpack the game: about {1} GB are needed on the drive of {2}, {3} GB are free.'),
+
+  // nx.rs
+  msg('This is not an .nx package (wrong header).'),
+  msg('This .nx was made with a newer format than this launcher knows. Update the launcher.'),
+  msg('The .nx file is damaged or incomplete (it does not match its header). Download it again.'),
+  msg('This .nx holds the game as NCA packages (it was made from an .nsp or .xci), which the launcher cannot read. Make the .nx from extracted game files or from a .nup (nxconvert pack-tree or pack-nup).'),
 
   // play.rs: starting and watching the game (the raw text is what action.js gamePhase reads)
   msg('The game is already running.'),

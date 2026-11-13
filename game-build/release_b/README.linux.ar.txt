@@ -4,7 +4,7 @@
 Pokopia PC @VERSION@ لنظام Linux وSteamOS وSteam Deck
 
 1. تحتاج إلى مشغّل Vulkan: مشغّلات Mesa لـ AMD وIntel أو مشغّل NVIDIA الخاص. لا شيء غير ذلك، لأن اللعبة وزمن التشغيل ومترجم الشيدرات كلها برامج Linux أصلية.
-2. شغّل PokopiaLauncher.AppImage واختر مجلد النسخة المستخرجة (base/ و updates/<version>/، وكل منهما يحتوي exefs/ و romfs/) أو ملف .nup. الإصدار 2.0.1a مطلوب.
+2. شغّل PokopiaLauncher.AppImage واختر مجلد النسخة المستخرجة (base/ و updates/<version>/، وكل منهما يحتوي exefs/ و romfs/) أو ملف .nup أو .nx. الإصدار 2.0.1a مطلوب.
 3. اضغط Set up. في المرة الأولى ينزّل أدوات البناء (Python وZig، نحو 100 ميغابايت)، ثم يبني اللعبة ويترجم شيدراتها على هذا الحاسوب. يمكنك الإيقاف المؤقت والمتابعة لاحقاً.
 4. اضغط Play. تعمل اللعبة أصلياً: بدون Proton وبدون Wine. موسّعات FSR 3 و DLSS خاصة بـ Windows فقط.
 

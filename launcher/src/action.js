@@ -1,5 +1,5 @@
 // Pure state logic: the hero's one button and the background task. No Tauri import, so `node --test` runs it.
-// Only these keys of the store state are read: app, setup, game, news, update, nup, dlss, repack, starting, loadError.
+// Only these keys of the store state are read: app, setup, game, news, update, unpack, dlss, repack, starting, loadError.
 
 import { num, t } from './i18n.js';
 
@@ -87,7 +87,7 @@ export const updatePlayable = (s) => !!s.update && !SWAP_PHASES.has(s.update.pha
 export function taskOf(s) {
   if (s.update) return { kind: 'update', label: updateLabel(s.update), pct: ['restart', 'wait'].includes(s.update.phase) ? null : pctOf(s.update) };
   if (setupRunning(s)) return { kind: 'setup', label: t('Setting up'), pct: setupStepOf(s.setup.progress).pct };
-  if (s.nup) return { kind: 'nup', label: t('Unpacking game files'), pct: pctOf(s.nup) };
+  if (s.unpack) return { kind: 'unpack', label: t('Unpacking game files'), pct: pctOf(s.unpack) };
   if (s.dlss) return { kind: 'dlss', label: t('Downloading DLSS'), pct: pctOf(s.dlss) };
   if (s.repack) return { kind: 'repack', label: s.repack.kind === 'expand' ? t('Unpacking shaders') : t('Packing shaders'), pct: pctOf(s.repack) };
   return null;
@@ -123,7 +123,7 @@ export function primaryAction(s) {
     case 'finishing': return off(t('Finishing up'), 'loader-circle');
   }
   if (s.update && !updatePlayable(s)) return off(t('Updating'), 'loader-circle');
-  if (s.nup) return off(t('Unpacking'), 'loader-circle');
+  if (s.unpack) return off(t('Unpacking'), 'loader-circle');
   if (s.repack) return off(s.repack.kind === 'expand' ? t('Unpacking shaders') : t('Packing shaders'), 'loader-circle');
 
   const kind = s.app.readiness?.kind;

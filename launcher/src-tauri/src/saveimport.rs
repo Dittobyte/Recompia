@@ -17,7 +17,7 @@ use std::time::SystemTime;
 use serde::Serialize;
 
 /// Program id of the game (little-endian in the save attribute).
-const PROGRAM_ID: u64 = 0x0400_A3A0_1EE4_C000;
+pub(crate) const PROGRAM_ID: u64 = 0x0400_A3A0_1EE4_C000;
 const TITLE_DIR: &str = "0400A3A01EE4C000";
 /// The runtime's built-in local user (games/pkp/core/pkp_core.cpp): [account] uid is hi then lo; the save folder is each u64 little-endian.
 const DEFAULT_UID: &str = "000000000000000141434e4852656370";
