@@ -3,6 +3,8 @@
 Pokopia's **Link Play** (local wireless, several players on one island) between PCs, Steam Decks and other handhelds. This port speaks
 pokopia-native's co-op protocol, so you can also play with **pokopia-native** players.
 
+**New to Link Play? Start with the [Link Play guide](../link-play.md):** the few steps to play together. This page is the full reference.
+
 ## Before you start
 
 - **Cross-play** works with pokopia-native players on game version **2.0.1**. Players on 1.0.5 cannot join (the game builds differ).
