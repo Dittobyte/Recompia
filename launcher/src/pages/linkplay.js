@@ -100,7 +100,7 @@ export async function render(el, ctx) {
       : '';
     return group(t('Same for everyone'), [
       row(t('Visitors can build everywhere'), exp + toggle('lp-interact', ui.interact || ui.story, { disabled: ui.story })),
-      row(t('Visitors can talk to story characters'), exp + toggle('lp-story', ui.story)),
+      row(t('Seamless co-op: every player plays their own story'), exp + toggle('lp-story', ui.story)),
     ]) + mods;
   }
 

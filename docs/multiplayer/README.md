@@ -12,7 +12,7 @@ pokopia-native's co-op protocol, so you can also play with **pokopia-native** pl
 - **Each player needs their own save.** The host refuses a visitor whose save it already has (error 9005, "Communication error"):
   two copies of one save cannot play together. Earlier builds gave every new save the same player id, so every visit failed with
   9005; the game now repairs such a save by itself at start (a copy is kept in `uuid-backup\` in the save folder).
-- Every player needs the same **Interact everywhere** and **Story co-op** settings, or the host is not listed. Only the host's save keeps story progress.
+- Every player needs the same **Interact everywhere** and **Seamless co-op** settings, or the host is not listed. With Seamless co-op every player's story progress is kept in their own save.
 
 ## Setting it up
 
@@ -30,7 +30,7 @@ Level 2 in Withered Wasteland) -> **Local connection**. **Online connection** is
 picks **Invite Others to Visit**, the others **Visit a Friend**.
 
 **Same for everyone:** **Visitors can build everywhere** (moves, items and building in the story areas too, not only in Palette Town) and
-**Visitors can talk to story characters** (turns the first one on). Both are experimental.
+**Seamless co-op** (every player plays their own story, saved in their own save; turns the first one on). Both are experimental and off by default.
 
 ## Step by step: on the same network
 
