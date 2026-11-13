@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Update commands: the releases, one-click update, picking a build (update.rs holds the logic).
+//! Update commands: the releases, one-click update, picking a build (releases.rs and update.rs hold the logic).
 
 use serde::Serialize;
 use std::path::Path;
@@ -12,6 +12,7 @@ use crate::error::{self, CmdError};
 use crate::guard::{ensure_idle, Need};
 use crate::paths::{exe_dir, launcher_path};
 use crate::relay_cmds::stop_relay;
+use crate::releases::{self, Channel};
 use crate::{rollback, update};
 
 /// The version updates compare with. None: a dev build, which takes none.
@@ -22,36 +23,36 @@ pub fn update_version(app: &AppHandle) -> Option<String> {
     if let Ok(v) = std::env::var("PKP_LAUNCHER_UPDATE_CHECK_AS") {
         version = v; // debug builds only: pretend to be this version (dev builds otherwise skip the check)
     }
-    (!update::is_dev_version(&version)).then_some(version)
+    (!releases::is_dev_version(&version)).then_some(version)
 }
 
-/// The releases (update.rs load_releases) from this session's copy, the network or the cache file.
-pub fn releases_of(app: &AppHandle, refresh: bool) -> Vec<update::GhRelease> {
-    releases_for(app, refresh, update::Channel::parse(&load_config(app).channel))
+/// The releases (releases.rs load_releases) from this session's copy, the network or the cache file.
+pub fn releases_of(app: &AppHandle, refresh: bool) -> Vec<releases::GhRelease> {
+    releases_for(app, refresh, Channel::parse(&load_config(app).channel))
 }
 
-/// The version the Update button compares with: None on a channel that offers no updates (Testing, update.rs Channel::offers_updates).
+/// The version the Update button compares with: None on a channel that offers no updates (Testing, releases.rs Channel::offers_updates).
 fn update_current(app: &AppHandle) -> Option<String> {
-    update_version(app).filter(|_| update::Channel::parse(&load_config(app).channel).offers_updates())
+    update_version(app).filter(|_| Channel::parse(&load_config(app).channel).offers_updates())
 }
 
 /// Patch notes for the launcher and the update for this build, if there is one. Never fails: an empty list at worst.
 #[tauri::command]
-pub async fn get_releases(app: AppHandle, refresh: Option<bool>) -> update::Releases {
-    tauri::async_runtime::spawn_blocking(move || update::view_here(&releases_of(&app, refresh.unwrap_or(false)), update_current(&app).as_deref())).await.unwrap_or_default()
+pub async fn get_releases(app: AppHandle, refresh: Option<bool>) -> releases::Releases {
+    tauri::async_runtime::spawn_blocking(move || releases::view_here(&releases_of(&app, refresh.unwrap_or(false)), update_current(&app).as_deref())).await.unwrap_or_default()
 }
 
-/// A build the player picked (update.rs target_for_tag) instead of the newest newer one. `accepted`: the player confirmed the warning for
+/// A build the player picked (releases.rs target_for_tag) instead of the newest newer one. `accepted`: the player confirmed the warning for
 /// an older build (the dialogs ask; this side refuses without it).
 pub struct Wanted {
     pub tag: String,
-    pub channel: update::Channel,
+    pub channel: Channel,
     pub accepted: bool,
 }
 
-pub fn releases_for(app: &AppHandle, refresh: bool, channel: update::Channel) -> Vec<update::GhRelease> {
+pub fn releases_for(app: &AppHandle, refresh: bool, channel: Channel) -> Vec<releases::GhRelease> {
     let cache = config_path(app).map(|p| p.with_file_name("releases.json")).unwrap_or_default();
-    update::load_releases(&app.releases(), &cache, &app.package_info().version.to_string(), refresh, channel)
+    releases::load_releases(&app.releases(), &cache, &app.package_info().version.to_string(), refresh, channel)
 }
 
 pub fn run_update(app: &AppHandle, st: &update::UpdateState, wanted: Option<Wanted>) -> Result<(), String> {
@@ -66,11 +67,11 @@ pub fn run_update(app: &AppHandle, st: &update::UpdateState, wanted: Option<Want
     let (target, older) = match &wanted {
         None => {
             update_current(app).ok_or("The Testing channel has no automatic update. Pick a build in Settings > About > Choose a version.")?;
-            (update::target_here(&releases_of(app, false), &version).ok_or("No update is available right now.")?, false)
+            (releases::target_here(&releases_of(app, false), &version).ok_or("No update is available right now.")?, false)
         }
         Some(w) => {
-            let t = update::target_for_tag_here(&releases_for(app, false, w.channel), &w.tag).ok_or("That build cannot be installed on this system.")?;
-            (t, update::check_pick(&version, &w.tag, w.accepted)?)
+            let t = releases::target_for_tag_here(&releases_for(app, false, w.channel), &w.tag).ok_or("That build cannot be installed on this system.")?;
+            (t, releases::check_pick(&version, &w.tag, w.accepted)?)
         }
     };
     let paths = update::Paths {
@@ -129,19 +130,19 @@ fn update_error(message: String) -> CmdError {
     CmdError::coded_if(message, update::CANCELLED, error::UPDATE_CANCELLED)
 }
 
-/// The builds a channel offers, newest first, with their notes and what going to each one means (update.rs builds). Works for Testing
+/// The builds a channel offers, newest first, with their notes and what going to each one means (releases.rs builds). Works for Testing
 /// before the channel is saved, so the join question can list them. Empty for a build that takes no updates.
 #[tauri::command]
-pub async fn list_builds(app: AppHandle, channel: String, refresh: Option<bool>) -> Vec<update::Build> {
+pub async fn list_builds(app: AppHandle, channel: String, refresh: Option<bool>) -> Vec<releases::Build> {
     let Some(version) = update_version(&app) else { return Vec::new() };
-    tauri::async_runtime::spawn_blocking(move || update::builds_here(&releases_for(&app, refresh.unwrap_or(false), update::Channel::parse(&channel)), &version)).await.unwrap_or_default()
+    tauri::async_runtime::spawn_blocking(move || releases::builds_here(&releases_for(&app, refresh.unwrap_or(false), Channel::parse(&channel)), &version)).await.unwrap_or_default()
 }
 
 /// Installs the build the player picked (an older one only with `accepted`); the same steps and restart as the update.
 #[tauri::command]
 pub async fn install_version(app: AppHandle, state: UpdateArg<'_>, tag: String, channel: String, accepted: bool) -> Result<(), CmdError> {
     let st = state.inner().clone();
-    let wanted = Wanted { tag, channel: update::Channel::parse(&channel), accepted };
+    let wanted = Wanted { tag, channel: Channel::parse(&channel), accepted };
     tauri::async_runtime::spawn_blocking(move || run_update(&app, &st, Some(wanted))).await.map_err(|e| e.to_string())?.map_err(update_error)
 }
 

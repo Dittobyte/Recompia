@@ -44,6 +44,7 @@ mod public_ip;
 mod readiness;
 use pokopia_relay as relay;
 mod relay_cmds;
+mod releases;
 mod repair;
 mod repair_cmds;
 mod rollback;
