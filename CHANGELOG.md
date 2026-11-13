@@ -27,6 +27,7 @@ This build is about **waiting less**. Building the game code takes about half th
 - If an update cannot finish, the launcher puts back the game build you had, not only its own files
 - The launcher no longer promises "about 7 minutes" for a rebuild: it says from a few minutes to an hour, depending on your PC
 - Story co-op (experimental): every player in a Link Play session now plays their own story, in the host's story areas too. Pokémon give each player the requests and story talks of that player's own progress, and the progress is kept in that player's own save. Every player of a session needs this build: an older Story co-op is refused
+- Story co-op keeps a copy of your save from each start (the newest 5, in `story-coop-backup` in the save folder) and a journal of every story quest change (`story-journal`)
 
 ### Fixed
 - The launcher no longer reports "The game stopped unexpectedly" (0xC0000409) when the game closes itself
