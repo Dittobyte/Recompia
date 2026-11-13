@@ -7,7 +7,7 @@
 **Update:** press Update, then Set up again once (the game code is translated again, several minutes). Shaders and saves are kept.
 
 ### Highlights
-- Mods are here: browse and install Modtopia mods right in the launcher, and manage them in the game's Settings
+- Mods are here: browse and install Modtopia mods right in the launcher, and manage them in the game's Settings (Modtopia support was built in collaboration with the Pokopia Native team)
 - Achievements are here: earn community achievements and see how your progress compares with every other player
 - Linux runs natively: no Proton or Wine
 - macOS runs natively on Apple silicon: VERY EXPERIMENTAL, expect bugs
