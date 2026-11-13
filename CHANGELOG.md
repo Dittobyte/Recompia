@@ -2,57 +2,63 @@
 
 ## Unreleased
 
-- Fixed **Set up** failing with "No such file or directory: ...\.lean-flows\...pkl" after the launcher was closed during an earlier Set up: that build kept running in the background and cleared the files of the new one. Set up's tools now end when the launcher closes (on Windows and Linux), and a new Set up no longer mistakes an unrelated program for a build still running. Update only: no shader rebuild, no Set up again
-- Fixed the Linux launcher still showing **Set up** after setup had finished: it now reads the runtime API from the native game and library, so matching files unlock **Play**. Mismatched releases still require repair. Update only: no shader rebuild, no Set up again
+## 0.12.0 (build P: Pitoy)
 
-- Fixed objects and effects staying invisible for a long time the first time they appear, until a restart, on graphics cards without pipeline libraries (such as the RX 580): the pipelines a visible object waits for are now built before the ones prepared ahead, on more threads on those cards (#515). Update only: no shader rebuild, no Set up again
-- New **Item editor (experimental)** in Settings > Gameplay, off by default: it adds an **Items** tab to the game's Settings screen where you change how many of an item in your bag you hold (up to the game's stack limit). It does not add new items and is off during Link Play. Back up your save first. Update only: no shader rebuild, no Set up again
-- New **Aspect Ratio** setting in the game's Settings > Display and in the launcher (Auto, 16:9, 16:10, 21:9, 32:9; applies after a restart): 16:9 now keeps the game in 16:9 on a 16:10 or ultrawide screen. The toggle that only chose black bars over stretching is now called **Letterbox** (#564). Update only: no shader rebuild, no Set up again
-- Fixed the **Nearest**, **FSR 1** and **NIS** upscalers with **Scene Resolution** below 100% doing nothing, the 3D scene staying as blurry as Off: they now act on the game's own stretch of the scene, so Nearest shows hard pixels and FSR 1 / NIS a sharper picture while the menus and HUD stay sharp (#571). Update only: no shader rebuild, no Set up again
-- Fixed **Set up** failing every time at "Linking pkp.exe" (`undefined symbol`) after a power cut or a forced shutdown during an earlier Set up: the cut could keep a compiled file's name and size but not its contents, and every later Set up took it as finished. Set up now writes each file to the disk before it counts it as done, and compiles again any compiled file it finds damaged, so the next Set up finishes. Update only: no shader rebuild, no Set up again
-- Fixed **Set up** on Linux stopping with "extract_corpus.py was not found": the launcher looked for the shader extractor in `tools/` while the Linux package ships it in `tools/shaders/`. Update only: no shader rebuild, no Set up again
-- Fixed a black screen on GPUs that cannot share memory with the game directly (such as the Qualcomm Adreno X1-85 in Snapdragon X laptops): the game's graphics memory now goes through copies there, as it already does on Linux (#589). Update only: no shader rebuild, no Set up again
+**Update:** press **Update**, then **Set up again** once. The game code is translated again in full this one time (several minutes), so later updates translate only the parts they change. Your shaders and saves are kept; no shader is translated again.
+
+**Linux and macOS:** new native downloads. On Linux, `PokopiaRecomp-0.12.0-linux-x64.tar.gz`; on a Mac with Apple silicon, `Recompia-0.12.0-macos-arm64.zip`. Unpack it, start the launcher and run **Set up** with your own dump.
+
+Pitoy runs **natively on Linux and macOS**, opens the **Modtopia mod hub** inside the launcher, adds a **Community Achievements** page, and fixes a batch of Set up and graphics problems.
+
+### Highlights
+- **Native Linux and macOS:** the game runs without Proton or Wine on Linux, and on Apple silicon Macs through Metal
+- **Browse mods in the launcher:** the Modtopia mod hub's list, with groups, details and one-click install or update
+- **Achievements page:** the community tracker in the launcher, with what you earned and how many players have each one
+- New **Aspect Ratio** setting, an experimental **Item editor**, and a **Mods** tab in the game's own Settings
 
 ### Mods
-- Added a **Mods** tab to the game's own Settings: pick a mod, switch it on or off (applies at the next start), see its state and change its settings, which reach the mod at once
-- Mods can now take screenshots (without the game's overlay menus in them) and react to keyboard keys
-- Mods can tint the final picture (colour presets, colorblind filters), show a picture beside their messages, and make HTTPS requests to the sites their own description names (no redirects, cookies or sign-in)
-- Added **Start without mods** (in the notice after the game stopped unexpectedly, and in Settings > About > Troubleshooting) for one start with every mod left out; the game's Mods tab now shows what each mod holds, whether it changes gameplay, the sites it talks to, its checksum and a switch waiting for the next start; a data mod that replaces a shader file says so; and `pkp.log` lists every mod at start
-- Changing mods that need other hook points now translates only the game part they touch: a plan with main-only points no longer redoes the other three parts (on PC: about 4.5 minutes for main-only points, under a minute for points outside main)
-- Mods can hide the game's HUD, menus and markers while the 3D picture stays (Hide HUD, Photo Mode)
-- **Community Achievements** is now on by default and locked: the launcher installs it from the mod hub (when the game is set up and the hub can be reached) with sharing on, and keeps both on. **Unlock** (Mods page or Achievements page) explains what switching it off costs (your achievements and stats are no longer recorded; without sharing they are not counted in the community stats) before it lets you switch it off or remove it; **Lock** turns it back on. Once unlocked and removed, it stays removed. The game's Mods tab shows the locked switch and setting read only. Update only: no shader rebuild, no Set up again
-- The launcher's **Mods** page now has **Browse** on, with the Modtopia mod hub's list: filter by group, open **Details** (the whole description, the settings a mod adds, game versions, download size and links), see which mods are **Tested** on this game version, and install or update one with a single question. **Update mods by themselves** (off unless you switch it on) is on the Installed tab too. The mods folder gets a short README.txt
+- The launcher's **Mods** page opens on **Browse**: the Modtopia mod hub's list, filtered by group, with **Details** (the whole description, the settings a mod adds, game versions, download size and links), a **Tested** tag for this game version, and **Install** or **Update** behind a single question
+- **Installed** sits beside Browse, and each mod there shows as one line (name, switch, tags) that opens to its description, settings and buttons, so a long list stays short
+- **Update mods by themselves** (off unless you switch it on) checks the hub once each time the launcher starts. The mods folder gets a short README.txt
+- New **Mods** tab in the game's own Settings: switch a mod on or off (applies at the next start), see its state, what it holds, whether it changes gameplay and the sites it talks to, and change its settings, which reach the mod at once
+- **Community Achievements** is now on by default and locked, with sharing on: the launcher installs it from the hub and keeps both on. **Unlock** on the Mods page explains what switching it off costs before it lets you; **Lock** turns it back on. Once unlocked and removed, it stays removed. Its entry on the Mods page says whether you are counted
+- **Start without mods** (in the notice after the game stopped unexpectedly, and in Settings > About > Troubleshooting) starts the game once with every mod left out
+- Mods can now take screenshots (without the game's menus in them), react to keyboard keys, tint the final picture (colour presets, colorblind filters), show a picture beside their messages, hide the game's HUD while the 3D picture stays (Hide HUD, Photo Mode), and make HTTPS requests to the sites their own description names
+- Changing mods that need other hook points translates only the game part they touch (on PC: about 4.5 minutes for main-only points, under a minute for the others)
 
 ### Launcher
-- The **Testing** channel now lists every prerelease of every test line (Testing betas and alpha builds such as Mods Alpha) in **Choose a version** and What's New, and no longer offers an **Update**: testers pick each build by hand, so nobody is moved from one test line to another
-- New **Achievements** page: the Modtopia community tracker in the launcher, with the achievements grouped as the hub lists them, how many players have each one, the rarest right now, and which ones you earned (from the Community Achievements mod). It also shows whether the mod is installed, on and sharing, and can switch it or its sharing on. The launcher only reads the counts and sends nothing. Update only: no shader rebuild, no Set up again
+- New **Achievements** page: the Modtopia community tracker, grouped as the hub lists it, with how many players have each achievement, the rarest right now, and the ones you earned. It only reads the counts and sends nothing; the mod does the sharing
+- The **Testing** channel lists every prerelease (Testing betas and alpha builds) in **Choose a version** and What's New, and no longer offers an **Update**: testers pick each build by hand
+
+### Display
+- New **Aspect Ratio** setting in the game's Settings > Display and in the launcher (Auto, 16:9, 16:10, 21:9, 32:9; applies after a restart): 16:9 now stays 16:9 on a 16:10 or ultrawide screen. The toggle that only chose black bars over stretching is now called **Letterbox** (#564)
+- Fixed the **Nearest**, **FSR 1** and **NIS** upscalers doing nothing with **Scene Resolution** below 100%: Nearest now shows hard pixels and FSR 1 / NIS a sharper picture, while the menus and HUD stay sharp (#571)
+
+### Gameplay
+- New **Item editor (experimental)** in Settings > Gameplay, off by default: an **Items** tab in the game's Settings where you change how many of an item in your bag you hold (up to the game's stack limit). It adds no new items and is off during Link Play. Back up your save first
+
+### Fixes
+- Fixed objects and effects staying invisible the first time they appear, until a restart, on graphics cards without pipeline libraries (such as the RX 580): the pipelines a visible object waits for are now built first (#515)
+- Fixed a black screen on GPUs that cannot share memory with the game directly (such as the Adreno X1-85 in Snapdragon X laptops) (#589)
+- Fixed **Set up** failing every time at "Linking pkp.exe" after a power cut during an earlier Set up: files are written to the disk before they count as done, and a damaged one is compiled again
+- Fixed **Set up** failing with "No such file or directory: ...\.lean-flows\...pkl" after the launcher was closed during an earlier Set up: Set up's tools now end when the launcher closes
 
 ### Linux
-- The game runs natively on Linux: no Proton, no Wine. The download is `PokopiaRecomp-<version>-linux-x64.tar.gz`, with the launcher as an AppImage and the runtime as `libpkp_rt.so`, the same runtime the Windows build links as `pkp_rt.dll`
-- The runtime reaches the system directly instead of through the Windows API: `runtime/src/os/` holds a POSIX layer for files, memory mappings, sockets, threads, timers, paths and processes, and SDL3 plays the audio and opens the window. `pkp` is linked from the player's own dump with the bundled Zig, as on Windows
-- `libpkp_rt.so` needs glibc 2.35 or newer (Ubuntu 22.04+, Debian 12+, Fedora 36+, SteamOS 3) and nothing else: SDL3 is linked in, and every other backend library is opened at run time, so a missing one switches that backend off instead of failing the start
-- The defaults that fix a Linux kernel or Mesa behaviour now ask the kernel, not Wine: a kernel submission's pool walk, the lazy and shadow pool imports, the submit thread and its batching, the short sleep's timed address wait, the graphics pipeline library upgrade, the loop guard and the pipeline cache save all apply to the native build, which is what the Proton build had
-- Write tracking arms a whole range with one `mprotect` instead of one per 4 KiB page (a 10 MiB arm measured 3132 us -> 34 us), and the timed address wait is a futex, so the game's ~100 us GPU-fence polls no longer keep two cores busy
-- The game's main thread gets the 128 MiB stack it has on Windows: the native build ran it on the system's 8 MiB (SteamOS and most desktops), which a deeply nested part of the game can overflow and crash on
-- Steam Deck: add the AppImage as a non-Steam game. An AppImage leaves the graphics stack to the host on purpose, so it needs `libEGL`, `libGL`, `libGLESv2` and `libvulkan`, which every desktop and SteamOS ship
-- Mods reach the internet as they do on Windows: the host HTTP client loads the system's libcurl at the first request (every desktop distribution ships it, and macOS keeps it in the dyld shared cache), so an HTTPS request to a site the mod's description names is answered. The rules are the Windows ones: https anywhere, plain http only to localhost, no redirect, cookie or sign-in, TLS 1.2 or later, a 256 KiB answer cap and a time limit per step. Nothing links libcurl, so a host without it refuses the request (`MT_ERR_STATE` to the mod) instead of failing the start
-- Still not: **FSR 3 and DLSS**. Both are Windows-only SDKs and the native build turns them off, where the Proton build had them; FSR 1 and NIS are plain compute shaders and still run. Also Link Play against a peer and a real gamepad
+- The game runs natively: no Proton, no Wine. The launcher is an AppImage and the runtime is `libpkp_rt.so`, the same runtime the Windows build links as `pkp_rt.dll`
+- Needs glibc 2.35 or newer (Ubuntu 22.04+, Debian 12+, Fedora 36+, SteamOS 3) and the system's graphics libraries (`libEGL`, `libGL`, `libvulkan`), which every desktop and SteamOS ship
+- Steam Deck: add the AppImage as a non-Steam game
+- The Linux fixes the Proton build had (pool handling, the submit thread, short sleeps, the loop guard, the pipeline cache) all apply natively, and write tracking and GPU-fence waits cost far less processor time
+- Not on Linux yet: **FSR 3 and DLSS** (Windows-only SDKs; FSR 1 and NIS work)
 
 ### macOS
-- The game runs natively on Apple silicon: `libpkp_rt.dylib`, a `pkp` linked from the player's own dump, Metal through MoltenVK, CoreAudio for sound and SDL3 for the window
-- The download is one zip, `Recompia-<version>-macos-arm64.zip`, whose root is `PokopiaRecomp-<version>/`: `PokopiaLauncher`, `tools/` and `libpkp_rt.dylib`. There is no `.app` and no signature: unpack it anywhere, start `PokopiaLauncher`, allow it once in **System Settings > Privacy and Security**, and it updates itself in place from then on
-- Vsync is on by default: without it MoltenVK presents immediately, frames show mid-refresh, and a MacBook flashes partly drawn pictures
-- `pkp` carries its own Metal shader-cache identity (an `Info.plist` linked into it, one per game folder). Without one it shared a cache folder with every other program outside an app bundle, and a start compiled every pipeline again whenever one of those was running
-- A frame limit holds through loading screens too, the game's own thread synchronisation is ordered the way Apple's cores need it (`LDAR`/`STLR`), SHA-1 uses the ARMv8 instructions, and the runtime's write tracking follows the host's 16 KiB pages, so a texture the game rewrites is not read back stale
-- The guest address space is reserved in `pkp`'s Mach-O header as a zero-fill `__GUEST` segment: libmalloc's xzone allocator takes about 24 GiB of it at random addresses before `main` runs
-- Mods reach the internet here too: the host HTTP client is the same libcurl one the Linux build uses, and macOS keeps libcurl in the dyld shared cache, so nothing is bundled for it
-- The game now renders at **the console's own resolution** (1920x1080 docked, 1280x720 handheld) and the window upscales to it, instead of rendering at the window's size: a 2560x1440 window made the game render 1.78 times the pixels a console does, and the world ran at 42 fps there. The world holds 58 to 60 fps on an M3 in that window, walking and turning included. `[display] render_mode` says what an unset resolution follows: **console** (the new default) or **window**, which is what every build did before and renders at the window's size; `render_scale` (percent of the window, more is sharper and slower) and `render_width`/`render_height` override both. Update only: no shader rebuild, no Set up again
-- Fixed textures flashing while an area loaded and stale texels when the camera turned: with a shadow copy of the game's memory pools the picture lagged the game's own writes. The GPU reads the game's memory directly now. Update only: no shader rebuild, no Set up again
-- The runtime's own costs came down with it: an import call stores its id instead of resolving a name for a report, a short sleep ends on a monotonic deadline (`mach_wait_until`) instead of through a worker thread and an event, Darwin's `__ulock_wait` stands in for the futex the Linux build has, and ending a command list no longer discards the descriptor-set cache when no pass was open
-- Still not: the two in-game movies (they are VP9 in WebM and no run has reached one yet), Link Play against a peer, and a signed and notarized `.app` — the zip is unsigned and its note covers the one-time **Open Anyway**. In the world the GPU is the limit above the console's resolution: 58 to 60 fps on an M3 at 1080p internal in a 1440p window, and a larger internal render trades frame rate for sharpness
+- The game runs natively on Apple silicon: Metal through MoltenVK, CoreAudio for sound
+- Unpack the zip anywhere, start `PokopiaLauncher`, allow it once in **System Settings > Privacy and Security**, and it updates itself from then on
+- The game renders at the console's own resolution (1920x1080 docked) and the window scales it up: the world holds 58 to 60 fps on an M3 in a 1440p window. `[display] render_mode = window` renders at the window's size instead
+- Vsync is on by default, a frame limit holds through loading screens, and textures no longer flash while an area loads
+- Not on macOS yet: the two in-game movies, and Link Play against another player has not been tried
 
 ### Docs
-- `docs/linux-port.md` and `docs/macos-port.md` describe both ports, and `docs/macos-optimisations.md` records what is tuned, what is not, and how to measure it
+- `docs/linux-port.md` and `docs/macos-port.md` describe both ports, and `docs/macos-optimisations.md` records what is tuned and how to measure it
 
 ## 0.11.1 (build O: Ocelot Hotfix a1)
 

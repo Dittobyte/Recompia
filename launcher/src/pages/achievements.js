@@ -2,7 +2,8 @@
 // the launcher only reads, never reports), what this player has earned (the mod's earned.tsv), and the state of the Community Achievements
 // mod with the one action that fits it. What the page says and groups is ../achievements-model.js. The mod's switch and its sharing
 // setting go through the Mods page's commands (mods.rs), so there is one way into the mods folder. The launcher keeps the mod and its
-// sharing on until the player unlocks them (mods_lock.rs): Unlock asks first, as on the Mods page.
+// sharing on until the player unlocks them (mods_lock.rs): Unlock asks first, as on the Mods page. While the mod is on and sharing the
+// page shows no card for it; its Unlock buttons are then on the Mods page.
 import './achievements.css';
 import { api } from '../api.js';
 import { t, language } from '../i18n.js';
@@ -33,8 +34,10 @@ export async function render(el, _ctx) {
   const body = el.querySelector('#ach-body');
   const refreshButton = el.querySelector('#ach-refresh');
 
+  /** The mod's card, only when its state needs the player (on and sharing says nothing here: the Mods page's entry for the mod says it). */
   function modHtml() {
     const state = modState(modsView, view.mod_id);
+    if (state.kind === 'sharing') return '';
     const buttons = {
       install: `<button class="btn primary sm" data-act="install" ${busy ? 'disabled' : ''}>${icon('download')}${esc(t('Install the mod'))}</button>`,
       folder: `<button class="btn quiet sm" data-act="folder">${icon('folder-open')}${esc(t('Open mods folder'))}</button>`,

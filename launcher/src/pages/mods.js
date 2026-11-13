@@ -2,7 +2,8 @@
 // hook plan are in Rust (mods.rs, mods_catalog.rs, mods_install.rs); what a row or a card says and the questions are ../mods-model.js.
 // Every change answers with the new list, which is drawn whole; the plan it wrote may need Set up again, which the store's readiness
 // says (kind 'mods') and this page offers with the same Set up as Home. A mod or setting the launcher keeps on (mods_lock.rs, Community
-// Achievements and its sharing) shows locked, with Unlock behind its question and Lock to keep it on again.
+// Achievements and its sharing) shows locked, with Unlock behind its question and Lock to keep it on again. Browse opens first; an
+// installed mod shows as one collapsed line (name, switch, chips) and opens to its description, settings and actions.
 import './mods.css';
 import { api } from '../api.js';
 import { t } from '../i18n.js';
@@ -10,6 +11,7 @@ import { fromBackend } from '../backend-text.js';
 import { confirm, errText, esc, field, icon, row, segmented, select, slider, toast, toggle } from '../ui.js';
 import { store } from '../store.js';
 import { gamePhase } from '../action.js';
+import { modLine, modState, sharingText } from '../achievements-model.js';
 import { allowQuestion, badges, byLine, canMove, cardAction, detailsView, filterByGroup, groupChips, installQuestion, isSlider, isTested, keepGroup, lockAction, settingValue, unlockQuestion } from '../mods-model.js';
 
 const gameActive = (s) => ['starting', 'running', 'finishing'].includes(gamePhase(s.game));
@@ -19,7 +21,8 @@ const linkButton = (url, label, ic = 'external-link') => (url ? `<button class="
 const questionHtml = (q) => q.lines.map((l) => `<p>${esc(l)}</p>`).join('');
 
 export async function render(el, ctx) {
-  let tab = 'installed';
+  let tab = 'browse';
+  const open = new Set(); // ids of the installed mods shown opened (kept across redraws)
   let view = null;        // mods_list
   let listError = '';
   let catalog = null;     // mods_catalog
@@ -31,7 +34,7 @@ export async function render(el, ctx) {
   el.innerHTML = `<div class="page mods">
     <div class="mods-head">
       <h1>${esc(t('Mods'))}</h1>
-      ${segmented('mods-tab', [['installed', t('Installed')], ['browse', t('Browse')]], tab, { label: t('Mods') })}
+      ${segmented('mods-tab', [['browse', t('Browse')], ['installed', t('Installed')]], tab, { label: t('Mods') })}
     </div>
     <div class="mods-part" id="mods-banners"></div>
     <div class="mods-part" id="mods-prefs"></div>
@@ -82,21 +85,33 @@ export async function render(el, ctx) {
     return row(label, html);
   }
 
+  /** For the Community Achievements mod: what its state means for the Achievements page, and what sharing sends. */
+  function achievementsHtml(m) {
+    if (m.id !== view.achievements_mod) return '';
+    return `<p class="mod-desc">${esc(modLine(modState(view, m.id)))}</p><p class="faint mods-note">${esc(sharingText())}</p>`;
+  }
+
   function modHtml(m, mi, list) {
+    const opened = open.has(m.id);
     const msg = m.message ? `<div class="banner ${m.state === 'error' ? 'danger' : 'warn'} mod-msg">${icon(m.state === 'error' ? 'circle-x' : 'circle-alert')}<div class="grow selectable">${esc(m.message)}</div></div>` : '';
     const sets = m.settings.length ? `<div class="mod-settings">${m.settings.map((s, i) => settingControl(m, s, i, mi)).join('')}</div>` : '';
     const lock = m.locked ? `<p class="faint mods-note">${esc(t('Locked: the launcher keeps it on, so your achievements and stats are recorded. Unlock it to switch it off or remove it.'))}</p>` : '';
-    return `<section class="mod glass" data-id="${esc(m.id)}">
+    const name = m.name || m.id;
+    return `<section class="mod glass ${opened ? 'open' : ''}" data-id="${esc(m.id)}">
       <div class="mod-head">
-        <div class="grow">
-          <h2 class="mod-name"><span class="clip">${esc(m.name || m.id)}</span> <span class="faint num">${esc(m.version)}</span></h2>
-          <p class="mod-by">${esc(byLine(m))}</p>
-        </div>
+        <button class="mod-fold grow" data-act="fold" data-id="${esc(m.id)}" aria-expanded="${opened}" aria-label="${esc(opened ? t('Hide {name}', { name }) : t('Show {name}', { name }))}">
+          ${icon(opened ? 'chevron-down' : 'chevron-right')}
+          <span class="grow">
+            <span class="mod-name"><span class="clip">${esc(name)}</span> <span class="faint num">${esc(m.version)}</span></span>
+            <span class="mod-by">${esc(byLine(m))}</span>
+          </span>
+        </button>
         ${toggle(`mod-on-${mi}`, m.enabled, { label: t('{name} on', { name: m.name || m.id }), disabled: busy || (m.locked && m.enabled) }).replace(`id="mod-on-${mi}"`, `id="mod-on-${mi}" data-on="${esc(m.id)}"`)}
       </div>
       <div class="cluster">${badges(m).map(chip).join('')}</div>
-      ${m.description ? `<p class="mod-desc">${esc(m.description)}</p>` : ''}
       ${msg}
+      ${opened ? `${m.description ? `<p class="mod-desc">${esc(m.description)}</p>` : ''}
+      ${achievementsHtml(m)}
       ${lock}
       ${sets}
       <div class="cluster mod-actions">
@@ -105,7 +120,7 @@ export async function render(el, ctx) {
         <span class="grow"></span>
         ${lockButton(m, 'mod')}
         <button class="btn quiet sm" data-act="remove" data-id="${esc(m.id)}" ${busy || m.locked ? 'disabled' : ''}>${icon('trash-2')}${esc(t('Remove'))}</button>
-      </div>
+      </div>` : ''}
     </section>`;
   }
 
@@ -157,16 +172,15 @@ export async function render(el, ctx) {
   function browseHtml() {
     if (catalogError) return `<div class="banner danger">${icon('circle-x')}<div class="grow">${esc(catalogError)}</div><button class="btn sm" data-act="refresh">${esc(t('Try again'))}</button></div>`;
     if (!catalog) return `<div class="empty">${icon('loader-circle', 'spin')}</div>`;
-    const note = `<div class="banner info">${icon('info')}<div class="grow">${esc(t('These mods come from the Modtopia mod hub. Its team checks every mod before it is listed. Made one? Send it to the hub.'))}
-        <div class="cluster mods-links">${linkButton(catalog.hub, t('Mod hub'))}${linkButton(catalog.submit, t('Submit a mod'))}
-        <button class="btn quiet sm" data-act="refresh" ${busy ? 'disabled' : ''}>${icon('refresh-cw')}${esc(t('Refresh'))}</button></div></div></div>`;
+    const links = `<div class="cluster mods-links">${linkButton(catalog.hub, t('Mod hub'))}${linkButton(catalog.submit, t('Submit a mod'))}
+        <button class="btn quiet sm" data-act="refresh" ${busy ? 'disabled' : ''}>${icon('refresh-cw')}${esc(t('Refresh'))}</button></div>`;
     const offline = catalog.offline ? `<div class="banner warn">${icon('triangle-alert')}<div class="grow">${esc(t('The mod hub cannot be reached: this is the last list the launcher saw. Installing needs the hub.'))}</div></div>` : '';
     const preview = catalog.preview ? `<div class="banner warn">${icon('triangle-alert')}<div class="grow">${esc(t('The mod hub is not open for installs yet: this is what is coming.'))}</div></div>` : '';
     const shown = filterByGroup(catalog.mods, group);
     const cards = shown.length
       ? shown.map(cardHtml).join('')
       : `<div class="empty glass">${icon('puzzle')}<strong>${esc(catalog.mods.length ? t('No mods in this group') : t('No mods for this game version yet'))}</strong></div>`;
-    return note + offline + preview + groupsHtml() + cards;
+    return offline + preview + groupsHtml() + cards + links;
   }
 
   // a redraw keeps the focus on the same control (the pad and the keyboard must not lose their place)
@@ -321,6 +335,7 @@ export async function render(el, ctx) {
     switch (b.dataset.act) {
       case 'up': return apply(() => api.modsMove({ id, delta: -1 }));
       case 'down': return apply(() => api.modsMove({ id, delta: 1 }));
+      case 'fold': if (!open.delete(id)) open.add(id); return draw();
       case 'remove': return remove(id);
       case 'unlock': return setLock(id, false);
       case 'lock': return setLock(id, true);
@@ -341,5 +356,6 @@ export async function render(el, ctx) {
 
   api.getConfig().then((c) => { autoUpdate = !!c?.mods_auto_update; draw(); }).catch((e) => console.warn('get_config', e));
   draw();
+  loadCatalog();
   await loadList();
 }
