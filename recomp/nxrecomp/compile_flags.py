@@ -53,3 +53,6 @@ ZIG_MINGW = (['-target', 'x86_64-windows-gnu', '-mcpu=x86_64+cx16', '-std=c++20'
 # (x86_64-linux-gnu), and the flags stay identical to the mingw build's so a fix to one is a fix to both.
 ZIG_LINUX = (['-target', 'x86_64-linux-gnu', '-mcpu=x86_64+cx16', '-std=c++20', '-O1', '-w', '-fno-exceptions', '-fno-rtti']
              + SEMANTIC + ['-fno-threadsafe-statics'] + ZIG_DEBUG)
+# Linux AArch64: targets aarch64-linux-gnu, no -mcpu=x86_64+cx16 (AArch64 CASP handles 128-bit atomics natively).
+ZIG_LINUX_ARM64 = (['-target', 'aarch64-linux-gnu', '-std=c++20', '-O1', '-w', '-fno-exceptions', '-fno-rtti']
+                   + SEMANTIC + ['-fno-threadsafe-statics'] + ZIG_DEBUG)

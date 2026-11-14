@@ -3,14 +3,21 @@
 # zip, nothing here comes from another platform's build: the Linux package is what Set up needs on a Linux machine
 # (the lifter, the SDK sources, the builder, the shader translator), and pkp is compiled by the player from their dump.
 #
-#   launcher/scripts/make-linux.sh <out dir> [version]
+#   launcher/scripts/make-linux.sh <out dir> [version] [arch]
 #
 # Needs a production launcher build (npm run tauri build -- --bundles appimage), the runtime (PKP_RT_DLL=ON, see
-# docs/linux-port.md) and the linux-x64 shader harness (tools/shaders, dotnet publish -r linux-x64) in build/.
+# docs/linux-port.md) and the linux shader harness (tools/shaders, dotnet publish -r linux-<arch>) in build/.
 set -eu
-out=${1:?usage: make-linux.sh <out dir> [version]}
+out=${1:?usage: make-linux.sh <out dir> [version] [arch]}
 repo=$(cd "$(dirname "$0")/../.." && pwd)
 version=${2:-$(sed -nE 's/^[[:space:]]*"version": "([^"]+)".*/\1/p' "$repo/launcher/src-tauri/tauri.conf.json" | head -1)}
+arch=${3:-}
+if [ -z "$arch" ]; then
+    case "$(uname -m)" in
+        aarch64|arm64) arch="arm64" ;;
+        *) arch="x64" ;;
+    esac
+fi
 pkg="$out/PokopiaRecomp-$version"
 
 rt="$repo/build/rtdll/libpkp_rt.so"
@@ -20,7 +27,7 @@ appimage=$(ls "$repo"/launcher/src-tauri/target/release/bundle/appimage/*.AppIma
 harness="$repo/build/harness"
 # Existence, not the mode: an uploaded artifact comes back 0644 (modes are not part of the transport), so the copy below is
 # made executable instead. A win-x64 publish has spirv_harness.exe and no spirv_harness, which this still catches.
-[ -f "$harness/spirv_harness" ] || { echo "no shader harness at $harness (dotnet publish -r linux-x64)" >&2; exit 1; }
+[ -f "$harness/spirv_harness" ] || { echo "no shader harness at $harness (dotnet publish -r linux-$arch)" >&2; exit 1; }
 
 rm -rf "$pkg"
 mkdir -p "$pkg/tools/build/sdk" "$pkg/tools/shaders" "$pkg/assets" "$pkg/licenses"
@@ -64,5 +71,5 @@ for t in "$repo"/game-build/release_b/README.linux.*.txt; do
     sed "s/@VERSION@/$version/g" "$t" > "$pkg/README.${lang%.txt}.txt"
 done
 
-tar -C "$out" -czf "$out/PokopiaRecomp-$version-linux-x64.tar.gz" "PokopiaRecomp-$version"
-echo "built $out/PokopiaRecomp-$version-linux-x64.tar.gz"
+tar -C "$out" -czf "$out/PokopiaRecomp-$version-linux-$arch.tar.gz" "PokopiaRecomp-$version"
+echo "built $out/PokopiaRecomp-$version-linux-$arch.tar.gz"

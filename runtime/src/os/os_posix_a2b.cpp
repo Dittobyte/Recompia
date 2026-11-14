@@ -227,7 +227,11 @@ a2b_status a2b_decode_astc_rgba8(const a2b_input* in, const void* data, size_t d
     astcenc_context_free(ctx);
     if (stats) {
         stats->decode_seconds = now_s() - t0;
+#if defined(__aarch64__)
+        stats->astc_isa = "neon";
+#else
         stats->astc_isa = "sse4.1";
+#endif
     }
     return err == ASTCENC_SUCCESS ? A2B_OK : A2B_ERR_DECODE;
 #else

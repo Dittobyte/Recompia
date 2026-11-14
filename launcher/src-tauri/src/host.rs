@@ -616,6 +616,26 @@ const WHEELS: [Pinned<'static>; 2] = [
         sha256: "273fd8d747d2e35c88f91450be51a603ecfaafb00d96d9f315dcb8689c86193e",
     },
 ];
+const PYTHON_LINUX_ARM64: Pinned<'static> = Pinned {
+    file: "cpython-3.13.16+20261013-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
+    url: "https://github.com/astral-sh/python-build-standalone/releases/download/20261013/cpython-3.13.16%2B20261013-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
+    size: 29_331_623,
+    sha256: "69a30ed26198178732c37b8de0b6b5191479fbacfe526954da776befe38f18e7",
+};
+const WHEELS_LINUX_ARM64: [Pinned<'static>; 2] = [
+    Pinned {
+        file: "lz4-4.4.5-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+        url: "https://files.pythonhosted.org/packages/89/d1/f1d259352227bb1c185288dd694121ea303e43404aa77560b879c90e7073/lz4-4.4.5-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl",
+        size: 1_279_639,
+        sha256: "533298d208b58b651662dd972f52d807d48915176e5b032fb4f8c3b6f5fe535c",
+    },
+    Pinned {
+        file: "capstone-5.0.9-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        url: "https://files.pythonhosted.org/packages/45/d9/dbeadb9fcd461e608ce79b1cb647fed6baa812fa6e1c68b0ba5ef81291af/capstone-5.0.9-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        size: 1_461_016,
+        sha256: "41772ad0c71aa5d3e97d541e802593c2e71fb94ac7e20d4202f97ce2a3eb8ed5",
+    },
+];
 const PYTHON_MACOS: Pinned<'static> = Pinned {
     file: "cpython-3.13.16+20261013-aarch64-apple-darwin-install_only_stripped.tar.gz",
     url: "https://github.com/astral-sh/python-build-standalone/releases/download/20261013/cpython-3.13.16%2B20261013-aarch64-apple-darwin-install_only_stripped.tar.gz",
@@ -641,6 +661,12 @@ const ZIG: Pinned<'static> = Pinned {
     url: "https://ziglang.org/download/0.17.0/zig-x86_64-linux-0.17.0.tar.xz",
     size: 57_332_648,
     sha256: "1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026",
+};
+const ZIG_LINUX_ARM64: Pinned<'static> = Pinned {
+    file: "zig-aarch64-linux-0.17.0.tar.xz",
+    url: "https://ziglang.org/download/0.17.0/zig-aarch64-linux-0.17.0.tar.xz",
+    size: 52_877_280,
+    sha256: "9e8d11661d4ae3bd57702a3832781e23ad151dde5798e16a5ccd503f65234ff8",
 };
 
 /// Where the fetched tools go: next to the AppImage on Linux (exe_dir is the .AppImage's folder), and in the game folder on
@@ -669,8 +695,16 @@ pub fn prepare_tools(tools_dir: &Path, cancel: &AtomicBool, report: &mut dyn FnM
         return Ok(true);
     }
     let macos = cfg!(target_os = "macos");
+    let arm64 = cfg!(target_arch = "aarch64");
     let what = if macos { "macOS" } else { "Linux" };
-    let (python_pin, wheels): (&Pinned, &[Pinned]) = if macos { (&PYTHON_MACOS, &WHEELS_MACOS) } else { (&PYTHON, &WHEELS) };
+    let (python_pin, wheels): (&Pinned, &[Pinned]) = if macos {
+        (&PYTHON_MACOS, &WHEELS_MACOS)
+    } else if arm64 {
+        (&PYTHON_LINUX_ARM64, &WHEELS_LINUX_ARM64)
+    } else {
+        (&PYTHON, &WHEELS)
+    };
+    let zig_pin: &Pinned = if arm64 { &ZIG_LINUX_ARM64 } else { &ZIG };
     let platform = tools_dir.join(if macos { "macos" } else { "linux" });
     let (py, zig) = (python(tools_dir), zig(tools_dir));
     let py_ok = python_ready(&py);
@@ -686,7 +720,7 @@ pub fn prepare_tools(tools_dir: &Path, cancel: &AtomicBool, report: &mut dyn FnM
         need.extend(wheels.iter());
     }
     if !zig_ok {
-        need.push(&ZIG);
+        need.push(zig_pin);
     }
     let total: u64 = need.iter().map(|p| p.size).sum();
     let (agent, mut done) = (download::agent(true), 0u64);
@@ -713,7 +747,7 @@ pub fn prepare_tools(tools_dir: &Path, cancel: &AtomicBool, report: &mut dyn FnM
     }
     if !zig_ok {
         report(total, total, format!("Installing the {} build tools: Zig...", what));
-        unpack(&dl.join(ZIG.file), &platform, "zig")?;
+        unpack(&dl.join(zig_pin.file), &platform, "zig")?;
     }
     let _ = std::fs::remove_dir_all(&dl);
     Ok(true)
