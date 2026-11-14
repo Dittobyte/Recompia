@@ -41,6 +41,14 @@ bool menu_in_game(bool in_game) {
         s.ig_hits = s.ig_miss = s.ig_tick = 0;
         return false;
     }
+    // Photo mode's own screen (style tabs, zoom bar) has cursors but is not a menu while the photo camera takes look input
+    // (pkp_photo_camera.cpp); a dialog over it stops that input, and play mode then leaves play on its own.
+    if (play_photo_live()) {
+        if (s.ig_up && log_ok(true)) NXLOG_I(kTag, "menu: in-game menu closed (layout %u/%u, photo mode)", s.ig_lay_id, s.ig_lay_sub);
+        s.ig_up = false;
+        s.ig_hits = s.ig_miss = s.ig_tick = 0;
+        return false;
+    }
     bool present;
     if (s.ig_up && scanned) {
         present = scanned_present;

@@ -179,6 +179,8 @@ void install(const FeatureInstall& in) {
     s.hooks->add_mid(base + kCamField, &hook_cam_field);
     s.hooks->add_mid(base + kCamStick, &hook_cam_stick);
     s.hooks->add_mid(base + kFollowGate, &hook_follow_gate);
+    s.hooks->add_mid(base + kPhotoStickX, &hook_photo_stick_x);
+    s.hooks->add_mid(base + kPhotoStickY, &hook_photo_stick_y);
     s.hooks->add_mid(base + kMmStyle, &hook_mm_style);
     s.hooks->add_mid(base + kMmOption, &hook_mm_option);
     s.hooks->add_mid(base + kMmStart, &hook_mm_start);
@@ -203,13 +205,14 @@ void remove() {   // the registry has removed play's hooks
 
 void status_text(char* buf, size_t n) {
     const State& s = st();
-    const int k = std::snprintf(buf, n, " render=%dx%d res_hooks=%llu copies=%llu set_vp=%llu vp_fixes=%llu mult=%.3f short_frames=%llu sync=%llu fixed_step=%llu cam=%llu cam_moves=%llu cam_field=%llu follow_forced=%llu cam_dropped=%llu mouse_mode=%d mm_dropped=%llu", s.w.load(), s.h.load(),
+    const int k = std::snprintf(buf, n, " render=%dx%d res_hooks=%llu copies=%llu set_vp=%llu vp_fixes=%llu mult=%.3f short_frames=%llu sync=%llu fixed_step=%llu cam=%llu cam_moves=%llu cam_field=%llu follow_forced=%llu cam_dropped=%llu mouse_mode=%d mm_dropped=%llu photo=%llu photo_moves=%llu", s.w.load(), s.h.load(),
                   static_cast<unsigned long long>(s.res_calls.load()), static_cast<unsigned long long>(s.copy_calls.load()), static_cast<unsigned long long>(g_set_vp_fixes.load()), static_cast<unsigned long long>(s.vp_fixes.load()),
                   static_cast<double>(s.last_mult.load()), static_cast<unsigned long long>(s.fps_calls.load()),
                   static_cast<unsigned long long>(s.sync_calls.load()), static_cast<unsigned long long>(s.fixed_calls.load()),
                   static_cast<unsigned long long>(s.cam_calls.load()), static_cast<unsigned long long>(s.cam_moves.load()),
                   static_cast<unsigned long long>(s.cam_field.load()), static_cast<unsigned long long>(s.follow_forced.load()),
-                  static_cast<unsigned long long>(s.cam_dropped.load()), s.mm_want ? 1 : 0, static_cast<unsigned long long>(s.mm_dropped.load()));
+                  static_cast<unsigned long long>(s.cam_dropped.load()), s.mm_want ? 1 : 0, static_cast<unsigned long long>(s.mm_dropped.load()),
+                  static_cast<unsigned long long>(s.photo_calls.load()), static_cast<unsigned long long>(s.photo_moves.load()));
     if (k > 0 && static_cast<size_t>(k) < n && wide_on()) {
         const Wide& w = wide();
         std::snprintf(buf + k, n - k, " aspect=%.3f cam_fixes=%llu aspect_puts=%llu fov_puts=%llu ui_fixes=%llu", w.aspect,
@@ -249,6 +252,11 @@ uint32_t play_display_calls() { return static_cast<uint32_t>(st().res_calls.load
 bool play_follow_live() {
     const uint64_t t = g_follow_ns.load(std::memory_order_relaxed);
     return t != 0 && mono_ns() - t < 1000000000ull;
+}
+
+bool play_photo_live() {
+    const uint64_t t = g_photo_ns.load(std::memory_order_relaxed);
+    return t != 0 && mono_ns() - t < st().grace_ns;
 }
 
 }  // namespace nxrt::games::pkp

@@ -58,6 +58,7 @@ if(TARGET nxrt_gfx)
         # input
         "${_pkp}/input/pkp_play.cpp"
         "${_pkp}/input/pkp_mouse_camera.cpp"
+        "${_pkp}/input/pkp_photo_camera.cpp"
         "${_pkp}/input/pkp_mouse_mode.cpp"
         "${_pkp}/input/pkp_aim.cpp"
         "${_pkp}/input/pkp_aim_debug.cpp"
