@@ -62,9 +62,10 @@ uint64_t layout_of(::Ctx* c, const Part& p);              // the part's layout (
 
 // The entries the widget lays out (the set's ids as it took them; a client may change an id before the layout pass places them).
 struct Entries {
-    uint64_t data = 0, count = 0;
+    uint64_t widget = 0, data = 0, count = 0;
     uint16_t id(uint64_t i) const;
     void set_id(uint64_t i, uint16_t guide) const;
+    bool append(uint16_t guide) const;   // one more part at the end; false when all six are used
 };
 bool entries(uint64_t widget, Entries* out);   // false when they cannot be read
 

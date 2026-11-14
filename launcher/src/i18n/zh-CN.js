@@ -340,6 +340,7 @@ export default {
   'Sort button in the bag and containers': '背包和容器中的整理按钮',
   'Sort each time the bag opens': '每次打开背包时整理',
   'Search in the crafting screen': '制作界面中的搜索',
+  'Save button in the pause menu': '暂停菜单中的保存按钮',
   'More Pokémon in town': '城镇中更多宝可梦',
   'Pokémon in town': '城镇中的宝可梦数量',
   'Experimental. Visitors and temporary spawns share the game\'s 64 slots with your residents, so a high number leaves them less room.': '实验性功能。访客和临时出现的宝可梦与你的居民共用游戏的64个位置，数量设得越高，留给它们的空间越少。',

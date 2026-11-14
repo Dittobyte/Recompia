@@ -340,6 +340,7 @@ export default {
   'Sort button in the bag and containers': 'Sortieren-Schaltfläche in der Tasche und in Behältern',
   'Sort each time the bag opens': 'Bei jedem Öffnen der Tasche sortieren',
   'Search in the crafting screen': 'Suche im Handwerksbildschirm',
+  'Save button in the pause menu': 'Speichern-Schaltfläche im Pausenmenü',
   'More Pokémon in town': 'Mehr Pokémon in der Stadt',
   'Pokémon in town': 'Pokémon in der Stadt',
   'Experimental. Visitors and temporary spawns share the game\'s 64 slots with your residents, so a high number leaves them less room.': 'Experimentell. Besucher und vorübergehend erscheinende Pokémon teilen sich die 64 Plätze des Spiels mit deinen Bewohnern, eine hohe Zahl lässt ihnen also weniger Platz.',
