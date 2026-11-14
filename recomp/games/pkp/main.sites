@@ -156,6 +156,10 @@ midhook 0x7100087d30
 midhook 0x7100087cd0
 #   mouse camera: 0x7100249780 after its 120 Hz tick (0x7100249960): w0 bit 0 = run the follow placement 0x71000783c0 this frame
 midhook 0x7100249848
+#   photo camera mouse turn: the photo camera's turn function 0x710008ee4c right after it loaded the right stick's X (s10) and Y (s0);
+#   x19 = the photo camera, s8 = the frame time
+midhook 0x710008eef0
+midhook 0x710008f1e4
 #   render resolution: the render thread's pass-state replay (0x71017b69e0) right before nvnCommandBufferSetViewports: viewports as floats at
 #   sp+216, scissors as ints at sp+24, count w23 (stretches viewports sized for 1920x1080 to their render target)
 midhook 0x71017b6c98
