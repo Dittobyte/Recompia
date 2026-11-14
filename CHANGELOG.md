@@ -1,18 +1,38 @@
 # Changelog
 
-## Unreleased
+## 0.13.1 (build Q: Quokka Hotfix a1)
 
-### Added
-- Play time: Home and Settings > Saves > Profiles show how long each profile has played. It is the game's own count from the save, so it includes the time from before this update; a profile shows it once you have played it with this version (the game code changes, so Finish update once; no shader is translated again)
-- The launcher in Brazilian Portuguese: it follows a Portuguese system on its own, or pick Português (Brasil) in Settings > About > Language
-- The pause menu's key guide gets a **Save** prompt that writes the save and stays in the world, next to the game's own Save and Quit (#354)
+**Update:** press **Update**, then **Finish update** once when it asks (two new hook points for the photo camera, so only a few parts of the game code compile again). Shaders and saves are kept; no shader is translated again.
 
-### Fixed
-- Mouse and keyboard: the mouse turns the camera in photo mode, as the right stick does, instead of showing the cursor (the game code changes, so Finish update once; no shader is translated again)
-- A crash from an internal error now names the error in pkp.log
-- Linux: the game no longer closes at once without a message when the game folder or a game file has a name that is not valid UTF-8; it says which folder
-- An update no longer stops with "The prepared game code cannot be put in place (this release changes lifter)" in a game folder first installed from 0.9.0 or older
-- Menu tiles no longer have a thin vertical line down the middle at render resolutions below 1080p, such as **720p** in the launcher or a Steam Deck at its own size (#490). Below 1080p the game now keeps its own 1080p layout and the picture is drawn at the size you picked, with the same number of pixels as before; the dark band this way of scaling could leave along the bottom edge at some sizes is gone too. Render resolutions above 1080p that are not a whole multiple of it, such as 1440p, can still show a faint line. No shader is translated again
+### Highlights
+- Fixed the thin vertical line down the middle of menu tiles below 1080p, such as **720p** or a Steam Deck at its own size (#490)
+- Added play time: Home and **Settings > Saves > Profiles** show how long each profile has played
+- Added a **Save** prompt in the pause menu that saves and keeps you in the world (#354)
+
+### Graphics
+- Fixed the thin vertical line down the middle of menu tiles at render resolutions below 1080p (#490)
+  - Below 1080p the game keeps its own 1080p layout and draws the picture at the size you picked, with the same number of pixels as before
+  - The dark band this could leave along the bottom edge at some sizes is gone too
+  - Render resolutions above 1080p that are not a whole multiple of it, such as 1440p, can still show a faint line
+
+### Gameplay
+- Added a **Save** prompt to the pause menu's key guide: it writes the save and stays in the world, next to the game's own Save and Quit (#354)
+
+### Controls
+- Fixed photo mode with mouse and keyboard: the mouse turns the photo camera, as the right stick does, instead of showing the cursor
+
+### Launcher
+- Added play time on Home and in **Settings > Saves > Profiles**: the game's own count from the save, so it includes your time from before this update
+  - A profile shows it once you have played it with this version
+- Added Brazilian Portuguese: it follows a Portuguese system on its own, or pick **Português (Brasil)** in **Settings > About > Language**
+- Fixed an update stopping with "The prepared game code cannot be put in place (this release changes lifter)" in a game folder first installed from 0.9.0 or older
+
+### Linux & Steam Deck
+- Fixed the game closing at once without a message when the game folder or a game file has a name that is not valid UTF-8; it now says which folder
+
+### For developers
+- A crash from an uncaught C++ exception names the exception in pkp.log
+- `recomp/games/pkp/main.sites`: two photo camera midhooks (`0x710008eef0`, `0x710008f1e4`)
 
 ## 0.13.0 (build Q: Quokka)
 
