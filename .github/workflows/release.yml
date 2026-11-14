@@ -1,7 +1,9 @@
 # The release in four columns. release creates the GitHub release (title and notes from the tag's section of CHANGELOG.md)
-# and publishes the version every other job reads; nine build jobs then run at once, three per platform — payload (the shader
-# translator), runtime (pkp_rt) and launcher (the Tauri app) — each on its own runner with only the toolchain it needs; three
-# package jobs put their platform's three artifacts together; publish uploads every archive and writes one SHA256SUMS.txt.
+# and publishes the version every other job reads; twelve build jobs then run at once — payload (the shader translator),
+# runtime (pkp_rt) and launcher (the Tauri app) for Windows, macOS, Linux x64 and Linux arm64 — each on its own runner with
+# only the toolchain it needs; four package jobs put a platform's three artifacts together; publish uploads every archive and
+# writes one SHA256SUMS.txt. The two Linux architectures are separate jobs on their own runners (ubuntu-22.04 and
+# ubuntu-22.04-arm): nothing is cross-compiled, so a native arm64 package is built by the same commands as the x64 one.
 # A tag v<x.y.z> does this; a manual run without release_tag only builds (artifacts).
 # Manual runs with release_tag = v<x.y.z> publish the same way and GitHub creates the tag on the commit that was built. No test
 # or pull request checks.
@@ -649,6 +651,252 @@ jobs:
           path: build/rel/*.tar.gz
           compression-level: 0
 
+  # Linux arm64: the same three builds and the same package as the x64 jobs above, run natively on GitHub's arm64 runners
+  # (ubuntu-22.04-arm, the same image family as ubuntu-22.04). Nothing is cross-compiled: the runtime picks the NEON astcenc
+  # from CMAKE_SYSTEM_PROCESSOR, the launcher bundles an arm64 AppImage, and pkp_build.py picks the aarch64 Zig target on the
+  # player's machine. The cache keys carry the architecture: an x64 build tree must never be reused here.
+  linux-arm64-payload:
+    needs: release
+    outputs:
+      version: ${{ needs.release.outputs.version }}
+    runs-on: ubuntu-22.04-arm
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Ryujinx sources cache
+        uses: actions/cache@v4
+        with:
+          path: refs/ryubing
+          key: ryujinx-${{ env.RYUBING_COMMIT }}
+
+      - name: Shader translator
+        run: |
+          [ -d refs/ryubing/.git ] || git clone --filter=blob:none https://git.ryujinx.app/ryubing/ryujinx.git refs/ryubing
+          git -C refs/ryubing checkout -f "$RYUBING_COMMIT"
+          bash tools/shaders/scripts/setup_ryujinx.sh
+          dotnet publish -c Release -r linux-arm64 --self-contained true tools/shaders/harness/SpirvHarness.csproj -o build/harness
+          build/harness/spirv_harness --help > /dev/null
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-arm64-payload
+          path: build/harness
+          compression-level: 6
+
+  # The arm64 runtime: libpkp_rt.so from the same sources, with the same export check.
+  linux-arm64-runtime:
+    needs: release
+    runs-on: ubuntu-22.04-arm
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
+      SCCACHE_GHA_ENABLED: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Third-party sources cache
+        uses: actions/cache@v4
+        with:
+          path: build/deps
+          key: nxrt-deps-linux-arm64-v1
+
+      # 22.04 ships Python 3.10 and CMake 3.22; nxrecomp needs 3.11+ and the runtime CMake 3.25 (the same as linux-runtime).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends g++ ninja-build pkg-config libvulkan-dev libx11-dev libxext-dev \
+            libxrandr-dev libxi-dev libxcursor-dev libxfixes-dev libxss-dev libxtst-dev libwayland-dev libwayland-bin \
+            libxkbcommon-dev libdrm-dev libudev-dev libasound2-dev libpulse-dev libgbm-dev libdbus-1-dev \
+            libgl1-mesa-dev libfribidi-dev libthai-dev fonts-dejavu-core
+
+      - name: CMake
+        run: |
+          python3 -m pip install --upgrade "cmake>=3.28" pillow
+          cmake --version
+          python3 --version
+
+      - name: sccache (the GitHub Actions cache)
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Runtime (libpkp_rt.so)
+        run: |
+          cmake -S game-build -B build/rtdll -G Ninja -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+                -DPython3_EXECUTABLE="$(command -v python3)" \
+                "-DNXRT_DEPS_DIR=$PWD/build/deps" \
+                -DPKP_RT_DLL=ON -DPKP_RELEASE=ON "-DPKP_VERSION=$VERSION"
+          cmake --build build/rtdll --target pkp_rt
+          file build/rtdll/libpkp_rt.so
+          # the same export check as linux-runtime: the exe resolves its exports through this list
+          nm -D --defined-only build/rtdll/libpkp_rt.so | awk '{print $NF}' | sed 's/@.*//' | sort -u > build/exports.txt
+          while IFS= read -r s; do
+            s=${s%$'\r'}
+            case "$s" in ''|'#'*) continue ;; esac
+            grep -qx "${s#_}" build/exports.txt || { echo "::error::libpkp_rt.so does not export $s"; exit 1; }
+          done < game-build/src/pkp_rt.exports
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-arm64-rt
+          path: build/rtdll/libpkp_rt.so
+          compression-level: 6
+
+  # The arm64 launcher as an AppImage, with the arm64 static type2 runtime.
+  linux-arm64-launcher:
+    needs: release
+    runs-on: ubuntu-22.04-arm
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: launcher/src-tauri
+
+      - name: Packages
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libsoup-3.0-dev \
+            file g++ pkg-config
+
+      # The same steps and the same reasons as linux-launcher: linuxdeploy is an AppImage itself (no FUSE on the runner), and
+      # its downloads fail now and then, so the bundling retries. The AppImage is arm64 because the runner is.
+      - name: Launcher (AppImage)
+        working-directory: launcher
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
+          NO_STRIP: true
+        run: |
+          if [ -n "$REL_TAG" ]; then
+            sed -i -E "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+            sed -i -E "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+          fi
+          if [ "$GITHUB_REF" = "refs/heads/testing" ]; then
+            cp -f src-tauri/icons-testing/* src-tauri/icons/
+          fi
+          npm ci --no-audit --no-fund
+          for try in 1 2 3; do
+            if npm run tauri build -- --bundles appimage --config '{"bundle":{"active":true}}'; then break; fi
+            [ "$try" = 3 ] && { echo "::error::the AppImage could not be bundled after 3 tries"; exit 1; }
+            echo "::warning::AppImage bundling failed (try $try of 3), trying again in 30 s"
+            rm -rf src-tauri/target/release/bundle/appimage
+            sleep 30
+          done
+          ls -la src-tauri/target/release/bundle/appimage/
+
+      # linuxdeploy's runtime needs libfuse2; the static arm64 type2 runtime (pinned) needs none. The AppImage is that
+      # runtime followed by the same squashfs.
+      - name: AppImage runtime without FUSE 2
+        env:
+          RUNTIME_URL: https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-aarch64
+          RUNTIME_SHA256: 00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444
+        run: |
+          curl -fsSL --retry 3 -o runtime-aarch64 "$RUNTIME_URL"
+          echo "$RUNTIME_SHA256  runtime-aarch64" | sha256sum -c -
+          ai=$(ls launcher/src-tauri/target/release/bundle/appimage/*.AppImage)
+          off=$(APPIMAGE_EXTRACT_AND_RUN=1 "$ai" --appimage-offset)
+          { cat runtime-aarch64; tail -c +$((off + 1)) "$ai"; } > "$ai.new"
+          chmod 755 "$ai.new" && mv "$ai.new" "$ai"
+          "$ai" --appimage-offset
+
+      - name: Launcher artifact
+        run: |
+          ai=$(ls launcher/src-tauri/target/release/bundle/appimage/*.AppImage)
+          mkdir -p work/play && cp "$ai" work/play/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-arm64-launcher
+          path: |
+            work/play/*.AppImage
+          compression-level: 0
+
+  # The arm64 tar.gz: the same content and checks as the x64 package, started once under Xvfb.
+  linux-arm64-package:
+    needs: [linux-arm64-payload, linux-arm64-runtime, linux-arm64-launcher]
+    runs-on: ubuntu-22.04-arm
+    timeout-minutes: 40
+    env:
+      VERSION: ${{ needs.linux-arm64-payload.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Python packages
+        run: python3 -m pip install --upgrade pillow
+
+      - name: Runtime from linux-arm64-runtime
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-arm64-rt
+          path: build/rtdll
+
+      - name: Shader translator from linux-arm64-payload
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-arm64-payload
+          path: build/harness
+
+      - name: Launcher from linux-arm64-launcher
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-arm64-launcher
+          path: work/play
+
+      - name: Restore executable bits
+        run: |
+          mkdir -p launcher/src-tauri/target/release/bundle/appimage
+          mv work/play/*.AppImage launcher/src-tauri/target/release/bundle/appimage/
+          chmod +x launcher/src-tauri/target/release/bundle/appimage/*.AppImage
+          chmod +x build/harness/spirv_harness
+
+      - name: Package
+        run: |
+          mkdir -p build/rel
+          # arm64: the third argument names the tarball (-linux-arm64.tar.gz, the suffix releases.rs looks for); make-linux.sh
+          # auto-detects only on a native run, and this job must not depend on what uname says.
+          sh launcher/scripts/make-linux.sh build/rel "$VERSION" arm64
+          pkg="build/rel/PokopiaRecomp-$VERSION"
+          # what the launcher and Set up look for: a missing one is a broken package, not a slow one
+          for f in PokopiaLauncher.AppImage libpkp_rt.so README.txt tools/build/pkp_build.py tools/build/dump_hashes.json \
+                   tools/build/sdk/libpkp_rt.so tools/build/sdk/pkp_stub.cpp tools/build/sdk/pkp_rt_api.h \
+                   tools/build/sdk/fonts/DejaVuSans.ttf tools/build/sdk/kbm_icons tools/build/recomp/nxrecomp/__main__.py \
+                   tools/harness/spirv_harness tools/shaders/extract_corpus.py assets/prompts/prompt_icons.pak; do
+            test -e "$pkg/$f" || { echo "::error::missing $f in the package"; find "$pkg" -maxdepth 3 | head -40; exit 1; }
+          done
+          test -x "$pkg/tools/harness/spirv_harness"
+          ls -la build/rel
+
+      - name: Smoke test (the AppImage starts and finds tools/)
+        run: |
+          # the same reason as linux-package: the AppImage leaves libEGL/libGL to the host, and this runner has no desktop stack
+          sudo apt-get install -y -q --no-install-recommends xvfb libegl1 libgl1 libgles1 libgles2 libgl1-mesa-dri libvulkan1
+          cd "build/rel/PokopiaRecomp-$VERSION"
+          (APPIMAGE_EXTRACT_AND_RUN=1 timeout 20 xvfb-run -a ./PokopiaLauncher.AppImage > ../launch.log 2>&1; echo "exit $?" >> ../launch.log) || true
+          cat ../launch.log
+          grep -q "exit 124" ../launch.log || { echo "the launcher did not keep running"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PokopiaRecomp-${{ env.VERSION }}-linux-arm64
+          path: build/rel/*.tar.gz
+          compression-level: 0
+
   # Everything the macOS package carries except the two files only macOS can build: the shader harness as a self-contained
   # osx-arm64 publish, MoltenVK, the lifter, the SDK sources and the prompt icons. Linux does it, so the macOS runners only
   # compile.
@@ -708,7 +956,7 @@ jobs:
           compression-level: 6
 
   # The macOS runtime dylib against the SDK's frameworks. It fetches MoltenVK itself rather than waiting for the payload job,
-  # so all nine build jobs stay siblings.
+  # so all twelve build jobs stay siblings.
   macos-runtime:
     needs: release
     runs-on: macos-latest          # arm64, the port's target (macos-14 was x64 and its image was retired on 2 November 2026)
@@ -871,10 +1119,10 @@ jobs:
             work/play/macos.sha256
           compression-level: 0
 
-  # The one place that writes into the release: it takes the archives the three package jobs produced, uploads them, and
+  # The one place that writes into the release: it takes the archives the four package jobs produced, uploads them, and
   # writes one SHA256SUMS.txt over all of them. A platform job that failed leaves its archive out instead of failing this one.
   publish:
-    needs: [windows-package, linux-package, macos-package]
+    needs: [windows-package, linux-package, linux-arm64-package, macos-package]
     if: always() && !cancelled() && (github.ref_type == 'tag' || inputs.release_tag != '')
     runs-on: ubuntu-24.04
     timeout-minutes: 20

@@ -30,7 +30,9 @@ const ASSET_SUFFIX: &str = "-win64.zip";
 // The macOS release zip (launcher/scripts/make-mac.sh): PokopiaLauncher.app at its root, whose Contents/MacOS is the
 // launcher's own folder and so the install root the update is applied to.
 const ASSET_SUFFIX: &str = "-macos-arm64.zip";
-#[cfg(not(any(windows, target_os = "macos")))]
+#[cfg(all(not(any(windows, target_os = "macos")), target_arch = "aarch64"))]
+const ASSET_SUFFIX: &str = "-linux-arm64.tar.gz";
+#[cfg(all(not(any(windows, target_os = "macos")), not(target_arch = "aarch64")))]
 const ASSET_SUFFIX: &str = "-linux-x64.tar.gz";
 
 #[derive(Serialize, Clone, Debug, PartialEq)]

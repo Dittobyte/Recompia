@@ -1,6 +1,6 @@
 # Linux support: port notes
 
-Status: **the game runs natively on x86-64 Linux** — the runtime, the GFX stack, the lifted modules, `libpkp_rt.so`, the
+Status: **the game runs natively on Linux (x86-64, and AArch64 as an experimental build)** — the runtime, the GFX stack, the lifted modules, `libpkp_rt.so`, the
 `pkp` executable, the shader translator and the release package are all built by the platform's own toolchain, and the game
 renders (4,163 draws, 0 skipped) against a real dump with a translated shader cache. What is left is the launcher's Linux
 build (verified by CI only, see §7) and the diagnostics Apple still owns.
@@ -18,13 +18,13 @@ the lift is byte-identical to the Windows one. The port is:
 
 | Layer | Change |
 |---|---|
-| `runtime/CMakeLists.txt` | a `CMAKE_SYSTEM_NAME STREQUAL "Linux"` branch next to the Apple one: x86-64 guard, `NXRT_LINUX`, TLS `initial-exec`, no `-framework` links, `dl`/`pthread`, `nxrt_miniz`, the SDL3 audio sink |
+| `runtime/CMakeLists.txt` | a `CMAKE_SYSTEM_NAME STREQUAL "Linux"` branch next to the Apple one: x86-64 and aarch64 support, `NXRT_LINUX`, TLS `initial-exec`, no `-framework` links, `dl`/`pthread`, `nxrt_miniz`, the SDL3 audio sink |
 | `runtime/src/os/` (POSIX shim) | the existing non-Apple `#else` branches, made to compile and be correct: timing, memory, files, threads, symbols, altstack, `__rdtsc`/`__cpuid` |
 | `runtime/src/services/` | `audio_sdl3.cpp` (a new `AudioSink`), a zlib PNG writer in `album.cpp`, Linux device enumeration |
 | `runtime/src/os/os_posix_a2b.cpp` | ASTC decoding through the vendored ARM `astcenc` instead of macOS' Metal sampling, then BC7 through `bc7enc` |
 | `game-build/CMakeLists.txt` | model b on ELF: `libpkp_rt.so` with a version script, `pkp` linking it with `$ORIGIN` rpath, PIC modules |
 | `launcher/src-tauri/` | the native path (macOS') extended to Linux: `pkp` + `libpkp_rt.so`, no Proton/Wine |
-| `game-build/release_b/pkp_build.py` | a `x86_64-linux-gnu` Zig target so a player's Set up builds a native `pkp` |
+| `game-build/release_b/pkp_build.py` | `x86_64-linux-gnu` and `aarch64-linux-gnu` Zig targets so a player's Set up builds a native `pkp` |
 
 ## 2. Decisions
 
@@ -38,7 +38,7 @@ keeps a documented no-op. That keeps one compatibility layer for two POSIX platf
 ### L2 — ASTC decodes through `astcenc`, and BC7 stays `bc7enc`
 
 Windows ships per-ISA `astcdec-*-shared.dll`; macOS samples ASTC on the GPU. Linux gets the decoder statically linked from
-the `tools/textures` vendor tree (`ASTCENC_DECOMPRESSOR=ON`, SSE4.1, no CLI, no other ISA), so the package has no extra
+the `tools/textures` vendor tree (`ASTCENC_DECOMPRESSOR=ON`; SSE4.1 on x86-64, NEON on aarch64, no CLI, no other ISA), so the package has no extra
 `.so` to load and no CPU dispatch to get wrong. `a2b_decode_astc_rgba8` output is **bit-identical** to `astcenc`'s own CLI
 decode (verified: 0 of 3,686,400 bytes differ on a 1280×720 6×6 texture).
 
@@ -68,8 +68,8 @@ picks on Linux; XAudio2 and CoreAudio stay the Windows and macOS ones.
 
 ### L7 — a player's Set up cross-compiles with the bundled Zig
 
-The package ships one compiler (Zig) on Windows and Linux, so `compile_flags.ZIG_LINUX` is `ZIG_MINGW` with
-`-target x86_64-linux-gnu`: same optimisation level, same semantic flags, same `-mcpu=x86_64+cx16`, because the guest code
+The package ships one compiler (Zig) on Windows and Linux: `compile_flags.ZIG_LINUX` targets
+`x86_64-linux-gnu` (`-mcpu=x86_64+cx16`), while `compile_flags.ZIG_LINUX_ARM64` targets `aarch64-linux-gnu` (native CASP):
 means the same thing on both hosts. The link step adds `-Wl,-rpath,$ORIGIN -Wl,-z,stack-size=134217728` (the ELF form of
 the Windows `/STACK` and the Mach-O `-stack_size`), and the runtime library is copied next to the exe.
 

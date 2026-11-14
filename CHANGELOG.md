@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Experimental: the game, the launcher and the release package build and run natively on AArch64 (Arm64) Linux (#606)
+
 ## 0.13.1 (build Q: Quokka Hotfix a1)
 
 **Update:** press **Update**, then **Finish update** once when it asks (two new hook points for the photo camera, so only a few parts of the game code compile again). Shaders and saves are kept; no shader is translated again.

@@ -23,6 +23,8 @@ pub fn platform_tag() -> &'static str {
         "windows-x64"
     } else if cfg!(target_os = "macos") {
         "macos-arm64"
+    } else if cfg!(target_arch = "aarch64") {
+        "linux-arm64"
     } else {
         "linux-x64"
     }
