@@ -88,7 +88,8 @@ if(TARGET nxrt_gfx)
         "${_pkp}/ui/pkp_craft.cpp"
         "${_pkp}/ui/pkp_save_now.cpp"
         "${_pkp}/ui/pkp_item_edit.cpp"
-        "${_pkp}/ui/pkp_time.cpp")
+        "${_pkp}/ui/pkp_time.cpp"
+        "${_pkp}/ui/pkp_wait_screen.cpp")
     if(NXRT_TESTTOOLS)
         target_sources(nxrt_game_pkp PRIVATE
             "${_pkp}/test/pkp_movie_test.cpp"

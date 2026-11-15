@@ -36,6 +36,7 @@
 #include "ui/pkp_sort.h"
 #include "render/pkp_taa.h"
 #include "ui/pkp_title.h"
+#include "ui/pkp_wait_screen.h"
 
 #include <algorithm>
 #include <array>
@@ -63,6 +64,7 @@ constexpr uint64_t kFrameUpdate = 0x1fdcde4;
 //   linkplay            before play: its frame callback (the one-time check of main) runs first in play mode's frame
 //   story_guard         after save_uuid: its install copies the save, which is then the repaired one (pkp_story_guard.h)
 //   story_hold          after story_guard, whose journal it writes to (pkp_story_hold.h)
+//   wait_screen         last: its layer covers the picture, so it is drawn over the other features' layers (pkp_wait_screen.h)
 //   mods                the Modtopia mods' frame tick (pkp_mods.h): first of the game-frame callbacks, so mods see each frame before our
 //                       features change anything in it
 //   play, kbm           play's status fields come first in the status line, kbm's right after them
@@ -108,6 +110,7 @@ constexpr Entry kEntries[] = {
     port(&key_guide::kKeyGuideFeature),
     port(&kOptionsFeature),
     port(&kPlayTimeFeature),
+    port(&kWaitScreenFeature),
 };
 constexpr size_t kFeatureCount = std::size(kEntries);
 
