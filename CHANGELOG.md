@@ -3,13 +3,13 @@
 ## Unreleased
 
 ### Link Play
-- **Split screen:** two players on one PC (#684). **Link Play > Split screen > Start split screen** in the launcher runs the game twice, one window per player in its half of the screen (top and bottom, or side by side), and player 2 visits player 1 through the game's Link Play menu
-  - Each player plays one controller; with one controller, player 1 can play with the keyboard and mouse
-  - Player 2 is a profile with a save of their own; one without a save starts from a copy of player 1's
-  - Player 2's window is silent unless you turn its sound on. Two games need about twice the memory: 32 GB is recommended
+- **Split screen:** two to four players on one PC (#684). **Link Play > Split screen > Start split screen** in the launcher runs the game once per player, each in a window of their own that shares the screen (two halves, or a quarter each), and the others visit player 1 through the game's Link Play menu
+  - Each player plays one controller; player 1 can play with the keyboard and mouse instead
+  - Every other player is a profile with a save of their own; one without a save starts from a copy of player 1's
+  - The other players' windows are silent unless you turn their sound on. Each game needs about 7 GB of memory: 32 GB is recommended for two players, 64 GB for four
 
 ### For developers
-- Split screen is two processes: the runtime's `[split]` keys (`runtime/include/nxrt/split.h`, `runtime/src/gfx/play/play_split.cpp`) keep a window in its half and give it one controller, the launcher's `split.rs` starts the pair with those keys in each process's environment, and `pkp_save_uuid.cpp` gives a copied save a player UUID of its own
+- Split screen is one process per player: the runtime's `[split]` keys (`runtime/include/nxrt/split.h`, `runtime/src/gfx/play/play_split.cpp`) keep a window in its part of the screen and give it one controller, the launcher's `split.rs` starts the group with those keys in each process's environment, and `pkp_save_uuid.cpp` gives a copied save a player UUID of its own
 
 ## 0.13.7 (build Q: Quokka Hotfix a4)
 
