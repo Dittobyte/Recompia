@@ -19,13 +19,16 @@
   - Until **Set up again** has run, the prompt stays as it was
 
 ### Link Play
-- **Split screen:** two to four players on one PC (#684). **Link Play > Split screen > Start split screen** in the launcher runs the game once per player, each in a window of their own that shares the screen (two halves, or a quarter each), and the others visit player 1 through the game's Link Play menu
+- **Split screen:** two to four players on one PC (#684). **Link Play > Split screen > Start split screen** in the launcher runs the game once per player, each in a window of their own that shares the screen (two halves, or a quarter each), and the others join player 1's world on their own
+  - **Join player 1 automatically** (on): once every player has loaded their save, the others are taken to player 1's world. Nobody walks to the PC or opens the Link Play menu, and it works before the game unlocks Link Play, from the first minutes of a new game. A waiting screen covers a joining player's picture until they are there. Off: the players meet through the game's Link Play menu, as in any Link Play session
+  - **Start next to player 1** (on): a player who joined starts where player 1 stands, not at the PC, where the game lets a visitor arrive. A new game's first cave cannot be reached from the PC. Switch it off once player 1 can be reached from there
   - Each player plays one controller; player 1 can play with the keyboard and mouse instead
   - Every other player is a profile with a save of their own; one without a save starts from a copy of player 1's
   - The other players' windows are silent unless you turn their sound on. Each game needs about 7 GB of memory: 32 GB is recommended for two players, 64 GB for four
 
 ### For developers
 - Split screen is one process per player: the runtime's `[split]` keys (`runtime/include/nxrt/split.h`, `runtime/src/gfx/play/play_split.cpp`) keep a window in its part of the screen and give it one controller, the launcher's `split.rs` starts the group with those keys in each process's environment, and `pkp_save_uuid.cpp` gives a copied save a player UUID of its own
+- `[split] meet` and `together` (`pkp_split_session.cpp`): the game layer makes the requests the game's multiplayer menu makes of its Link Play session manager (open a session, search, join), on the game thread, and takes a visitor to the first player with the game's own warp of a player. `pkp_wait_screen.{h,cpp}` is a waiting screen over the picture that any feature can show
 
 ## 0.13.8 (build Q: Quokka Hotfix a5)
 
