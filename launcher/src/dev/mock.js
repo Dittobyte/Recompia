@@ -425,6 +425,14 @@ function handle(cmd, args) {
     case 'install_update': return runUpdate();
     case 'cancel_update': return updateStop?.();
     case 'play': return runPlay();
+    // split screen: the first start makes the second player's profile, as split.rs does
+    case 'play_split':
+      if (!mockProfiles.profiles.some((p) => p.id !== mockProfiles.active && p.id !== 'default')) mockProfiles.profiles.push({ id: 'p2', name: 'Player 2', uid: '', nickname: 'Player 2', net_uid: '' });
+      return runPlay();
+    case 'split_players': return {
+      first: mockProfiles.profiles.find((p) => p.id === mockProfiles.active).name,
+      candidates: mockProfiles.profiles.filter((p) => p.id !== mockProfiles.active && p.id !== 'default').map(({ id, name }) => ({ id, name })),
+    };
     case 'preflight': return sleep(500).then(() => ({ ...PREFLIGHT[sc.preflight || 'ok'], need_bytes: (looseShaders ? 31 : 14) * 2 ** 30 }));
     case 'start_setup': return runSetup();
     case 'cancel_setup': return pauseSetup();

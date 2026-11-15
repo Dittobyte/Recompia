@@ -69,6 +69,7 @@ mod setup_job;
 mod setuplog;
 mod shader_archive;
 mod shaders;
+mod split;
 mod steam;
 mod steam_cmds;
 mod states;
@@ -160,6 +161,8 @@ fn main() {
             settings_cmds::write_settings,
             settings_cmds::prompt_icon_pack,
             launch::play,
+            launch::play_split,
+            launch::split_players,
             setup_job::setup_status,
             setup_job::start_setup,
             setup_job::preflight,

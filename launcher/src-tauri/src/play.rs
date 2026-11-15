@@ -63,7 +63,9 @@ fn report_files(dir: &Path, started: SystemTime) -> Vec<ReportFile> {
         .collect()
 }
 
-pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config, without_mods: bool) -> Result<(), String> {
+/// `split`: split screen (split.rs). The game is started twice, the second window once the first runs, and the second ends with the
+/// first. Everything else (the status, the save backups, the shaders afterwards) follows the first window, the player's own game.
+pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config, without_mods: bool, split: Option<crate::split::Pair>) -> Result<(), String> {
     let (minimize, discord) = (cfg.minimize_on_play, cfg.discord_presence);
     let gentle = cfg.gentle_build;
     {
@@ -115,13 +117,18 @@ pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config, without_mods: bool)
             eprintln!("branding: {e}");
         }
         // Calculate after shader preparation, immediately before the process starts, so a long preparation cannot age the offset.
-        let mut cmd = match crate::events::override_for(&dir).and_then(|clock| game_command(&exe, &dir, clock, without_mods)) {
+        let clock = crate::events::override_for(&dir);
+        let first_log = split.as_ref().map_or("pkp.log", |p| p.first.log.as_str());
+        let mut cmd = match clock.clone().and_then(|clock| game_command(&exe, &dir, clock, without_mods, first_log)) {
             Ok(c) => c,
             Err(e) => {
                 set_status(&app2, Status { state: GameState::Exited, crashed: true, message: format!("Could not start pkp.exe: {}", e), ..Default::default() });
                 return;
             }
         };
+        if let Some(pair) = &split {
+            pair.first.apply(&mut cmd);
+        }
         let started = SystemTime::now();
         let mut child = match cmd.spawn() {
             Ok(c) => c,
@@ -130,7 +137,23 @@ pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config, without_mods: bool)
                 return;
             }
         };
-        set_status(&app2, Status { state: GameState::Running, message: format!("pkp.exe started (process {})", child.id()), ..Default::default() });
+        // split screen: the second window, with the same clock. One that does not start leaves the first player their game.
+        let (mut second, second_note) = match &split {
+            None => (None, String::new()),
+            Some(pair) => {
+                let spawned = clock.and_then(|clock| game_command(&exe, &dir, clock, without_mods, &pair.second.log)).and_then(|mut c| {
+                    pair.second.apply(&mut c);
+                    c.spawn().map_err(|e| e.to_string())
+                });
+                match spawned {
+                    Ok(c) => (Some(c), String::new()),
+                    Err(e) => (None, format!(" The second window did not start: {}.", e)),
+                }
+            }
+        };
+        // (the page reads the start of this message: action.js gamePhase)
+        let dot = if second_note.is_empty() { "" } else { "." };
+        set_status(&app2, Status { state: GameState::Running, message: format!("pkp.exe started (process {}){}{}", child.id(), dot, second_note), ..Default::default() });
         if minimize {
             if let Some(w) = app2.get_webview_window("main") {
                 let _ = w.minimize();
@@ -141,6 +164,11 @@ pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config, without_mods: bool)
         let presence = crate::presence::Watch::start(discord);
         let online = crate::online::Watch::start(&app2, &dir);
         let result = wait_with_memory_guard(&mut child);
+        // the first window closed: the second goes with it (it may have been closed before; then there is nothing to end)
+        if let Some(c) = second.as_mut() {
+            let _ = c.kill();
+            let _ = c.wait();
+        }
         online.finish();
         presence.finish();
         backups.finish();
@@ -172,7 +200,7 @@ pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config, without_mods: bool)
             (None, Some(c)) => format!("pkp.exe exited with code {} (0x{:08X}).", c, c as u32),
             (None, None) => "pkp.exe was ended by the system.".to_string(),
         };
-        set_status(&app2, Status { state: GameState::Exited, code, crashed, files, message: message + &prep + &shaders });
+        set_status(&app2, Status { state: GameState::Exited, code, crashed, files, message: message + &second_note + &prep + &shaders });
         if minimize {
             if let Some(w) = app2.get_webview_window("main") {
                 let _ = w.unminimize();
@@ -184,15 +212,16 @@ pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config, without_mods: bool)
 }
 
 /// How Play starts the game: `pkp` in its folder on macOS and Linux, `pkp.exe` on Windows (host.rs). Every path (exefs, romfs, shader
-/// cache) comes from pkp.ini next to it. `without_mods`: this start runs without mods.
-fn game_command(exe: &Path, dir: &Path, clock: Option<crate::events::ClockOverride>, without_mods: bool) -> Result<std::process::Command, String> {
+/// cache) comes from pkp.ini next to it. `without_mods`: this start runs without mods. `log`: the log file, relative to the folder
+/// (pkp.log; split screen's second window has its own).
+fn game_command(exe: &Path, dir: &Path, clock: Option<crate::events::ClockOverride>, without_mods: bool, log: &str) -> Result<std::process::Command, String> {
     if !crate::host::native_game() {
         crate::host::sync_runtime_files(&crate::paths::exe_dir(), dir)?;   // pkp_rt.dll and the ASTC decoders: Windows files
     }
     #[cfg(target_os = "macos")]
     crate::host::sync_macos_runtime(dir)?;   // libpkp_rt.dylib and MoltenVK: a launcher update brings newer ones
     let mut cmd = std::process::Command::new(exe);
-    cmd.current_dir(dir).args(["--log", "pkp.log"]);
+    cmd.current_dir(dir).args(["--log", log]);
     // macOS: the folder is not the release's installed layout (no exefs/main next to the binary), so name the settings file;
     // the game reads exefs and romfs from it.
     if crate::host::native_game() && dir.join(crate::settings::PKP_INI).is_file() {
@@ -259,7 +288,7 @@ pub fn run_cli(game_dir: &Path, tools: &Path) -> i32 {
         Err(e) => return fail(e),
     };
     let backups = crate::savebackup::Watch::start(game_dir);   // the same save backups as Play in the window
-    let status = game_command(&exe, game_dir, clock, false).and_then(|mut c| {
+    let status = game_command(&exe, game_dir, clock, false, "pkp.log").and_then(|mut c| {
         let mut child = c.spawn().map_err(|e| format!("Could not start {}: {}", crate::host::game_exe_name(), e))?;
         wait_with_memory_guard(&mut child).map_err(|e| format!("Lost track of {}: {}", crate::host::game_exe_name(), e))
     });

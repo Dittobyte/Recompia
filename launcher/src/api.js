@@ -41,6 +41,8 @@ export const api = {
 
   // Play and setup
   play: (args) => invoke('play', args),   // { withoutMods } (optional: this one start runs without mods)
+  playSplit: (args) => invoke('play_split', args),   // { options: { side, keyboard, sound, second } }: split screen, the game twice
+  splitPlayers: () => invoke('split_players'),   // { first, candidates: [{ id, name }] }
   gameStatus: () => invoke('game_status'),
   setupStatus: () => invoke('setup_status'),
   startSetup: (args) => invoke('start_setup', args),   // { gentle }

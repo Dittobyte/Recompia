@@ -266,15 +266,31 @@ fn put_back(old: &[PathBuf], bacc: &Path) {
 /// Brings `src` (a folder holding G00 and S00, optionally B00) in as the game's committed account save. The source is only read. The
 /// caller has checked that the game is not running.
 pub fn import(save_dir: &Path, key: &str, src: &Path) -> Result<Report, String> {
+    let canon = |p: &Path| fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    if is_save_folder(src) && canon(src).starts_with(canon(save_dir)) {
+        return Err(format!("{} is inside the save folder the game plays. Pick a copy outside it.", fwd(src)));
+    }
+    place(save_dir, key, src)
+}
+
+/// One account's save as a copy of another's in the same save folder (split screen's second player starts from the first player's
+/// save). Only for an account that has no save yet: `to_key`'s folder must not exist. The source is only read; the caller has checked
+/// that the game is not running.
+pub fn copy_account(save_dir: &Path, from_key: &str, to_key: &str) -> Result<Report, String> {
+    let acc = save_dir.join("account");
+    if from_key == to_key || acc.join(to_key).exists() {
+        return Err(format!("{} already holds a save.", fwd(&acc.join(to_key))));
+    }
+    place(save_dir, to_key, &acc.join(from_key))
+}
+
+/// The copy itself: `src` staged beside the account folder, an old save moved aside, the copy put in its place, its .meta written.
+fn place(save_dir: &Path, key: &str, src: &Path) -> Result<Report, String> {
     if !is_save_folder(src) {
         return Err(format!("{} holds no Pokopia save (no G00 and S00 folders).", fwd(src)));
     }
     let acc = save_dir.join("account");
     let root = acc.join(key);
-    let canon = |p: &Path| fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
-    if canon(src).starts_with(canon(save_dir)) {
-        return Err(format!("{} is inside the save folder the game plays. Pick a copy outside it.", fwd(src)));
-    }
     fs::create_dir_all(&acc).map_err(|e| format!("Cannot create {}: {}", fwd(&acc), e))?;
     let t = crate::fsutil::file_stamp();
 

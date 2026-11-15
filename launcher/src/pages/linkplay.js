@@ -12,6 +12,7 @@ import {
   HOST_PORT, RELAY_PORT, addrProblem, addressRows, applyEdits, editsFor, interactEdits, internetShare, pathParts, protocolEdits, readIni,
   relayPort, storyEdits, uiFrom,
 } from '../linkplay-model.js';
+import { renderSplit } from './linkplay-split.js';
 
 const LS = 'pkp.linkplay';
 const POLL_MS = 3000;   // this PC's relay and its link count, while the own-relay Host view is on screen
@@ -346,6 +347,7 @@ export async function render(el, ctx) {
     <div class="lp-path" id="lp-path"></div>
     <div class="lp-part" id="lp-body"></div>
     <div class="lp-part" id="lp-shared"></div>
+    <div class="lp-part" id="lp-split"></div>
   </div>`;
 
   el.addEventListener('input', (e) => {
@@ -408,5 +410,6 @@ export async function render(el, ctx) {
   draw();
   enter();
   api.modsList().then((v) => { gameplayMods = v.gameplay; patch(part('lp-shared'), sharedHtml()); }).catch(() => {});
+  renderSplit(part('lp-split'), ctx).catch((e) => console.warn('split screen', e));   // its own section: never holds the page back
   return () => clearInterval(timer);
 }

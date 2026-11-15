@@ -233,13 +233,15 @@ export const store = {
     }
   },
 
-  /** `withoutMods`: this one start runs without mods (the player's way out when a mod keeps the game from starting). */
-  async play({ withoutMods = false } = {}) {
+  /** `withoutMods`: this one start runs without mods (the player's way out when a mod keeps the game from starting).
+   *  `split`: split screen, the game twice ({ side, keyboard, sound, second }; pages/linkplay-split.js). */
+  async play({ withoutMods = false, split = null } = {}) {
     if (store.state.starting) return;
     await askOnlineOnce();   // once per install, before the first Play: online presence is off unless the player says yes
     set({ starting: true }, 'task');
     try {
-      await api.play(withoutMods ? { withoutMods } : undefined);
+      if (split) await api.playSplit({ options: split });
+      else await api.play(withoutMods ? { withoutMods } : undefined);
     } catch (e) {
       toast(errText(e), 'error');
       store.refresh();

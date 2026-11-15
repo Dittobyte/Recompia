@@ -8,16 +8,13 @@ use crate::config::load_config;
 use crate::guard::{ensure_idle, Need};
 use crate::paths::game_dir_of;
 use crate::readiness::readiness;
-use crate::{play, profiles, settings};
+use crate::{play, profiles, settings, split};
 
-/// `without_mods`: this one start runs without mods (the runtime's [mods] off, passed in the game's environment only).
-#[tauri::command]
-pub fn play(app: AppHandle, without_mods: Option<bool>) -> Result<(), String> {
-    // an update may be preparing: Play waits only for its swap, and holds it off until this game has started (play::start)
-    let updates = app.updates();
-    let _swap = updates.hold_swap();
-    ensure_idle(&app, &[Need::Swap, Need::Storage])?;
-    let cfg = load_config(&app);
+/// What both ways of starting the game check and write first: nothing that Play must wait for is busy, setup is finished, pkp.ini
+/// names the dump and the active profile. Returns the game folder and the launcher's options.
+fn ready_to_play(app: &AppHandle) -> Result<(std::path::PathBuf, crate::config::Config), String> {
+    ensure_idle(app, &[Need::Swap, Need::Storage])?;
+    let cfg = load_config(app);
     let probe = readiness(&cfg);
     if probe.readiness.kind != "ready" {
         return Err(probe.readiness.detail);
@@ -29,7 +26,35 @@ pub fn play(app: AppHandle, without_mods: Option<bool>) -> Result<(), String> {
         settings::ensure_play_paths(&dir, &paths.exefs, &paths.romfs, &paths.romfs_base, &paths.aoc_dir)?;
     }
     profiles::apply_active(&dir)?;
-    play::start(&app, &dir, &cfg, without_mods.unwrap_or(false))
+    Ok((dir, cfg))
+}
+
+/// `without_mods`: this one start runs without mods (the runtime's [mods] off, passed in the game's environment only).
+#[tauri::command]
+pub fn play(app: AppHandle, without_mods: Option<bool>) -> Result<(), String> {
+    // an update may be preparing: Play waits only for its swap, and holds it off until this game has started (play::start)
+    let updates = app.updates();
+    let _swap = updates.hold_swap();
+    let (dir, cfg) = ready_to_play(&app)?;
+    play::start(&app, &dir, &cfg, without_mods.unwrap_or(false), None)
+}
+
+/// Split screen: the game twice, the active profile in the first window and a second player in the other (split.rs).
+#[tauri::command]
+pub fn play_split(app: AppHandle, options: split::Options) -> Result<(), String> {
+    let updates = app.updates();
+    let _swap = updates.hold_swap();
+    // the second player's save is made before the start: no game may hold the save folder open
+    ensure_idle(&app, &[Need::Game("The game is running. Close it first, then start split screen.")])?;
+    let (dir, cfg) = ready_to_play(&app)?;
+    let pair = split::prepare(&dir, &options)?;
+    play::start(&app, &dir, &cfg, false, Some(pair))
+}
+
+/// Who would play split screen: the active profile, and the profiles that can be the second player.
+#[tauri::command]
+pub fn split_players(app: AppHandle) -> split::Players {
+    split::players(&crate::config::game_dir(&app))
 }
 
 #[tauri::command]

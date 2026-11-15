@@ -170,6 +170,15 @@ const TEXTS = [
   msg('Setup has not finished: open the launcher and press Set up.'),
   msg('The profile could not be applied, so the game was not started: {1}'),
 
+  // launch.rs, split.rs, play.rs: split screen
+  msg('The game is running. Close it first, then start split screen.'),
+  msg('That profile cannot be the second player.'),
+  msg("The second player's profile could not be made."),
+  msg('Your save has a write the game did not finish. Start the game once without split screen, then try again.'),
+  msg("The second player's save could not be made: {1}"),
+  msg("The second window's settings could not be prepared: {1}"),
+  msg('The second window did not start: {1}.'),
+
   // preflight.rs: the checks before Set up
   msg('Not enough free disk space'),
   msg('{1} has {2} free and setup needs about {3} (the game build, then about 5 GB of shader sources that are deleted at the end and about {4} of translated shaders that stay). Free some space, or move the game folder to a bigger drive (Settings, game folder).'),
