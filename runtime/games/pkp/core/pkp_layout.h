@@ -10,11 +10,17 @@ namespace nxrt::games::pkp::layout {
 // ---- globals in main (qword pointers) ----
 constexpr uint64_t kPlayerManager = 0x3561928;   // the player manager (26344 bytes, made in 0x71000ae380)
 constexpr uint64_t kManagerPlayer = 0x30;        // player manager: the local player's character (+0x38 the second one)
+constexpr uint64_t kManagerOther = 0x38;         // player manager: the other player's character in a Link Play session of two
 constexpr uint64_t kSaveRoot = 0x3561930;        // the save data (the save/options block)
 constexpr uint64_t kGameState = 0x3561710;       // the game state (stage, session)
 constexpr uint64_t kStateStage = 0x18;           // game state: u8, the stage the player is in
 constexpr uint64_t kStateSession = 0x90;         // game state: u8 Link Play session bits (kSession*); 0 offline
 constexpr uint8_t kSessionOnline = 0x01, kSessionHost = 0x02, kSessionVisitor = 0x04;
+constexpr uint64_t kSessionOwner = 0x3561780;    // the object that owns the Link Play session manager
+constexpr uint64_t kOwnerSession = 0x11f0;       // owner: the session manager (made at start-up, ticked every frame by 0x103a7e0)
+constexpr uint64_t kSessionState = 0x0;          // session manager: u32, 0 idle, else the step of the request it works on
+constexpr uint64_t kSessionFound = 0x1358;       // session manager: u32, the sessions the last search found
+constexpr uint64_t kSessionSize = 0x1a90;        // session manager: its size as far as it is read here
 constexpr uint64_t kInputMgr = 0x3561718;        // the input manager
 constexpr uint64_t kTables = 0x35618f0;          // the data-table manager (the sprite sheet lookups read it too)
 constexpr uint64_t kUiMgr = 0x35aebf8;           // the UI manager (UI resource manager: holds the loaded sprite sheets and the layout pools)
@@ -127,6 +133,14 @@ constexpr uint64_t kFrameStep = 0xbfc4fc;
 
 // ---- game functions ----
 constexpr uint64_t kOnline = 0x376c4;            // () -> bit 0: Link Play session
+// The session manager's requests, the ones the multiplayer menu makes for "Local connection" (its step function 0xf282a8). Each is
+// refused (0) unless the manager is idle and answers 1 when it took the request; the manager then works on it frame by frame.
+constexpr uint64_t kSessionCreate = 0xe7d644;    // (manager): open a session with the code at manager + 4 (empty: no password). It saves first
+constexpr uint64_t kSessionSearch = 0xe7d8d0;    // (manager, 0): look for sessions; kSessionFound holds how many when the manager is idle again
+constexpr uint64_t kSessionJoin = 0xe7ffc8;      // (index): join that found session; the manager then starts the trip to the host's world
+// (character, vec4* position, 0, 1, 1, 1, 0, 0, stack: u8 0) as the script command at 0x444b44 calls it: the player stands there at once,
+// in every game of the session
+constexpr uint64_t kPlayerWarp = 0x275760;
 constexpr uint64_t kMaxStack = 0x2a7f0c;         // () -> the max stack (u16), one value for every item
 constexpr uint64_t kNameOf = 0xa34e1c;           // (name id, form) -> UTF-8 name in the game's language
 constexpr uint64_t kLayoutOf = 0x9132fc;         // (source) -> layout

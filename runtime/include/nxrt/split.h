@@ -17,6 +17,10 @@
 //   first_account =     windows 2 to 4: the folder name of the first player's account save (<save dir>/account/<name>, 32 hex digits), for a
 //                       game layer whose save must differ from it. A name and not a path: both windows share the save folder, and an
 //                       environment variable does not carry every path on Windows
+//   meet = false        the windows come together without the players' doing: a game layer that can opens the first window's
+//                       multiplayer session once its player is in the world and has the others join it
+//   together = false    with meet: a player who joined the first window's session is put where the first player stands, instead of
+//                       where the game lets a visitor arrive
 #pragma once
 #include <string>
 
@@ -24,5 +28,7 @@ namespace nxrt::split {
 
 int window();                // 0: no split screen, else which window this process is (1 to 4)
 std::string first_account(); // empty when the starter named none (or what it named is not 32 hex digits)
+bool meet();                 // split screen is on and the windows are to come together on their own
+bool together();             // meet, and a player who joined starts where the first player stands
 
 }  // namespace nxrt::split

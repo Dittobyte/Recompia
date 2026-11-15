@@ -16,6 +16,8 @@ struct Cfg {
     bool side = false;
     int pad = 0;
     bool mute = false;
+    bool meet = false;
+    bool together = false;
     std::string first_account;
 };
 
@@ -37,6 +39,8 @@ const Cfg& cfg() {
         if (!r.side && layout != "stacked") NXLOG_W("play", "[split] layout = %s is not stacked or side: stacked", layout.c_str());
         r.pad = static_cast<int>(std::clamp<int64_t>(config_get_int("split", "pad", r.window), 0, 8));
         r.mute = config_get_bool("split", "mute", false);
+        r.meet = config_get_bool("split", "meet", false);
+        r.together = config_get_bool("split", "together", false);
         const std::string first = config_get_str("split", "first_account", "");
         const bool hex = first.size() == 32 && std::all_of(first.begin(), first.end(), [](unsigned char ch) { return std::isxdigit(ch) != 0; });
         if (hex) r.first_account = first;
@@ -50,6 +54,8 @@ const Cfg& cfg() {
 
 int window() { return cfg().window; }
 std::string first_account() { return cfg().first_account; }
+bool meet() { return cfg().window != 0 && cfg().meet; }
+bool together() { return meet() && cfg().together; }
 
 }  // namespace nxrt::split
 
