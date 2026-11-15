@@ -170,10 +170,11 @@ void apply_fps_counter(const FpsSettings& f);
 // play_split.cpp: split screen (nxrt/split.h)
 bool split_active();
 bool split_muted();              // this window plays no sound
-platform::Rect split_half(const platform::Rect& area, int window, bool side);   // pure: window 1's or 2's half of a work area
+// Pure: the part of a work area that `window` (1..count) of `count` windows (2 to 4) has (nxrt/split.h says how they are cut).
+platform::Rect split_part(const platform::Rect& area, int window, int count, bool side);
 // The controllers this window plays, in the order they were connected: every one, or in split screen the one in its place (or none).
 size_t own_pads(input::GamepadInfo* out, size_t max);
-void split_start();              // at start, in place of the display settings' monitor and window mode: the window goes to its half
+void split_start();              // at start, in place of the display settings' monitor and window mode: the window goes to its place
 void split_keep(uint64_t now);   // the frame boundary: puts the window back when something moved it
 
 // play_events.cpp

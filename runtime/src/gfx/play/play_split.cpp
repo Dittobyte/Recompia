@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Play mode: split screen (nxrt/split.h). This process is one of two windows: it sits in its half of the display's work area without a
-// frame and is put back when anything moves it, it plays one controller (by its place in connection order) and it can be silent. The
-// keyboard and mouse belong to the window with the focus, as always; the second window is made unable to take the focus until it is in
-// its half, so starting it does not take the keyboard from the first.
+// Play mode: split screen (nxrt/split.h). This process is one of two to four windows: it sits in its part of the display's work area
+// without a frame and is put back when anything moves it, it plays one controller (by its place in connection order) and it can be
+// silent. The keyboard and mouse belong to the window with the focus, as always; every window but the first is made unable to take the
+// focus until it is in its place, so starting it does not take the keyboard from the first.
 #include "nxrt/split.h"
 
 #include "play_state.h"
@@ -12,6 +12,7 @@ namespace {
 
 struct Cfg {
     int window = 0;
+    int count = 2;
     bool side = false;
     int pad = 0;
     bool mute = false;
@@ -22,11 +23,15 @@ const Cfg& cfg() {
     static const Cfg c = [] {
         Cfg r;
         const int64_t w = config_get_int("split", "window", 0);
-        if (w != 1 && w != 2) {
-            if (w != 0) NXLOG_W("play", "[split] window = %lld is not 0, 1 or 2: no split screen", static_cast<long long>(w));
+        if (w < 1 || w > 4) {
+            if (w != 0) NXLOG_W("play", "[split] window = %lld is not 0 to 4: no split screen", static_cast<long long>(w));
             return r;
         }
         r.window = static_cast<int>(w);
+        const int64_t n = config_get_int("split", "count", 2);
+        // a window beyond the count has no part of the screen: the count is then the window's number (logged, the starter's mistake)
+        r.count = static_cast<int>(std::clamp<int64_t>(n, std::max<int64_t>(2, w), 4));
+        if (r.count != n) NXLOG_W("play", "[split] count = %lld does not fit window %d of 2 to 4: %d", static_cast<long long>(n), r.window, r.count);
         const std::string layout = config_get_str("split", "layout", "stacked");
         r.side = layout == "side";
         if (!r.side && layout != "stacked") NXLOG_W("play", "[split] layout = %s is not stacked or side: stacked", layout.c_str());
@@ -75,7 +80,7 @@ bool place() {
     Held& h = held();
     platform::Rect area;
     if (!work_area(&area)) return false;
-    h.want = split_half(area, split::window(), split::cfg().side);
+    h.want = split_part(area, split::window(), split::cfg().count, split::cfg().side);
     if (!platform::place_window(h.want)) return false;
     if (!platform::window_rect(&h.got)) h.got = h.want;
     g().limiter.reset_schedule();
@@ -84,18 +89,23 @@ bool place() {
 
 }  // namespace
 
-platform::Rect split_half(const platform::Rect& area, int window, bool side) {
-    platform::Rect r = area;
-    if (side) {
-        const int first = area.w / 2;
-        r.w = window == 2 ? area.w - first : first;
-        if (window == 2) r.x += first;
-    } else {
-        const int first = area.h / 2;
-        r.h = window == 2 ? area.h - first : first;
-        if (window == 2) r.y += first;
+platform::Rect split_part(const platform::Rect& area, int window, int count, bool side) {
+    // the work area cut in two along `across` (true: left and right), `second` picks the right or lower half
+    const auto half = [](platform::Rect r, bool across, bool second) {
+        int& pos = across ? r.x : r.y;
+        int& len = across ? r.w : r.h;
+        const int first = len / 2;
+        if (second) pos += first;
+        len = second ? len - first : first;
+        return r;
+    };
+    if (count <= 2) return half(area, side, window == 2);
+    if (count == 3) {   // the first window keeps a whole half, the other two share the other half along the other direction
+        if (window == 1) return half(area, side, false);
+        return half(half(area, side, true), !side, window == 3);
     }
-    return r;
+    // four: rows of two, in reading order
+    return half(half(area, false, window > 2), true, window == 2 || window == 4);
 }
 
 bool split_active() { return split::window() != 0; }
@@ -118,13 +128,13 @@ void split_start() {
     Held& h = held();
     h.placed = st.window && place();
     if (st.window && !h.placed)
-        NXLOG_W(kTag, "split screen: window %d could not be put in its half (the window system places windows itself): move it there by hand", c.window);
+        NXLOG_W(kTag, "split screen: window %d could not be put in its place (the window system places windows itself): move it there by hand", c.window);
     if (h.placed && h.got != h.want)
-        NXLOG_W(kTag, "split screen: the window system put window %d at %d,%d %dx%d, not at its half %d,%d %dx%d: it is left there", c.window, h.got.x,
+        NXLOG_W(kTag, "split screen: the window system put window %d at %d,%d %dx%d, not at its place %d,%d %dx%d: it is left there", c.window, h.got.x,
                 h.got.y, h.got.w, h.got.h, h.want.x, h.want.y, h.want.w, h.want.h);
     // the window was made unable to take the focus (the game's start-up names that in its WindowDesc); from here a click gives it the keyboard
     if (st.window) platform::set_window_focusable(true);
-    NXLOG_I(kTag, "split screen: window %d, %s, %s, sound %s, %s %d,%d %dx%d", c.window, c.side ? "side by side" : "stacked",
+    NXLOG_I(kTag, "split screen: window %d of %d, %s, %s, sound %s, %s %d,%d %dx%d", c.window, c.count, c.side ? "side by side" : "stacked",
             c.pad ? ("controller " + std::to_string(c.pad)).c_str() : "no controller (keyboard and mouse)", c.mute ? "off" : "on",
             h.placed ? "at" : "not placed, wanted", h.placed ? h.got.x : h.want.x, h.placed ? h.got.y : h.want.y,
             h.placed ? h.got.w : h.want.w, h.placed ? h.got.h : h.want.h);
@@ -139,9 +149,9 @@ void split_keep(uint64_t now) {
     if (!platform::window_rect(&cur)) return;
     const bool moved = cur != h.got || platform::fullscreen_mode() != platform::FullscreenMode::Windowed;
     // the half itself changes with the work area (a taskbar that moved, another resolution) and with [display] monitor
-    const bool other_half = work_area(&area) && split_half(area, split::window(), split::cfg().side) != h.want;
+    const bool other_half = work_area(&area) && split_part(area, split::window(), split::cfg().count, split::cfg().side) != h.want;
     if (!moved && !other_half) return;
-    NXLOG_D(kTag, "split screen: the window is at %d,%d %dx%d, not in its half: putting it back", cur.x, cur.y, cur.w, cur.h);
+    NXLOG_D(kTag, "split screen: the window is at %d,%d %dx%d, not in its place: putting it back", cur.x, cur.y, cur.w, cur.h);
     if (!place()) h.placed = false;   // refused now: not asked again four times a second
 }
 

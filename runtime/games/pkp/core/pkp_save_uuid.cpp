@@ -228,24 +228,25 @@ bool read_uuid(const stdfs::path& root, uint8_t out[16]) {
     return true;
 }
 
-// Split screen's second window: its save may be a copy of the first player's (the launcher makes one for a second player who has no
-// save), and the first window's game refuses a visitor with its own UUID. So a save here with the first save's UUID gets a new one.
-void second_player() {
+// A split screen window that visits (windows 2 to 4): its save may be a copy of the first player's (the launcher makes one for a
+// player who has no save), and the first window's game refuses a visitor with its own UUID. So a save here with the first save's UUID
+// gets a new one, random, so two copies of the same save differ from each other too.
+void visiting_player() {
     const std::string first = split::first_account();
-    if (split::window() != 2 || first.empty()) return;
+    if (split::window() < 2 || first.empty()) return;
     uint8_t mine[16], theirs[16];
     if (!read_uuid(save_files::account_dir(), mine)) {
-        NXLOG_I(kTag, "split screen: the second player has no save with a player UUID yet (a new game makes one)");
+        NXLOG_I(kTag, "split screen: this player has no save with a player UUID yet (a new game makes one)");
         return;
     }
     if (!read_uuid(save_files::save_dir() / "account" / first, theirs) || std::memcmp(mine, theirs, 16) != 0) {
-        NXLOG_I(kTag, "split screen: the second player's save has a player UUID of its own (%s)", uuid_str(mine).c_str());
+        NXLOG_I(kTag, "split screen: this player's save has a player UUID of its own (%s)", uuid_str(mine).c_str());
         return;
     }
     Swap r;
     if (!swap_uuid(mine, &r)) return;
     if (r.total == 0) return;
-    NXLOG_I(kTag, "split screen: the second player's save was a copy of the first player's (player UUID %s); now %s (%zu places: G00 %zu, "
+    NXLOG_I(kTag, "split screen: this player's save was a copy of the first player's (player UUID %s); now %s (%zu places: G00 %zu, "
             "B00 %zu, S00 %zu). Backup: %s",
             uuid_str(mine).c_str(), uuid_str(r.to).c_str(), r.total, r.counts[0], r.counts[1], r.counts[2], u8(r.backup).c_str());
 }
@@ -265,7 +266,7 @@ void save_uuid_repair() {
 namespace {
 void install(const FeatureInstall&) {
     save_uuid_repair();
-    second_player();
+    visiting_player();
 }
 }  // namespace
 
