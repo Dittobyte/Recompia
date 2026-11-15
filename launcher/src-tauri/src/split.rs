@@ -26,7 +26,7 @@ const DIR: &str = "split";
 pub const MAX_PLAYERS: usize = 4;
 
 /// What the page asks for. Every field has the default a first start uses.
-#[derive(Deserialize, Clone, Debug, Default)]
+#[derive(Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct Options {
     /// How many play: 2 to 4 (anything else is 2).
@@ -40,6 +40,18 @@ pub struct Options {
     /// The profile ids of players 2, 3 and 4, in that order. A missing or empty one: the next profile that can be one, made when
     /// there is none.
     pub others: Vec<String>,
+    /// The players come together on their own: the first window opens its session and the others join it, once each player is in
+    /// the world (the runtime's [split] meet). Off: the players meet through the game's Link Play menu.
+    pub meet: bool,
+    /// With meet: a player who joined starts where the first player stands, not where the game lets a visitor arrive (the
+    /// runtime's [split] together). For the part of the game in which the first player cannot be reached from there.
+    pub together: bool,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Options { players: 2, side: false, keyboard: false, sound: false, others: Vec::new(), meet: true, together: true }
+    }
 }
 
 impl Options {
@@ -145,6 +157,8 @@ fn shared_env(opt: &Options) -> Vec<(&'static str, String)> {
     vec![
         ("NXRT_SPLIT_COUNT", opt.players().to_string()),
         ("NXRT_SPLIT_LAYOUT", if opt.side { "side" } else { "stacked" }.into()),
+        ("NXRT_SPLIT_MEET", opt.meet.to_string()),
+        ("NXRT_SPLIT_TOGETHER", (opt.meet && opt.together).to_string()),
         ("NXRT_NET_PROTOCOL", "native".into()),
         ("NXRT_NET_INTERNET", "false".into()),
     ]
@@ -284,6 +298,8 @@ mod tests {
         assert_eq!(env_of(&group.first, "NXRT_SPLIT_WINDOW"), Some("1"));
         assert_eq!(env_of(&group.first, "NXRT_SPLIT_COUNT"), Some("2"));
         assert_eq!(env_of(&group.first, "NXRT_SPLIT_PAD"), Some("1"));
+        assert_eq!(env_of(&group.first, "NXRT_SPLIT_MEET"), Some("true"), "the players meet on their own unless the page says no");
+        assert_eq!(env_of(other, "NXRT_SPLIT_TOGETHER"), Some("true"));
         assert_eq!(env_of(&group.first, "NXRT_NET_MODE"), Some("auto:47620"));
         assert_eq!(env_of(&group.first, "NXRT_ACCOUNT_UID"), None, "the first window plays the account in pkp.ini");
         assert_eq!(env_of(other, "NXRT_SPLIT_WINDOW"), Some("2"));
@@ -306,7 +322,7 @@ mod tests {
         let copy = save_of(&d, &second);
         fs::write(copy.join("S00").join("SYDAT.BIN"), b"their own progress").unwrap();
 
-        let group = prepare(&d, &Options { side: true, keyboard: true, sound: true, ..Default::default() }).unwrap();
+        let group = prepare(&d, &Options { side: true, keyboard: true, sound: true, meet: false, ..Default::default() }).unwrap();
         assert_eq!(profiles::load(&d).profiles.len(), 2, "no second Player 2");
         assert_eq!(fs::read(copy.join("S00").join("SYDAT.BIN")).unwrap(), b"their own progress");
         assert_eq!(env_of(&group.others[0], "NXRT_ACCOUNT_UID"), Some(second.uid.as_str()));
@@ -315,6 +331,8 @@ mod tests {
         assert_eq!(env_of(&group.others[0], "NXRT_SPLIT_PAD"), Some("1"));
         assert_eq!(env_of(&group.others[0], "NXRT_SPLIT_MUTE"), Some("false"));
         assert_eq!(env_of(&group.first, "NXRT_SPLIT_LAYOUT"), Some("side"));
+        assert_eq!(env_of(&group.others[0], "NXRT_SPLIT_MEET"), Some("false"));
+        assert_eq!(env_of(&group.others[0], "NXRT_SPLIT_TOGETHER"), Some("false"), "nobody is moved when the players meet by hand");
     }
 
     #[test]

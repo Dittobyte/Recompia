@@ -1,7 +1,7 @@
 // Link Play: split screen, two to four players on this PC. The game runs once per player, each in a window of their own, and the
 // others visit player 1. The choices are this page's own (remembered here, nothing goes to pkp.ini): Rust hands each window its role
-// when it starts the group (src-tauri/src/split.rs), and the players then meet in the game's own Link Play menu, which the two lines
-// beside the button name.
+// when it starts the group (src-tauri/src/split.rs). The players then come together on their own once each has loaded their save;
+// with that switched off they meet in the game's own Link Play menu, which the two lines beside the button name.
 import { api } from '../api.js';
 import { t } from '../i18n.js';
 import { esc, group, icon, row, segmented, select, toggle } from '../ui.js';
@@ -25,6 +25,8 @@ export async function renderSplit(el, ctx) {
     side: !!mem.side,
     keyboard: !!mem.keyboard,
     sound: !!mem.sound,
+    meet: mem.meet !== false,   // on unless the player switched it off
+    together: mem.together !== false,
     others: Array.isArray(mem.others) ? mem.others.map((id) => (typeof id === 'string' ? id : '')) : [],   // players 2, 3, 4
   };
   let players = { first: '', candidates: [] };
@@ -64,6 +66,9 @@ export async function renderSplit(el, ctx) {
     const pads = opt.keyboard
       ? t('Player 1 plays with the keyboard and mouse, the others with the controllers in the order they were connected.')
       : t('Each player plays with one controller, in the order the controllers were connected.');
+    const meet = opt.meet
+      ? `${t('Each player loads their save; the others then join player 1 on their own.')}${opt.together ? ` ${t('They start where player 1 stands. Switch that off once player 1 can be reached from the PC.')}` : ''}`
+      : t('The players meet in the Link Play menu of the game.');
     // four windows are a quarter each: nothing to choose
     const screen = opt.players === 4 ? [] : [row(t('Screen'), segmented('split-layout', [['stacked', t('Top and bottom')], ['side', t('Side by side')]], opt.side ? 'side' : 'stacked', { label: t('Screen') }))];
     return `${group(t('Split screen'), [
@@ -72,15 +77,17 @@ export async function renderSplit(el, ctx) {
         row(t('Player 1 plays with'), segmented('split-input', [['pad', t('Controller')], ['kbm', t('Keyboard and mouse')]], opt.keyboard ? 'kbm' : 'pad', { label: t('Player 1 plays with') })),
         ...Array.from({ length: opt.players - 1 }, (_, i) => playerRow(i + 2)),
         row(t('Sound from the other windows'), toggle('split-sound', opt.sound)),
+        row(t('Join player 1 automatically'), toggle('split-meet', opt.meet)),
+        ...(opt.meet ? [row(t('Start next to player 1'), toggle('split-together', opt.together))] : []),
       ])}
       <div class="lp-split-go">
         <button class="btn primary" id="split-start" ${canStart(store.state) ? '' : 'disabled'}>${icon('play')}${esc(t('Start split screen'))}</button>
-        <div class="lp-split-paths">
+        <div class="lp-split-paths">${opt.meet ? '' : `
           ${pathLine(t('Player {n}', { n: 1 }), t('Invite Others to Visit'))}
-          ${pathLine(t('The others'), t('Visit a Friend'))}
+          ${pathLine(t('The others'), t('Visit a Friend'))}`}
         </div>
       </div>
-      <div class="banner info">${icon('info')}<div class="grow">${esc(t('The game runs once per player, each in a window of their own, and the others visit player 1.'))} ${esc(pads)}
+      <div class="banner info">${icon('info')}<div class="grow">${esc(t('The game runs once per player, each in a window of their own, and the others visit player 1.'))} ${esc(meet)} ${esc(pads)}
         <div>${esc(t('A player without a save starts from a copy of yours. Each game needs about 7 GB of memory: 32 GB is recommended for two players, 64 GB for four.'))}</div>
       </div></div>`;
   }
@@ -104,6 +111,8 @@ export async function renderSplit(el, ctx) {
     else if (c.name === 'split-input') opt.keyboard = c.value === 'kbm';
     else if (player) opt.others[player[1] - 2] = c.value;
     else if (c.id === 'split-sound') opt.sound = c.checked;
+    else if (c.id === 'split-meet') opt.meet = c.checked;
+    else if (c.id === 'split-together') opt.together = c.checked;
     else return;
     if (c.name === 'split-players') assign();   // a player who joins gets a profile, one who leaves frees theirs
     keep(opt);
