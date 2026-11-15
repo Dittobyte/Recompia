@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Link Play
+- **Split screen:** two players on one PC (#684). **Link Play > Split screen > Start split screen** in the launcher runs the game twice, one window per player in its half of the screen (top and bottom, or side by side), and player 2 visits player 1 through the game's Link Play menu
+  - Each player plays one controller; with one controller, player 1 can play with the keyboard and mouse
+  - Player 2 is a profile with a save of their own; one without a save starts from a copy of player 1's
+  - Player 2's window is silent unless you turn its sound on. Two games need about twice the memory: 32 GB is recommended
+
+### For developers
+- Split screen is two processes: the runtime's `[split]` keys (`runtime/include/nxrt/split.h`, `runtime/src/gfx/play/play_split.cpp`) keep a window in its half and give it one controller, the launcher's `split.rs` starts the pair with those keys in each process's environment, and `pkp_save_uuid.cpp` gives a copied save a player UUID of its own
+
 ## 0.13.7 (build Q: Quokka Hotfix a4)
 
 **Update:** press **Update** in the launcher. No **Set up again** needed. Shaders and saves are kept; no shader is translated again.
