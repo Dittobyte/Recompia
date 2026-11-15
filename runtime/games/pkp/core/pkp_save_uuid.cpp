@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Pokémon Pokopia: repair of the shared player UUID (pkp_save_uuid.h). CMNDAT layout from berichan/PokoHex (GPL-3.0, SaveFile.cs):
+// Pokémon Pokopia: a save's player UUID made its own (pkp_save_uuid.h). CMNDAT layout from berichan/PokoHex (GPL-3.0, SaveFile.cs):
 // magic 0x31227687, end of the compressed data at +0x10, zlib stream from 0x130. The rewrite is the one work/tools/pkp_uuid.py made
 // (checked in game: a save so changed joins a host made from the same original save).
 #include "core/pkp_save_uuid.h"
@@ -21,6 +21,7 @@
 #include "miniz.h"
 #include "nxrt/log.h"
 #include "nxrt/entropy.h"
+#include "nxrt/split.h"
 
 namespace nxrt::games::pkp {
 namespace {
@@ -33,6 +34,7 @@ constexpr uint8_t kShared[16] = {0xb9, 0xae, 0x85, 0xed, 0x20, 0xe7, 0x4f, 0x6b,
 constexpr uint32_t kCmnMagic = 0x31227687;
 constexpr size_t kCmnHeader = 0x130;
 constexpr size_t kCmnEndAt = 0x10;
+constexpr size_t kSysUuidAt = 0x61;   // S00/SYDAT.BIN: the player UUID's plain copy (2.0.1 saves; read_uuid checks what it finds there)
 
 using Bytes = std::vector<uint8_t>;
 
@@ -82,13 +84,14 @@ uint32_t rd32(const Bytes& b, size_t at) {
     return v;
 }
 
-// A file with the UUID replaced: *count places, *out the new contents. False when it cannot be read or is not the expected layout.
-bool rewrite(const stdfs::path& p, bool cmndat, const uint8_t* uuid, size_t* count, Bytes* out, std::string* why) {
+// A file with the UUID `from` replaced by `uuid`: *count places, *out the new contents. False when it cannot be read or is not the
+// expected layout.
+bool rewrite(const stdfs::path& p, bool cmndat, const uint8_t* from, const uint8_t* uuid, size_t* count, Bytes* out, std::string* why) {
     Bytes file;
     if (!read_all(p, &file)) { *why = "cannot be read"; return false; }
     if (!cmndat) {
         *out = file;
-        *count = replace_all(*out, kShared, uuid);
+        *count = replace_all(*out, from, uuid);
         return true;
     }
     if (file.size() < kCmnHeader || rd32(file, 0) != kCmnMagic) { *why = "not a Pokopia common save"; return false; }
@@ -99,7 +102,7 @@ bool rewrite(const stdfs::path& p, bool cmndat, const uint8_t* uuid, size_t* cou
     if (!raw_p) { *why = "does not decompress"; return false; }
     Bytes raw(static_cast<uint8_t*>(raw_p), static_cast<uint8_t*>(raw_p) + raw_n);
     mz_free(raw_p);
-    *count = replace_all(raw, kShared, uuid);
+    *count = replace_all(raw, from, uuid);
     if (*count == 0) { *out = file; return true; }
     size_t z_n = 0;
     const int flags = static_cast<int>(tdefl_create_comp_flags_from_zip_params(9, 15, MZ_DEFAULT_STRATEGY));   // zlib header, level 9
@@ -130,14 +133,24 @@ std::string uuid_str(const uint8_t* u) {
     return s;
 }
 
-void repair() {
+// What swap_uuid did: the new UUID, how many places held the old one (G00, B00, S00) and where the copy of the save is.
+struct Swap {
+    uint8_t to[16] = {};
+    size_t total = 0, counts[3] = {};
+    stdfs::path backup;
+};
+
+// Gives the account save a new random player UUID in every place that holds `from`: the owner stamps in CMNDAT (G00 and B00) and the
+// plain copy in SYDAT. A copy of the whole account folder is kept first. False when nothing was written: no save, a pending commit or a
+// failure (logged, the save is as it was). True with total 0: the save does not hold `from`.
+bool swap_uuid(const uint8_t* from, Swap* r) {
     const stdfs::path root = save_files::account_dir();
     std::error_code ec;
-    if (!stdfs::is_directory(root, ec)) return;   // no save yet: a new game gets a random UUID now
+    if (!stdfs::is_directory(root, ec)) return false;   // no save yet: a new game gets a random UUID now
     if (save_files::commit_pending()) {
         NXLOG_W(kTag, "player UUID: not checked, the save has an interrupted commit (%s.commit) the game finishes first; checked again next start",
                 u8(root).c_str());
-        return;
+        return false;
     }
     struct Part {
         const char* rel;
@@ -147,35 +160,31 @@ void repair() {
     };
     Part parts[] = {{"G00/CMNDAT.BIN", true}, {"B00/CMNDAT.BIN", true}, {"S00/SYDAT.BIN", false}};
 
-    uint8_t uuid[16];
     do {
-        entropy::fill(uuid, sizeof uuid);
-        uuid[6] = static_cast<uint8_t>((uuid[6] & 0x0F) | 0x40);   // version 4
-        uuid[8] = static_cast<uint8_t>((uuid[8] & 0x3F) | 0x80);   // RFC 4122 variant
-    } while (std::memcmp(uuid, kShared, 16) == 0);
+        entropy::fill(r->to, sizeof r->to);
+        r->to[6] = static_cast<uint8_t>((r->to[6] & 0x0F) | 0x40);   // version 4
+        r->to[8] = static_cast<uint8_t>((r->to[8] & 0x3F) | 0x80);   // RFC 4122 variant
+    } while (std::memcmp(r->to, kShared, 16) == 0 || std::memcmp(r->to, from, 16) == 0);
 
-    size_t total = 0;
-    for (Part& pt : parts) {
+    for (size_t i = 0; i < 3; ++i) {
+        Part& pt = parts[i];
         const stdfs::path p = root / stdfs::path(pt.rel);
         if (!stdfs::is_regular_file(p, ec)) continue;
         std::string why;
-        if (!rewrite(p, pt.cmndat, uuid, &pt.count, &pt.data, &why)) {
+        if (!rewrite(p, pt.cmndat, from, r->to, &pt.count, &pt.data, &why)) {
             NXLOG_W(kTag, "player UUID: %s %s; the save is left as it is", u8(p).c_str(), why.c_str());
-            return;
+            return false;
         }
-        total += pt.count;
+        r->counts[i] = pt.count;
+        r->total += pt.count;
     }
-    if (total == 0) {
-        NXLOG_I(kTag, "player UUID: this save has its own (not the shared one), nothing to repair");
-        return;
-    }
+    if (r->total == 0) return true;
 
     // a copy of the whole account folder first
-    stdfs::path backup;
     std::string error;
-    if (!save_files::copy_account("uuid-backup", 0, &backup, &error)) {
-        NXLOG_E(kTag, "player UUID: the backup to %s failed (%s); the save is left as it is", u8(backup).c_str(), error.c_str());
-        return;
+    if (!save_files::copy_account("uuid-backup", 0, &r->backup, &error)) {
+        NXLOG_E(kTag, "player UUID: the backup to %s failed (%s); the save is left as it is", u8(r->backup).c_str(), error.c_str());
+        return false;
     }
 
     for (const Part& pt : parts) {
@@ -187,15 +196,58 @@ void repair() {
         for (const Part& q : parts) {
             if (q.count == 0) continue;
             std::error_code e2;
-            stdfs::copy_file(backup / stdfs::path(q.rel), root / stdfs::path(q.rel), stdfs::copy_options::overwrite_existing, e2);
+            stdfs::copy_file(r->backup / stdfs::path(q.rel), root / stdfs::path(q.rel), stdfs::copy_options::overwrite_existing, e2);
         }
         NXLOG_E(kTag, "player UUID: writing %s failed (Win32 error %lu); the save was put back from %s", u8(p).c_str(),
-                static_cast<unsigned long>(err), u8(backup).c_str());
+                static_cast<unsigned long>(err), u8(r->backup).c_str());
+        return false;
+    }
+    return true;
+}
+
+void repair() {
+    Swap r;
+    if (!swap_uuid(kShared, &r)) return;
+    if (r.total == 0) {
+        NXLOG_I(kTag, "player UUID: this save has its own (not the shared one), nothing to repair");
         return;
     }
     NXLOG_W(kTag, "player UUID: this save had %s, the UUID every save made with older builds shares (Link Play refused visits with error "
             "9005); now %s (%zu places: G00 %zu, B00 %zu, S00 %zu). Backup: %s",
-            uuid_str(kShared).c_str(), uuid_str(uuid).c_str(), total, parts[0].count, parts[1].count, parts[2].count, u8(backup).c_str());
+            uuid_str(kShared).c_str(), uuid_str(r.to).c_str(), r.total, r.counts[0], r.counts[1], r.counts[2], u8(r.backup).c_str());
+}
+
+// The player UUID of the account save in `root`, from its plain copy in SYDAT. False without that file or when the bytes there are not
+// a version 4 UUID (nn::util::GenerateUuid makes one): then nothing is known and nothing is changed.
+bool read_uuid(const stdfs::path& root, uint8_t out[16]) {
+    Bytes sy;
+    if (!read_all(root / "S00" / "SYDAT.BIN", &sy) || sy.size() < kSysUuidAt + 16) return false;
+    const uint8_t* u = sy.data() + kSysUuidAt;
+    if ((u[6] & 0xF0) != 0x40 || (u[8] & 0xC0) != 0x80) return false;
+    std::memcpy(out, u, 16);
+    return true;
+}
+
+// Split screen's second window: its save may be a copy of the first player's (the launcher makes one for a second player who has no
+// save), and the first window's game refuses a visitor with its own UUID. So a save here with the first save's UUID gets a new one.
+void second_player() {
+    const std::string first = split::first_account();
+    if (split::window() != 2 || first.empty()) return;
+    uint8_t mine[16], theirs[16];
+    if (!read_uuid(save_files::account_dir(), mine)) {
+        NXLOG_I(kTag, "split screen: the second player has no save with a player UUID yet (a new game makes one)");
+        return;
+    }
+    if (!read_uuid(save_files::save_dir() / "account" / first, theirs) || std::memcmp(mine, theirs, 16) != 0) {
+        NXLOG_I(kTag, "split screen: the second player's save has a player UUID of its own (%s)", uuid_str(mine).c_str());
+        return;
+    }
+    Swap r;
+    if (!swap_uuid(mine, &r)) return;
+    if (r.total == 0) return;
+    NXLOG_I(kTag, "split screen: the second player's save was a copy of the first player's (player UUID %s); now %s (%zu places: G00 %zu, "
+            "B00 %zu, S00 %zu). Backup: %s",
+            uuid_str(mine).c_str(), uuid_str(r.to).c_str(), r.total, r.counts[0], r.counts[1], r.counts[2], u8(r.backup).c_str());
 }
 
 }  // namespace
@@ -211,7 +263,10 @@ void save_uuid_repair() {
 }
 
 namespace {
-void install(const FeatureInstall&) { save_uuid_repair(); }
+void install(const FeatureInstall&) {
+    save_uuid_repair();
+    second_player();
+}
 }  // namespace
 
 const Feature kSaveUuidFeature = {.name = "save_uuid", .install = &install};
