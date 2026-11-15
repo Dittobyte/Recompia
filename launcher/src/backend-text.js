@@ -172,12 +172,13 @@ const TEXTS = [
 
   // launch.rs, split.rs, play.rs: split screen
   msg('The game is running. Close it first, then start split screen.'),
-  msg('That profile cannot be the second player.'),
-  msg("The second player's profile could not be made."),
+  msg('That profile cannot be one of the other players.'),
+  msg('The same profile cannot play in two windows.'),
+  msg("A player's profile could not be made."),
   msg('Your save has a write the game did not finish. Start the game once without split screen, then try again.'),
-  msg("The second player's save could not be made: {1}"),
-  msg("The second window's settings could not be prepared: {1}"),
-  msg('The second window did not start: {1}.'),
+  msg("A player's save could not be made: {1}"),
+  msg("A window's settings could not be prepared: {1}"),
+  msg('Window {n1} did not start: {1}.'),
 
   // preflight.rs: the checks before Set up
   msg('Not enough free disk space'),

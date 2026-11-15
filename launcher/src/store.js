@@ -234,7 +234,7 @@ export const store = {
   },
 
   /** `withoutMods`: this one start runs without mods (the player's way out when a mod keeps the game from starting).
-   *  `split`: split screen, the game twice ({ side, keyboard, sound, second }; pages/linkplay-split.js). */
+   *  `split`: split screen, the game once per player ({ players, side, keyboard, sound, others }; pages/linkplay-split.js). */
   async play({ withoutMods = false, split = null } = {}) {
     if (store.state.starting) return;
     await askOnlineOnce();   // once per install, before the first Play: online presence is off unless the player says yes

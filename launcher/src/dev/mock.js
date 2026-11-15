@@ -425,10 +425,14 @@ function handle(cmd, args) {
     case 'install_update': return runUpdate();
     case 'cancel_update': return updateStop?.();
     case 'play': return runPlay();
-    // split screen: the first start makes the second player's profile, as split.rs does
-    case 'play_split':
-      if (!mockProfiles.profiles.some((p) => p.id !== mockProfiles.active && p.id !== 'default')) mockProfiles.profiles.push({ id: 'p2', name: 'Player 2', uid: '', nickname: 'Player 2', net_uid: '' });
+    // split screen: a start makes a profile for every player who has none, as split.rs does
+    case 'play_split': {
+      const free = () => mockProfiles.profiles.filter((p) => p.id !== mockProfiles.active && p.id !== 'default').length;
+      for (let n = 2; free() < (args.options.players || 2) - 1; n++) {
+        if (!mockProfiles.profiles.some((p) => p.name === `Player ${n}`)) mockProfiles.profiles.push({ id: `p${n}`, name: `Player ${n}`, uid: '', nickname: `Player ${n}`, net_uid: '' });
+      }
       return runPlay();
+    }
     case 'split_players': return {
       first: mockProfiles.profiles.find((p) => p.id === mockProfiles.active).name,
       candidates: mockProfiles.profiles.filter((p) => p.id !== mockProfiles.active && p.id !== 'default').map(({ id, name }) => ({ id, name })),

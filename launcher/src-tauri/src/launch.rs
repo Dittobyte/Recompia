@@ -39,19 +39,19 @@ pub fn play(app: AppHandle, without_mods: Option<bool>) -> Result<(), String> {
     play::start(&app, &dir, &cfg, without_mods.unwrap_or(false), None)
 }
 
-/// Split screen: the game twice, the active profile in the first window and a second player in the other (split.rs).
+/// Split screen: the game once per player, the active profile in the first window and the other players in theirs (split.rs).
 #[tauri::command]
 pub fn play_split(app: AppHandle, options: split::Options) -> Result<(), String> {
     let updates = app.updates();
     let _swap = updates.hold_swap();
-    // the second player's save is made before the start: no game may hold the save folder open
+    // the other players' saves are made before the start: no game may hold the save folder open
     ensure_idle(&app, &[Need::Game("The game is running. Close it first, then start split screen.")])?;
     let (dir, cfg) = ready_to_play(&app)?;
-    let pair = split::prepare(&dir, &options)?;
-    play::start(&app, &dir, &cfg, false, Some(pair))
+    let group = split::prepare(&dir, &options)?;
+    play::start(&app, &dir, &cfg, false, Some(group))
 }
 
-/// Who would play split screen: the active profile, and the profiles that can be the second player.
+/// Who would play split screen: the active profile, and the profiles that can be the other players.
 #[tauri::command]
 pub fn split_players(app: AppHandle) -> split::Players {
     split::players(&crate::config::game_dir(&app))

@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Split screen: two players on this PC, each in a window of their own (the runtime's [split] keys, runtime/include/nxrt/split.h).
+//! Split screen: two to four players on this PC, each in a window of their own (the runtime's [split] keys,
+//! runtime/include/nxrt/split.h).
 //!
-//! Play starts the game twice. The first window is the active profile and hosts; the second is another profile and visits it through
-//! Link Play on 127.0.0.1. Nothing is written to pkp.ini: each window gets its role in its environment, which the runtime reads
-//! before the file. The second player is a profile like any other (profiles.rs), so their save is a folder of their own in the same
-//! save folder. One who has no save yet starts from a copy of the first player's, because a new game cannot visit before its story
-//! has opened Link Play; the runtime gives that copy a player UUID of its own (the host refuses a visitor with its own).
+//! Play starts the game once per player. The first window is the active profile and hosts; every other one is another profile and
+//! visits it through Link Play on 127.0.0.1. Nothing is written to pkp.ini: each window gets its role in its environment, which the
+//! runtime reads before the file. A visiting player is a profile like any other (profiles.rs), so their save is a folder of their
+//! own in the same save folder. One who has no save yet starts from a copy of the first player's, because a new game cannot visit
+//! before its story has opened Link Play; the runtime gives that copy a player UUID of its own (the host refuses a visitor with its
+//! own, and two copies must differ from each other too).
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -16,24 +18,34 @@ use crate::profiles::{self, Profile, Store};
 use crate::saveimport;
 use crate::settings::CONTROLS_INI;
 
-/// The pair's own port, so it does not meet a normal Link Play host on this PC (47600) or a relay (47610).
+/// The group's own port, so it does not meet a normal Link Play host on this PC (47600) or a relay (47610).
 pub const PORT: u16 = 47620;
-/// The second window's own files, inside the game folder: its log and its copy of controls.ini.
+/// The visiting windows' own files, inside the game folder: `split/<window>/` holds that window's log and its copy of controls.ini.
 const DIR: &str = "split";
-const SECOND_NAME: &str = "Player 2";
+/// The game's own limit for one Link Play session, and so the most windows.
+pub const MAX_PLAYERS: usize = 4;
 
 /// What the page asks for. Every field has the default a first start uses.
 #[derive(Deserialize, Clone, Debug, Default)]
 #[serde(default)]
 pub struct Options {
-    /// Left and right halves; else top and bottom.
+    /// How many play: 2 to 4 (anything else is 2).
+    pub players: usize,
+    /// Two players: left and right halves, else top and bottom. Three: the first player has the left half, else the top half.
     pub side: bool,
-    /// The first player plays with the keyboard and mouse, so the second gets the first controller.
+    /// The first player plays with the keyboard and mouse, so the others get the controllers from the first one on.
     pub keyboard: bool,
-    /// The second window plays its sound too.
+    /// The visiting windows play their sound too.
     pub sound: bool,
-    /// The second player's profile id. Empty: the first profile that can be one, made when there is none.
-    pub second: String,
+    /// The profile ids of players 2, 3 and 4, in that order. A missing or empty one: the next profile that can be one, made when
+    /// there is none.
+    pub others: Vec<String>,
+}
+
+impl Options {
+    fn players(&self) -> usize {
+        if (2..=MAX_PLAYERS).contains(&self.players) { self.players } else { 2 }
+    }
 }
 
 /// One window: its log file (relative to the game folder) and what its environment adds.
@@ -50,18 +62,19 @@ impl Window {
     }
 }
 
-pub struct Pair {
+/// The windows of one start: the first player's, and the visiting ones in player order.
+pub struct Group {
     pub first: Window,
-    pub second: Window,
+    pub others: Vec<Window>,
 }
 
-/// Who can be the second player: any profile but the active one and the first one. The first profile is the existing save with the
-/// runtime's built-in user, which has no id of its own to hand to a second window.
+/// Who can visit: any profile but the active one and the first one. The first profile is the existing save with the runtime's
+/// built-in user, which has no id of its own to hand to another window.
 pub fn candidates(s: &Store) -> Vec<&Profile> {
     s.profiles.iter().filter(|p| p.id != s.active && p.id != profiles::DEFAULT_ID).collect()
 }
 
-/// What the page shows before a start: who would be the second player.
+/// What the page shows before a start: the first player, and who can be one of the others.
 #[derive(Serialize)]
 pub struct Players {
     pub first: String,
@@ -82,117 +95,141 @@ pub fn players(game_dir: &Path) -> Players {
     }
 }
 
-/// The second player's profile: the one asked for, else the first candidate, else a new profile ("Player 2", or the next free number).
-fn second_profile(game_dir: &Path, wanted: &str) -> Result<Profile, String> {
-    let s = profiles::load(game_dir);
-    let list = candidates(&s);
-    if !wanted.is_empty() {
-        return list.into_iter().find(|p| p.id == wanted).cloned().ok_or_else(|| "That profile cannot be the second player.".to_string());
+const NO_PROFILE: &str = "A player's profile could not be made.";
+
+/// The visiting players' profiles, for players 2 to `players`: the ones asked for, then for every player left open the next
+/// candidate nobody has, then a new profile ("Player 2", or the next free number). Nobody plays twice.
+fn other_profiles(game_dir: &Path, players: usize, wanted: &[String]) -> Result<Vec<Profile>, String> {
+    let mut s = profiles::load(game_dir);
+    let mut out: Vec<Option<Profile>> = vec![None; players - 1];
+    for (slot, id) in out.iter_mut().zip(wanted).filter(|(_, id)| !id.is_empty()) {
+        let p = candidates(&s).into_iter().find(|p| p.id == *id).cloned().ok_or("That profile cannot be one of the other players.")?;
+        *slot = Some(p);
     }
-    if let Some(p) = list.first() {
-        return Ok((*p).clone());
+    let taken = |out: &[Option<Profile>], id: &str| out.iter().flatten().any(|p| p.id == id);
+    for i in 0..out.len() {
+        if out[i].is_some() {
+            if out[..i].iter().flatten().any(|p| p.id == out[i].as_ref().unwrap().id) {
+                return Err("The same profile cannot play in two windows.".into());
+            }
+            continue;
+        }
+        let free = candidates(&s).into_iter().find(|p| !taken(&out, &p.id)).cloned();
+        out[i] = Some(match free {
+            Some(p) => p,
+            None => {
+                let name = (2..100)
+                    .map(|n| format!("Player {}", n))
+                    .find(|n| !s.profiles.iter().any(|p| p.name.eq_ignore_ascii_case(n)))
+                    .ok_or(NO_PROFILE)?;
+                s = profiles::add(game_dir, &name)?;
+                s.profiles.last().cloned().ok_or(NO_PROFILE)?
+            }
+        });
     }
-    let name = (2..100)
-        .map(|n| if n == 2 { SECOND_NAME.to_string() } else { format!("Player {}", n) })
-        .find(|n| !s.profiles.iter().any(|p| p.name.eq_ignore_ascii_case(n)))
-        .ok_or("The second player's profile could not be made.")?;
-    let added = profiles::add(game_dir, &name)?;
-    added.profiles.last().cloned().ok_or_else(|| "The second player's profile could not be made.".to_string())
+    Ok(out.into_iter().flatten().collect())
 }
 
-/// The nickname as the second window's environment can carry it. Windows hands the runtime its environment in the ANSI code page,
-/// which loses a name outside it; such a name plays as "Player 2" in split screen.
-fn env_nickname(p: &Profile) -> String {
+/// The nickname as a window's environment can carry it. Windows hands the runtime its environment in the ANSI code page, which
+/// loses a name outside it; such a name plays as "Player <n>" in split screen.
+fn env_nickname(p: &Profile, player: usize) -> String {
     if p.nickname.is_empty() || (cfg!(windows) && !p.nickname.is_ascii()) {
-        SECOND_NAME.to_string()
+        format!("Player {}", player)
     } else {
         p.nickname.clone()
     }
 }
 
-fn layout(opt: &Options) -> String {
-    if opt.side { "side" } else { "stacked" }.to_string()
+/// What every window of the group gets: how the screen is shared, and Link Play on this PC only.
+fn shared_env(opt: &Options) -> Vec<(&'static str, String)> {
+    vec![
+        ("NXRT_SPLIT_COUNT", opt.players().to_string()),
+        ("NXRT_SPLIT_LAYOUT", if opt.side { "side" } else { "stacked" }.into()),
+        ("NXRT_NET_PROTOCOL", "native".into()),
+        ("NXRT_NET_INTERNET", "false".into()),
+    ]
 }
 
-/// The first window: the active profile, as pkp.ini has it. It hosts on the pair's port.
+/// The first window: the active profile, as pkp.ini has it. It hosts on the group's port.
 fn first_window(opt: &Options) -> Window {
-    Window {
-        log: "pkp.log".into(),
-        env: vec![
-            ("NXRT_SPLIT_WINDOW", "1".into()),
-            ("NXRT_SPLIT_LAYOUT", layout(opt)),
-            ("NXRT_SPLIT_PAD", if opt.keyboard { "0" } else { "1" }.into()),
-            ("NXRT_NET_PROTOCOL", "native".into()),
-            ("NXRT_NET_INTERNET", "false".into()),
-            ("NXRT_NET_MODE", format!("auto:{}", PORT)),
-        ],
-    }
+    let mut env = shared_env(opt);
+    env.extend([
+        ("NXRT_SPLIT_WINDOW", "1".to_string()),
+        ("NXRT_SPLIT_PAD", if opt.keyboard { "0" } else { "1" }.to_string()),
+        ("NXRT_NET_MODE", format!("auto:{}", PORT)),
+    ]);
+    Window { log: "pkp.log".into(), env }
 }
 
-/// The second window: the second player's account and Link Play identity, the first player's account to differ from (its folder name:
-/// Windows hands the runtime its environment in the ANSI code page, which does not carry every path) and files of its own for what a
-/// running game writes next to itself. It only reads the pipeline cache: two processes writing one file would race.
-fn second_window(opt: &Options, second: &Profile, first_key: &str) -> Window {
-    Window {
-        log: format!("{}/pkp.log", DIR),
-        env: vec![
-            ("NXRT_SPLIT_WINDOW", "2".into()),
-            ("NXRT_SPLIT_LAYOUT", layout(opt)),
-            ("NXRT_SPLIT_PAD", if opt.keyboard { "1" } else { "2" }.into()),
-            ("NXRT_SPLIT_MUTE", if opt.sound { "false" } else { "true" }.into()),
-            ("NXRT_SPLIT_FIRST_ACCOUNT", first_key.to_string()),
-            ("NXRT_ACCOUNT_UID", second.uid.clone()),
-            ("NXRT_ACCOUNT_NICKNAME", env_nickname(second)),
-            ("NXRT_NET_UID", second.net_uid.clone()),
-            ("NXRT_NET_PROTOCOL", "native".into()),
-            ("NXRT_NET_INTERNET", "false".into()),
-            ("NXRT_NET_MODE", format!("join:127.0.0.1:{}", PORT)),
-            ("NXRT_PLAY_CONTROLS", format!("{}/{}", DIR, CONTROLS_INI)),
-            ("NXRT_NVN_PIPELINE_CACHE_SAVE", "off".into()),
-        ],
-    }
+/// A visiting window (`player` 2 to 4): the player's account and Link Play identity, the first player's account to differ from (its
+/// folder name: Windows hands the runtime its environment in the ANSI code page, which does not carry every path) and files of its
+/// own for what a running game writes next to itself. It only reads the pipeline cache: several processes writing one file would race.
+fn other_window(opt: &Options, player: usize, profile: &Profile, first_key: &str) -> Window {
+    let mut env = shared_env(opt);
+    env.extend([
+        ("NXRT_SPLIT_WINDOW", player.to_string()),
+        // with the first player on the keyboard, the controllers start at the second player
+        ("NXRT_SPLIT_PAD", (if opt.keyboard { player - 1 } else { player }).to_string()),
+        ("NXRT_SPLIT_MUTE", if opt.sound { "false" } else { "true" }.to_string()),
+        ("NXRT_SPLIT_FIRST_ACCOUNT", first_key.to_string()),
+        ("NXRT_ACCOUNT_UID", profile.uid.clone()),
+        ("NXRT_ACCOUNT_NICKNAME", env_nickname(profile, player)),
+        ("NXRT_NET_UID", profile.net_uid.clone()),
+        ("NXRT_NET_MODE", format!("join:127.0.0.1:{}", PORT)),
+        ("NXRT_PLAY_CONTROLS", format!("{}/{}/{}", DIR, player, CONTROLS_INI)),
+        ("NXRT_NVN_PIPELINE_CACHE_SAVE", "off".to_string()),
+    ]);
+    Window { log: format!("{}/{}/pkp.log", DIR, player), env }
 }
 
 /// The first player's account folder: the one of the active profile's uid. The first profile's save can be older than its uid (a save
 /// from before pkp.ini named one): then it is `found`, the folder the launcher's other save tools use (saveimport::locate), unless
-/// that is the second player's.
-fn first_key(s: &Store, account: &Path, found: String, second_key: &str) -> String {
+/// that is one of the other players'.
+fn first_key(s: &Store, account: &Path, found: String, other_keys: &[String]) -> String {
     let p = s.active_profile();
     let own = saveimport::account_key_of(&p.uid);
-    if p.id != profiles::DEFAULT_ID || saveimport::is_save_folder(&account.join(&own)) || found == second_key {
+    if p.id != profiles::DEFAULT_ID || saveimport::is_save_folder(&account.join(&own)) || other_keys.contains(&found) {
         return own;
     }
     found
 }
 
-/// Everything a split start needs before a process runs: the second player's profile, their save (a copy of the first player's when
-/// they have none) and the second window's copy of controls.ini. The caller has checked that the game is not running.
-pub fn prepare(game_dir: &Path, opt: &Options) -> Result<Pair, String> {
-    let second = second_profile(game_dir, &opt.second)?;
+/// Everything a split start needs before a process runs: the other players' profiles, their saves (a copy of the first player's for
+/// one who has none) and each visiting window's copy of controls.ini. The caller has checked that the game is not running.
+pub fn prepare(game_dir: &Path, opt: &Options) -> Result<Group, String> {
+    let profiles = other_profiles(game_dir, opt.players(), &opt.others)?;
     let (save_dir, found_key) = saveimport::locate(game_dir);
-    let second_key = saveimport::uid_key(&second.uid).ok_or("The second player's profile could not be made.")?;
+    let keys = profiles.iter().map(|p| saveimport::uid_key(&p.uid).ok_or(NO_PROFILE.to_string())).collect::<Result<Vec<_>, _>>()?;
     let account = save_dir.join("account");
-    let first_key = first_key(&profiles::load(game_dir), &account, found_key, &second_key);
+    let first_key = first_key(&profiles::load(game_dir), &account, found_key, &keys);
     let first_save = account.join(&first_key);
-    if !account.join(&second_key).exists() && saveimport::is_save_folder(&first_save) {
+    for key in keys.iter().filter(|k| !account.join(k).exists()) {
+        if !saveimport::is_save_folder(&first_save) {
+            break;   // no save to start from: these players begin a new game
+        }
         // the runtime's own rule (fs_volume.cpp): with <key>.commit beside it the folder is not one consistent save
         if account.join(format!("{}.commit", first_key)).exists() {
             return Err("Your save has a write the game did not finish. Start the game once without split screen, then try again.".into());
         }
-        saveimport::copy_account(&save_dir, &first_key, &second_key).map_err(|e| format!("The second player's save could not be made: {}", e))?;
+        saveimport::copy_account(&save_dir, &first_key, key).map_err(|e| format!("A player's save could not be made: {}", e))?;
     }
 
-    // The second window starts every time from the settings as they are now: what is changed in it lasts for that session.
-    let own = game_dir.join(DIR);
-    let not_prepared = |e: std::io::Error| format!("The second window's settings could not be prepared: {}", e);
-    fs::create_dir_all(&own).map_err(not_prepared)?;
-    let (from, to) = (game_dir.join(CONTROLS_INI), own.join(CONTROLS_INI));
-    if from.is_file() {
-        fs::copy(&from, &to).map_err(not_prepared)?;
-    } else {
-        let _ = fs::remove_file(&to);   // no settings yet: the second window writes the factory ones, as the first does
+    // A visiting window starts every time from the settings as they are now: what is changed in it lasts for that session.
+    let not_prepared = |e: std::io::Error| format!("A window's settings could not be prepared: {}", e);
+    let mut others = vec![];
+    for (i, profile) in profiles.iter().enumerate() {
+        let player = i + 2;
+        let own = game_dir.join(DIR).join(player.to_string());
+        fs::create_dir_all(&own).map_err(not_prepared)?;
+        let (from, to) = (game_dir.join(CONTROLS_INI), own.join(CONTROLS_INI));
+        if from.is_file() {
+            fs::copy(&from, &to).map_err(not_prepared)?;
+        } else {
+            let _ = fs::remove_file(&to);   // no settings yet: the window writes the factory ones, as the first does
+        }
+        others.push(other_window(opt, player, profile, &first_key));
     }
-    Ok(Pair { first: first_window(opt), second: second_window(opt, &second, &first_key) })
+    Ok(Group { first: first_window(opt), others })
 }
 
 #[cfg(test)]
@@ -224,33 +261,39 @@ mod tests {
         root
     }
 
+    fn save_of(d: &Path, p: &Profile) -> std::path::PathBuf {
+        d.join("save").join("account").join(saveimport::uid_key(&p.uid).unwrap())
+    }
+
     #[test]
     fn a_first_start_makes_the_second_player_from_the_first_players_save() {
         let d = tmp("first");
         let first = first_save(&d);
         fs::write(d.join(CONTROLS_INI), "[display]\nwidth = 1600\n").unwrap();
-        let pair = prepare(&d, &Options::default()).unwrap();
+        let group = prepare(&d, &Options::default()).unwrap();
+        assert_eq!(group.others.len(), 1, "two players unless the page says more");
+        let other = &group.others[0];
 
         let s = profiles::load(&d);
-        let second = s.profiles.iter().find(|p| p.name == SECOND_NAME).expect("a profile for the second player");
+        let second = s.profiles.iter().find(|p| p.name == "Player 2").expect("a profile for the second player");
         assert_eq!(s.active, profiles::DEFAULT_ID, "the first player stays the active profile");
-        let copy = d.join("save").join("account").join(saveimport::uid_key(&second.uid).unwrap());
-        assert_eq!(fs::read(copy.join("S00").join("SYDAT.BIN")).unwrap(), b"system");
+        assert_eq!(fs::read(save_of(&d, second).join("S00").join("SYDAT.BIN")).unwrap(), b"system");
         assert_eq!(fs::read(first.join("G00").join("CMNDAT.BIN")).unwrap(), b"common", "the first player's save is only read");
-        assert_eq!(fs::read_to_string(d.join(DIR).join(CONTROLS_INI)).unwrap(), "[display]\nwidth = 1600\n");
+        assert_eq!(fs::read_to_string(d.join(DIR).join("2").join(CONTROLS_INI)).unwrap(), "[display]\nwidth = 1600\n");
 
-        assert_eq!(env_of(&pair.first, "NXRT_SPLIT_WINDOW"), Some("1"));
-        assert_eq!(env_of(&pair.first, "NXRT_SPLIT_PAD"), Some("1"));
-        assert_eq!(env_of(&pair.first, "NXRT_NET_MODE"), Some("auto:47620"));
-        assert_eq!(env_of(&pair.first, "NXRT_ACCOUNT_UID"), None, "the first window plays the account in pkp.ini");
-        assert_eq!(env_of(&pair.second, "NXRT_SPLIT_WINDOW"), Some("2"));
-        assert_eq!(env_of(&pair.second, "NXRT_SPLIT_PAD"), Some("2"));
-        assert_eq!(env_of(&pair.second, "NXRT_SPLIT_MUTE"), Some("true"));
-        assert_eq!(env_of(&pair.second, "NXRT_NET_MODE"), Some("join:127.0.0.1:47620"));
-        assert_eq!(env_of(&pair.second, "NXRT_ACCOUNT_UID"), Some(second.uid.as_str()));
-        assert_eq!(env_of(&pair.second, "NXRT_NET_UID"), Some(second.net_uid.as_str()));
-        assert_eq!(env_of(&pair.second, "NXRT_SPLIT_FIRST_ACCOUNT"), first.file_name().and_then(|n| n.to_str()));
-        assert_eq!(pair.second.log, "split/pkp.log");
+        assert_eq!(env_of(&group.first, "NXRT_SPLIT_WINDOW"), Some("1"));
+        assert_eq!(env_of(&group.first, "NXRT_SPLIT_COUNT"), Some("2"));
+        assert_eq!(env_of(&group.first, "NXRT_SPLIT_PAD"), Some("1"));
+        assert_eq!(env_of(&group.first, "NXRT_NET_MODE"), Some("auto:47620"));
+        assert_eq!(env_of(&group.first, "NXRT_ACCOUNT_UID"), None, "the first window plays the account in pkp.ini");
+        assert_eq!(env_of(other, "NXRT_SPLIT_WINDOW"), Some("2"));
+        assert_eq!(env_of(other, "NXRT_SPLIT_PAD"), Some("2"));
+        assert_eq!(env_of(other, "NXRT_SPLIT_MUTE"), Some("true"));
+        assert_eq!(env_of(other, "NXRT_NET_MODE"), Some("join:127.0.0.1:47620"));
+        assert_eq!(env_of(other, "NXRT_ACCOUNT_UID"), Some(second.uid.as_str()));
+        assert_eq!(env_of(other, "NXRT_NET_UID"), Some(second.net_uid.as_str()));
+        assert_eq!(env_of(other, "NXRT_SPLIT_FIRST_ACCOUNT"), first.file_name().and_then(|n| n.to_str()));
+        assert_eq!(other.log, "split/2/pkp.log");
     }
 
     #[test]
@@ -259,44 +302,91 @@ mod tests {
         first_save(&d);
         prepare(&d, &Options::default()).unwrap();
         let s = profiles::load(&d);
-        let second = s.profiles.iter().find(|p| p.name == SECOND_NAME).unwrap().clone();
-        let copy = d.join("save").join("account").join(saveimport::uid_key(&second.uid).unwrap());
+        let second = s.profiles.iter().find(|p| p.name == "Player 2").unwrap().clone();
+        let copy = save_of(&d, &second);
         fs::write(copy.join("S00").join("SYDAT.BIN"), b"their own progress").unwrap();
 
-        let pair = prepare(&d, &Options { side: true, keyboard: true, sound: true, second: String::new() }).unwrap();
+        let group = prepare(&d, &Options { side: true, keyboard: true, sound: true, ..Default::default() }).unwrap();
         assert_eq!(profiles::load(&d).profiles.len(), 2, "no second Player 2");
         assert_eq!(fs::read(copy.join("S00").join("SYDAT.BIN")).unwrap(), b"their own progress");
-        assert_eq!(env_of(&pair.second, "NXRT_ACCOUNT_UID"), Some(second.uid.as_str()));
+        assert_eq!(env_of(&group.others[0], "NXRT_ACCOUNT_UID"), Some(second.uid.as_str()));
         // one-controller mode: the first player has the keyboard, the only controller is the second player's
-        assert_eq!(env_of(&pair.first, "NXRT_SPLIT_PAD"), Some("0"));
-        assert_eq!(env_of(&pair.second, "NXRT_SPLIT_PAD"), Some("1"));
-        assert_eq!(env_of(&pair.second, "NXRT_SPLIT_MUTE"), Some("false"));
-        assert_eq!(env_of(&pair.first, "NXRT_SPLIT_LAYOUT"), Some("side"));
+        assert_eq!(env_of(&group.first, "NXRT_SPLIT_PAD"), Some("0"));
+        assert_eq!(env_of(&group.others[0], "NXRT_SPLIT_PAD"), Some("1"));
+        assert_eq!(env_of(&group.others[0], "NXRT_SPLIT_MUTE"), Some("false"));
+        assert_eq!(env_of(&group.first, "NXRT_SPLIT_LAYOUT"), Some("side"));
     }
 
     #[test]
-    fn only_another_profile_with_its_own_id_can_be_second() {
+    fn four_players_are_four_windows_with_a_profile_and_a_save_each() {
+        let d = tmp("four");
+        first_save(&d);
+        let misty = profiles::add(&d, "Misty").unwrap().profiles.last().unwrap().clone();
+        let group = prepare(&d, &Options { players: 4, keyboard: true, ..Default::default() }).unwrap();
+        assert_eq!(group.others.len(), 3);
+
+        let s = profiles::load(&d);
+        let names: Vec<&str> = s.profiles.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names[1..], ["Misty", "Player 2", "Player 3"], "the profile that was there plays, two are made");
+        assert_eq!(env_of(&group.others[0], "NXRT_ACCOUNT_UID"), Some(misty.uid.as_str()));
+        let mut uids = vec![];
+        for (i, w) in group.others.iter().enumerate() {
+            let player = i + 2;
+            assert_eq!(env_of(w, "NXRT_SPLIT_WINDOW"), Some(player.to_string().as_str()));
+            assert_eq!(env_of(w, "NXRT_SPLIT_COUNT"), Some("4"));
+            assert_eq!(env_of(w, "NXRT_SPLIT_PAD"), Some((player - 1).to_string().as_str()), "the keyboard is the first player's");
+            assert_eq!(w.log, format!("split/{}/pkp.log", player));
+            uids.push(env_of(w, "NXRT_ACCOUNT_UID").unwrap().to_string());
+        }
+        uids.sort();
+        uids.dedup();
+        assert_eq!(uids.len(), 3, "nobody plays twice");
+        for p in &s.profiles[1..] {
+            assert!(saveimport::is_save_folder(&save_of(&d, p)), "{} starts from a copy of the first save", p.name);
+        }
+        // a third start with one player fewer leaves the profiles as they are
+        prepare(&d, &Options { players: 3, ..Default::default() }).unwrap();
+        assert_eq!(profiles::load(&d).profiles.len(), 4);
+    }
+
+    #[test]
+    fn the_page_can_say_who_plays_where() {
+        let d = tmp("pick");
+        first_save(&d);
+        let misty = profiles::add(&d, "Misty").unwrap().profiles.last().unwrap().clone();
+        let brock = profiles::add(&d, "Brock").unwrap().profiles.last().unwrap().clone();
+        let group = prepare(&d, &Options { players: 3, others: vec![brock.id.clone(), misty.id.clone()], ..Default::default() }).unwrap();
+        assert_eq!(env_of(&group.others[0], "NXRT_ACCOUNT_UID"), Some(brock.uid.as_str()));
+        assert_eq!(env_of(&group.others[1], "NXRT_ACCOUNT_UID"), Some(misty.uid.as_str()));
+        // only player 3 is said: player 2 is the candidate that is left
+        let group = prepare(&d, &Options { players: 3, others: vec![String::new(), misty.id.clone()], ..Default::default() }).unwrap();
+        assert_eq!(env_of(&group.others[0], "NXRT_ACCOUNT_UID"), Some(brock.uid.as_str()));
+        assert!(prepare(&d, &Options { players: 3, others: vec![misty.id.clone(), misty.id.clone()], ..Default::default() }).is_err());
+    }
+
+    #[test]
+    fn only_another_profile_with_its_own_id_can_visit() {
         let d = tmp("who");
         first_save(&d);
         let s = profiles::add(&d, "Misty").unwrap();
         let misty = s.profiles.last().unwrap().clone();
         assert_eq!(players(&d).candidates.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["Misty"]);
-        // the first profile is the built-in user: never the second player, also while another profile is active
+        // the first profile is the built-in user: never a visitor, also while another profile is active
         profiles::select(&d, &misty.id).unwrap();
         assert!(players(&d).candidates.is_empty());
-        assert!(prepare(&d, &Options { second: profiles::DEFAULT_ID.into(), ..Default::default() }).is_err());
-        assert!(prepare(&d, &Options { second: misty.id.clone(), ..Default::default() }).is_err(), "the active profile is the first player");
+        assert!(prepare(&d, &Options { others: vec![profiles::DEFAULT_ID.into()], ..Default::default() }).is_err());
+        assert!(prepare(&d, &Options { others: vec![misty.id.clone()], ..Default::default() }).is_err(), "the active profile is the first player");
     }
 
     #[test]
-    fn a_second_player_without_a_first_save_starts_a_new_game() {
+    fn a_player_without_a_first_save_starts_a_new_game() {
         let d = tmp("new");
-        let pair = prepare(&d, &Options::default()).unwrap();
+        let group = prepare(&d, &Options::default()).unwrap();
         let s = profiles::load(&d);
         let second = s.profiles.last().unwrap();
-        assert!(!d.join("save").join("account").join(saveimport::uid_key(&second.uid).unwrap()).exists());
-        assert_eq!(env_of(&pair.second, "NXRT_SPLIT_WINDOW"), Some("2"));
-        assert!(!d.join(DIR).join(CONTROLS_INI).exists());
+        assert!(!save_of(&d, second).exists());
+        assert_eq!(env_of(&group.others[0], "NXRT_SPLIT_WINDOW"), Some("2"));
+        assert!(!d.join(DIR).join("2").join(CONTROLS_INI).exists());
     }
 
     #[test]

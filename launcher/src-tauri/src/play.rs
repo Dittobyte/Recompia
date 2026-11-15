@@ -63,9 +63,9 @@ fn report_files(dir: &Path, started: SystemTime) -> Vec<ReportFile> {
         .collect()
 }
 
-/// `split`: split screen (split.rs). The game is started twice, the second window once the first runs, and the second ends with the
-/// first. Everything else (the status, the save backups, the shaders afterwards) follows the first window, the player's own game.
-pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config, without_mods: bool, split: Option<crate::split::Pair>) -> Result<(), String> {
+/// `split`: split screen (split.rs). The game is started once per player, the other windows once the first runs, and they end with
+/// the first. Everything else (the status, the save backups, the shaders afterwards) follows the first window, the player's own game.
+pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config, without_mods: bool, split: Option<crate::split::Group>) -> Result<(), String> {
     let (minimize, discord) = (cfg.minimize_on_play, cfg.discord_presence);
     let gentle = cfg.gentle_build;
     {
@@ -137,23 +137,22 @@ pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config, without_mods: bool,
                 return;
             }
         };
-        // split screen: the second window, with the same clock. One that does not start leaves the first player their game.
-        let (mut second, second_note) = match &split {
-            None => (None, String::new()),
-            Some(pair) => {
-                let spawned = clock.and_then(|clock| game_command(&exe, &dir, clock, without_mods, &pair.second.log)).and_then(|mut c| {
-                    pair.second.apply(&mut c);
-                    c.spawn().map_err(|e| e.to_string())
-                });
-                match spawned {
-                    Ok(c) => (Some(c), String::new()),
-                    Err(e) => (None, format!(" The second window did not start: {}.", e)),
-                }
+        // split screen: the other windows, with the same clock. One that does not start leaves the others their game.
+        let mut others = vec![];
+        let mut window_notes = String::new();
+        for (i, window) in split.iter().flat_map(|group| &group.others).enumerate() {
+            let spawned = clock.clone().and_then(|clock| game_command(&exe, &dir, clock, without_mods, &window.log)).and_then(|mut c| {
+                window.apply(&mut c);
+                c.spawn().map_err(|e| e.to_string())
+            });
+            match spawned {
+                Ok(c) => others.push(c),
+                Err(e) => window_notes.push_str(&format!(" Window {} did not start: {}.", i + 2, e)),
             }
-        };
+        }
         // (the page reads the start of this message: action.js gamePhase)
-        let dot = if second_note.is_empty() { "" } else { "." };
-        set_status(&app2, Status { state: GameState::Running, message: format!("pkp.exe started (process {}){}{}", child.id(), dot, second_note), ..Default::default() });
+        let dot = if window_notes.is_empty() { "" } else { "." };
+        set_status(&app2, Status { state: GameState::Running, message: format!("pkp.exe started (process {}){}{}", child.id(), dot, window_notes), ..Default::default() });
         if minimize {
             if let Some(w) = app2.get_webview_window("main") {
                 let _ = w.minimize();
@@ -164,8 +163,8 @@ pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config, without_mods: bool,
         let presence = crate::presence::Watch::start(discord);
         let online = crate::online::Watch::start(&app2, &dir);
         let result = wait_with_memory_guard(&mut child);
-        // the first window closed: the second goes with it (it may have been closed before; then there is nothing to end)
-        if let Some(c) = second.as_mut() {
+        // the first window closed: the others go with it (one may have been closed before; then there is nothing to end)
+        for c in others.iter_mut() {
             let _ = c.kill();
             let _ = c.wait();
         }
@@ -200,7 +199,7 @@ pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config, without_mods: bool,
             (None, Some(c)) => format!("pkp.exe exited with code {} (0x{:08X}).", c, c as u32),
             (None, None) => "pkp.exe was ended by the system.".to_string(),
         };
-        set_status(&app2, Status { state: GameState::Exited, code, crashed, files, message: message + &second_note + &prep + &shaders });
+        set_status(&app2, Status { state: GameState::Exited, code, crashed, files, message: message + &window_notes + &prep + &shaders });
         if minimize {
             if let Some(w) = app2.get_webview_window("main") {
                 let _ = w.unminimize();
@@ -213,7 +212,7 @@ pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config, without_mods: bool,
 
 /// How Play starts the game: `pkp` in its folder on macOS and Linux, `pkp.exe` on Windows (host.rs). Every path (exefs, romfs, shader
 /// cache) comes from pkp.ini next to it. `without_mods`: this start runs without mods. `log`: the log file, relative to the folder
-/// (pkp.log; split screen's second window has its own).
+/// (pkp.log; split screen's other windows have their own).
 fn game_command(exe: &Path, dir: &Path, clock: Option<crate::events::ClockOverride>, without_mods: bool, log: &str) -> Result<std::process::Command, String> {
     if !crate::host::native_game() {
         crate::host::sync_runtime_files(&crate::paths::exe_dir(), dir)?;   // pkp_rt.dll and the ASTC decoders: Windows files
