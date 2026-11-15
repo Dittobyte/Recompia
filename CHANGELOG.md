@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+**Update:** press **Update** in the launcher, then **Set up again** (the game code gets new hook points and is linked again; saves and shaders are kept, no shader is translated again).
+
+### Gameplay
+- Added an experimental **Play as Pokémon** mod: stand in front of a Pokémon, hold ZL and press Up on the D-pad to copy it. You turn into it and stay that way; ZL and Right on the D-pad turns you back, ZL and Left turns you into your chosen Pokémon again. Off during Link Play. Switch: Settings > Gameplay in the launcher (`[pkp] play_as_pokemon`)
+  - Every Pokémon you copy is added to a list in the game's Settings, tab **Play as**, where you pick the one ZL and Left turns you into (kept in `play_as_pokemon.tsv` in the game folder, not in your save). The list has 20 places; **Remove from list** in the same tab frees one
+  - A Pokémon that is not in your world: its number in `[pkp] play_as_pokemon_form` of `pkp.ini` (70 is Ditto)
+  - As a Pokémon that hovers or flies in the game (Charizard, Scyther, Noctowl and others): ZR takes off and rises, ZL sinks and, held on the ground, lands, ZR and ZL together drops out of the air; letting go of both hovers in place
+  - After [Pokopia-Editor](https://github.com/cycalo/Pokopia-Editor)'s Play as Pokemon mod
+  - Needs **Set up again** once after the update (the game code is translated again for the new hook points). Shaders and saves are kept; no shader is translated again
+
+### Controls
+- Fixed the prompt beside the player (such as **(A) Talk**) drawing its four face buttons where a Switch controller has them when **Face Buttons** is set to **Xbox** (#683)
+  - Before: with an Xbox or PlayStation controller and Face Buttons on Xbox, the prompt showed A (or the cross) at the right of the four buttons, though it is the bottom button of the controller; B, X and Y were in the wrong places too
+  - Now: each button is drawn where it sits on your controller: A at the bottom, B at the right, X at the left, Y at the top. A remapped button layout is followed the same way
+  - Until **Set up again** has run, the prompt stays as it was
+
 ### Link Play
 - **Split screen:** two to four players on one PC (#684). **Link Play > Split screen > Start split screen** in the launcher runs the game once per player, each in a window of their own that shares the screen (two halves, or a quarter each), and the others visit player 1 through the game's Link Play menu
   - Each player plays one controller; player 1 can play with the keyboard and mouse instead
@@ -11,20 +27,47 @@
 ### For developers
 - Split screen is one process per player: the runtime's `[split]` keys (`runtime/include/nxrt/split.h`, `runtime/src/gfx/play/play_split.cpp`) keep a window in its part of the screen and give it one controller, the launcher's `split.rs` starts the group with those keys in each process's environment, and `pkp_save_uuid.cpp` gives a copied save a player UUID of its own
 
+## 0.13.8 (build Q: Quokka Hotfix a5)
+
+**Update:** press **Update** in the launcher, then **Set up again** (it relinks the game; saves and shaders are kept, no shader is translated again).
+
+### Highlights
+- Fixed the game closing (code 0xC0000409) soon after loading the world on PCs with 8 GB of RAM or less
+- Fixed low frame rates on graphics cards with less than 8 GB of video memory (#693, #694)
+- Added a **Brightness** setting and a **Controller** setting to pick the one controller that plays
+
+### Controls
+- Added a **Controller** setting (in-game Settings > Controller, and the launcher's Settings > Controls): pick the one controller that plays, for PCs with other people's controllers connected (a shared streaming host). All, the default, keeps every controller playing.
+
 ### Graphics
 - Added a **Brightness** setting under Settings > Picture: it dims the whole picture, white menus included, for players who find a bright screen uncomfortable (#678)
-
-### For developers
-- `[picture] brightness` (0.25 to 1, `controls.ini`): multiplies the display-encoded signal after the gamma in the output pass; its value rides in the encode's `p.w`, which was the picture controls' on/off flag, so the 128-byte push block is unchanged
 - Fixed the Ditto loading screen and the fade to black around it covering only the 16:9 middle of a wider picture (ultrawide screens)
   - Before: what lay behind them showed on the left and right, the world itself during the fade; on 16:10 the fade left a thin strip of it at the top and bottom
   - Now: the loading screen's black areas and its strip of sky reach the picture's edges, and the fade covers the whole picture
   - Still not: the stars in the loading screen's sky end at the old 16:9 edges
+- Fixed the game closing (code 0xC0000409) soon after loading the world on PCs with 8 GB of RAM or less, such as laptops with AMD Vega integrated graphics: the copies of the game's graphics memory kept in RAM are now limited to an eighth of the PC's RAM
+- Fixed low frame rates on graphics cards with less than 8 GB of video memory, worst after visiting several areas (#693, #694)
+  - Before: the game's copy of its data in video memory filled up with mostly empty blocks and was never cleared, so later areas read their data from system memory
+  - Now: smaller blocks on those cards, blocks no area has drawn from for about 10 seconds are cleared for new ones, and 4 GB cards get a copy too
+  - Cards with 8 GB or more keep what they had until their copy is full
+  - Still not: on 4-core processors the console's cores can share a physical core (#694)
+
+### Performance
+- Better use of processors with fewer than 6 cores, such as 4-core / 8-thread laptops (#694)
+  - Before: the game's six console cores went in pairs onto three of the four cores, and the fourth core was left out
+  - Now: every core gets one console core first, and the remaining two each share a core with one other
+  - Still not: on a 4-core processor two cores still carry two console cores each
+
+### Launcher
+- Fixed shader translation failing in Set up when the game folder's path has a non-ASCII character (such as an accented user name)
 
 ### For developers
+- `[sched] pick = auto` with fewer physical cores than console cores: one console core per physical core (fastest first, the core of processor 0 last), then the rest on second hardware threads (`place_on_few_cores` in `src/kernel/sched.cpp`); `take_slot` now says when there are too few processors for a slot instead of blaming other processes
+- `[nvn] pool_mirror_mb`: device-local pool copies use 16 MiB chunks under a cap of 1792 MiB (64 MiB from it up), release chunks idle for 600 presents once the cap is used up (`release_idle_chunks` in `nvn_gpu_pool.cpp`), and start at 3.5 GiB of video memory instead of 4 GiB (`nvn_mirror_cap.h`)
+- `[pad] controller` (`all` or 1 to 8, `controls.ini`): `poll_pads` reads only the pad whose SDL player index + 1 matches (on Windows the XInput slot + 1); `input::GamepadInfo::player` carries the index and pkp.log prints it when a pad is added
+- `[picture] brightness` (0.25 to 1, `controls.ini`): multiplies the display-encoded signal after the gamma in the output pass; its value rides in the encode's `p.w`, which was the picture controls' on/off flag, so the 128-byte push block is unchanged
 - `runtime/games/pkp/render/pkp_loading_backdrop.cpp`: the pane quad hook is also installed on a canvas wider than 1920 and grows the loading layout's sky and ground and the fade quad `000_prt_square_k` (authored 2112x1188) with the canvas; `play_ui_canvas_width()` in `input/pkp_play.h`
-- Modtopia: added a read-only selected title/account identity API so mods can scope their own data to the player's save account. **Set up again** after updating the runtime; saves and shaders are kept.
-- Fixed shader translation failing in Set up when the game folder's path has a non-ASCII character (such as an accented user name)
+- Modtopia: added a read-only selected title/account identity API so mods can scope their own data to the player's save account.
 
 ## 0.13.7 (build Q: Quokka Hotfix a4)
 
