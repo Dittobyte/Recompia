@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+- Co-op profiles in the launcher: each co-op group has its own save folder, private relay room code, recorded members and world version, with copy between singleplayer and co-op modes (#701)
+  - Before: co-op sessions shared ordinary singleplayer profiles, wrote Link Play choices to `pkp.ini`, and could open a co-op save in a normal launch
+  - Now: co-op profiles keep their own save folder, apply co-op settings in the launch environment only without touching `pkp.ini`, refuse normal launches of co-op saves and co-op launches of singleplayer saves, and copy between modes in Settings > Saves and on Link Play
+  - Still not: the game runtime does not yet read the private room code under `protocol = native` or the automatic session, host story ownership and post-session save sync rules (steps 2 to 4 of #701)
+
 ### Changed
 - An update that stops now writes its error to setup.log, with the step it reached
 - A crash report now lists the render targets the game was drawing to when it crashed (#720)
