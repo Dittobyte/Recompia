@@ -152,6 +152,7 @@ MyMod/                       <- choose this folder in Settings > Game > Mods
 
 If a download has an outer folder (for example `2.0.1/romfs/...`), choose the inner `romfs` folder, the one that contains `LD_C0_R.BIN`, not the outer one. If the folder level is wrong, `pkp.log` says that none of the mod's files replaces a game file. Mods that replace files containing shaders are not supported.
 
+
 ### Mods e traduções (Português do Brasil)
 
 Você pode colocar uma pasta de arquivos de substituição (um mod de texto ou de texturas, uma tradução) por cima do jogo sem mexer no dump: **Settings > Game > Mods**, ou `romfs_mod` em `[fs]` no `pkp.ini`. Este projeto não inclui nenhum mod; peça ao autor do mod.

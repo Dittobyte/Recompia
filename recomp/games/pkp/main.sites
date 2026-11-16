@@ -342,3 +342,18 @@ inline 0x710027cbd0
 #   number's motion set gets a user, and the change of form is asked for again when the motions were not bound before
 #   and the fly buttons act on the local player's movement component (a form with a hover motion: ZR rises, ZL sinks and lands)
 inline 0x71002face0
+# Language packs (one extra language, runtime games/pkp/ui/pkp_language_packs.cpp, #590): language 9 on the first-boot grid and in the
+# save, mapped to Spain Spanish (5) everywhere else. The four patched bounds admit the tenth button, its label / confirmation and a saved 9.
+patch 0x7100ffb138 0x7100277f 0x71002b7f
+patch 0x7100ffb1f0 0x7100237f 0x7100277f
+patch 0x7100ffb010 0x710022df 0x710026df
+patch 0x7100230f5c 0x7100201f 0x7100241f
+#   Append the grid entry before its builder call; capture LATM-marked LINKDATA_PATCH entries and turn their original cbz into the loop's skip;
+#   map requests at the boot and grid-confirm compares; save 9 after the active flag changes the store's value; report 9 after the two current-id loads.
+midhook 0x7100ffa520
+midhook 0x71011238dc
+midhook 0x7100230f78
+midhook 0x7100ffaa3c
+midhook 0x71002306e0
+midhook 0x7100ffaca8
+midhook 0x7100ffb120

@@ -12,4 +12,6 @@ The Joy-Con 2 mouse mode follows [Pikantine](https://github.com/SpiderNic96/Pika
 
 The Play as Pokémon mod (`runtime/games/pkp/input/pkp_play_as.cpp`) ports the Play as Pokemon patch of [Pokopia-Editor](https://github.com/cycalo/Pokopia-Editor) by cycalo (GPL-3.0) to the runtime's hooks: where the patch changes the game's code and what each change does.
 
+Latin American Spanish language-pack support follows the record format and language-screen behavior documented by [pokopia-es-latam](https://github.com/Takeitslowww/pokopia-es-latam). The translation and its artwork are distributed separately by the pack's author.
+
 Licences are in `runtime/THIRD_PARTY_NOTICES.md`, `recomp/THIRD_PARTY.md` and `tools/shaders/licenses/`.

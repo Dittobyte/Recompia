@@ -4,6 +4,9 @@
 
 **Update:** press **Update** in the launcher, then **Set up again** (the game code gets new hook points and is linked again; saves and shaders are kept, no shader is translated again).
 
+### Languages
+- Added support for community language packs: a pack in the `mods` folder adds one extra language to the game's language screen, with the choice kept in the save. Recompia ships no translations (#590)
+
 ### Gameplay
 - Added an experimental **Play as Pokémon** mod: stand in front of a Pokémon, hold ZL and press Up on the D-pad to copy it. You turn into it and stay that way; ZL and Right on the D-pad turns you back, ZL and Left turns you into your chosen Pokémon again. Off during Link Play. Switch: Settings > Gameplay in the launcher (`[pkp] play_as_pokemon`)
   - Every Pokémon you copy is added to a list in the game's Settings, tab **Play as**, where you pick the one ZL and Left turns you into (kept in `play_as_pokemon.tsv` in the game folder, not in your save). The list has 20 places; **Remove from list** in the same tab frees one

@@ -10,6 +10,7 @@
 #include "input/pkp_jump.h"
 #include "input/pkp_kbm.h"
 #include "ui/pkp_key_guide.h"
+#include "ui/pkp_language_packs.h"
 #include "core/pkp_layout.h"
 #include "core/pkp_link_digspots.h"
 #include "core/pkp_link_trips.h"
@@ -92,7 +93,7 @@ constexpr Entry port(const Feature* f) { return {f, {settings::Key::Count, setti
 
 using enum settings::Key;
 constexpr Entry kEntries[] = {
-    port(&kSaveUuidFeature), port(&kLinkplayFeature), port(&kStoryGuardFeature), port(&kStoryHoldFeature), port(&kStoryPickupsFeature), port(&kLinkTripsFeature), port(&kLinkDigSpotsFeature), port(&kModsFeature), port(&kPlayFeature), port(&kKbmFeature),
+    port(&kSaveUuidFeature), port(&kLinkplayFeature), port(&kStoryGuardFeature), port(&kStoryHoldFeature), port(&kStoryPickupsFeature), port(&kLinkTripsFeature), port(&kLinkDigSpotsFeature), port(&kModsFeature), port(&kLanguagePacksFeature), port(&kPlayFeature), port(&kKbmFeature),
 #if NXRT_TESTTOOLS
     port(&kMovieTestFeature),
 #endif

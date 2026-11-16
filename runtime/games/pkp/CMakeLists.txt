@@ -83,6 +83,7 @@ if(TARGET nxrt_gfx)
         "${_pkp}/ui/pkp_options_play_as.cpp"
         "${_pkp}/ui/pkp_key_guide.cpp"
         "${_pkp}/ui/pkp_cross_guide.cpp"
+        "${_pkp}/ui/pkp_language_packs.cpp"
         "${_pkp}/ui/pkp_title.cpp"
         "${_pkp}/ui/pkp_sort.cpp"
         "${_pkp}/ui/pkp_craft.cpp"
