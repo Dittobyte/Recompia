@@ -63,7 +63,7 @@ fn report_files(dir: &Path, started: SystemTime) -> Vec<ReportFile> {
         .collect()
 }
 
-pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config, without_mods: bool) -> Result<(), String> {
+pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config, without_mods: bool, coop: Option<crate::coop::Launch>) -> Result<(), String> {
     let (minimize, discord) = (cfg.minimize_on_play, cfg.discord_presence);
     let gentle = cfg.gentle_build;
     {
@@ -122,6 +122,9 @@ pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config, without_mods: bool)
                 return;
             }
         };
+        if let Some(c) = &coop {
+            c.apply(&mut cmd);
+        }
         let started = SystemTime::now();
         let mut child = match cmd.spawn() {
             Ok(c) => c,
@@ -137,13 +140,24 @@ pub fn start(app: &AppHandle, game_dir: &Path, cfg: &Config, without_mods: bool)
             }
         }
         // the player's save backups: a timer while the game runs (when switched on), one more copy once it has ended
-        let backups = crate::savebackup::Watch::start(&dir);
+        let backups = match &coop {
+            Some(c) => crate::savebackup::Watch::start_for(&dir, c.save_key.clone(), c.profile_name.clone()),
+            None => crate::savebackup::Watch::start(&dir),
+        };
         let presence = crate::presence::Watch::start(discord);
-        let online = crate::online::Watch::start(&app2, &dir);
+        let online = match &coop {
+            Some(c) => crate::online::Watch::start_for(&app2, &dir, c.account_uid.clone(), c.save_key.clone()),
+            None => crate::online::Watch::start(&app2, &dir),
+        };
         let result = wait_with_memory_guard(&mut child);
         online.finish();
         presence.finish();
         backups.finish();
+        if let Some(c) = &coop {
+            if let Err(e) = crate::profiles::bump_world_version(&dir, &c.profile_id) {
+                eprintln!("coop: world version not updated: {e}");
+            }
+        }
         let (code, wait_err) = match result {
             Ok(s) => (s.code(), None),
             Err(e) => (None, Some(e.to_string())),
@@ -249,6 +263,9 @@ pub fn run_cli(game_dir: &Path, tools: &Path) -> i32 {
             Err(e) => eprintln!("Shaders were not prepared: {}.", e),
             _ => {}
         }
+    }
+    if crate::profiles::load(game_dir).active_profile().coop.is_some() {
+        return fail("This profile is a co-op save. Start it from Co-op in the launcher instead, or switch to a singleplayer profile.".into());
     }
     // the same rule as Play in the window: without the active profile in pkp.ini the game could start on another player's account and save
     if let Err(e) = crate::profiles::apply_active(game_dir) {

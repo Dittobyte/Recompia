@@ -236,16 +236,22 @@ pub fn snapshot_with(game_dir: &Path, kind: &str, retry_wait: Duration) -> Resul
 /// `game_closed`: nothing is writing the save, so a commit marker left by a game that was killed is not a reason to wait (a restore
 /// still wants the copy of what is there now); the folder listing must still be the same before and after.
 fn snapshot_impl(game_dir: &Path, kind: &str, retry_wait: Duration, game_closed: bool) -> Result<Outcome, String> {
-    let (sd, key) = locate(game_dir);
-    let live = sd.join("account").join(&key);
+    let (_, key) = locate(game_dir);
+    let name = profile_name(game_dir);
+    snapshot_for_impl(game_dir, &key, &name, kind, retry_wait, game_closed)
+}
+
+fn snapshot_for_impl(game_dir: &Path, key: &str, profile: &str, kind: &str, retry_wait: Duration, game_closed: bool) -> Result<Outcome, String> {
+    let (sd, _) = locate(game_dir);
+    let live = sd.join("account").join(key);
     if !live.is_dir() {
         return Ok(Outcome::NoSave);
     }
     let meta = sd.join("account").join(format!("{}.meta", key));
-    let root = root_of(game_dir, &key);
+    let root = root_of(game_dir, key);
     fs::create_dir_all(&root).map_err(|e| format!("Cannot create {}: {}", root.display(), e))?;
     for _ in 0..3 {
-        if !game_closed && commit_pending(&sd, &key) {
+        if !game_closed && commit_pending(&sd, key) {
             std::thread::sleep(retry_wait);
             continue;
         }
@@ -259,14 +265,14 @@ fn snapshot_impl(game_dir: &Path, kind: &str, retry_wait: Duration, game_closed:
             }
             Ok(())
         })();
-        let stable = made.is_ok() && (game_closed || !commit_pending(&sd, &key)) && listing(&live).map_or(false, |after| after == before);
+        let stable = made.is_ok() && (game_closed || !commit_pending(&sd, key)) && listing(&live).map_or(false, |after| after == before);
         if !stable {
             let _ = fs::remove_dir_all(&tmp);
             std::thread::sleep(retry_wait);
             continue;
         }
         let (hash, files, bytes) = digest(&tmp.join(DATA), Some(&tmp.join(META))).map_err(|e| e.to_string())?;
-        if !is_safety(kind) && list_key(game_dir, &key).first().map_or(false, |e| e.hash == hash) {
+        if !is_safety(kind) && list_key(game_dir, key).first().map_or(false, |e| e.hash == hash) {
             let _ = fs::remove_dir_all(&tmp);
             return Ok(Outcome::Unchanged);
         }
@@ -276,8 +282,8 @@ fn snapshot_impl(game_dir: &Path, kind: &str, retry_wait: Duration, game_closed:
             name: name.clone(),
             created: chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
             kind: kind.to_string(),
-            key: key.clone(),
-            profile: profile_name(game_dir),
+            key: key.to_string(),
+            profile: profile.to_string(),
             files,
             bytes,
             hash,
@@ -285,7 +291,7 @@ fn snapshot_impl(game_dir: &Path, kind: &str, retry_wait: Duration, game_closed:
         let text = serde_json::to_string_pretty(&entry).map_err(|e| e.to_string())?;
         crate::settings::write_atomic(&tmp.join(MANIFEST), &text)?;
         fs::rename(&tmp, root.join(&name)).map_err(|e| format!("Cannot finish the backup: {}", e))?;
-        prune(game_dir, &key, settings_of(game_dir).keep);
+        prune(game_dir, key, settings_of(game_dir).keep);
         return Ok(Outcome::Made { entry });
     }
     Err("The save was being written. Nothing was copied; try again in a moment.".into())
@@ -295,22 +301,29 @@ pub fn snapshot(game_dir: &Path, kind: &str) -> Result<Outcome, String> {
     snapshot_with(game_dir, kind, Duration::from_secs(1))
 }
 
-/// One file of the active profile's committed save (`rel` inside `account/<key>/`, e.g. `G00/CMNDAT.BIN`), read under the same rule as a
+/// One file of `key`'s committed save (`rel` inside `account/<key>/`, e.g. `G00/CMNDAT.BIN`), read under the same rule as a
 /// copy: no commit marker before or after, folder listing unchanged. None: no save, no such file, or still being written after three tries.
-pub fn read_committed(game_dir: &Path, rel: &str, retry_wait: Duration) -> Option<Vec<u8>> {
-    let (sd, key) = locate(game_dir);
-    let live = sd.join("account").join(&key);
+pub fn read_committed_key(game_dir: &Path, key: &str, rel: &str, retry_wait: Duration) -> Option<Vec<u8>> {
+    let (sd, _) = locate(game_dir);
+    let live = sd.join("account").join(key);
     for _ in 0..3 {
-        if !commit_pending(&sd, &key) {
+        if !commit_pending(&sd, key) {
             let before = listing(&live).ok()?;
             let data = fs::read(live.join(rel)).ok()?;
-            if !commit_pending(&sd, &key) && listing(&live).is_ok_and(|after| after == before) {
+            if !commit_pending(&sd, key) && listing(&live).is_ok_and(|after| after == before) {
                 return Some(data);
             }
         }
         std::thread::sleep(retry_wait);
     }
     None
+}
+
+/// One file of the active profile's committed save.
+#[cfg(test)]
+pub fn read_committed(game_dir: &Path, rel: &str, retry_wait: Duration) -> Option<Vec<u8>> {
+    let (_, key) = locate(game_dir);
+    read_committed_key(game_dir, &key, rel, retry_wait)
 }
 
 // ---- restoring ------------------------------------------------------------------------------------------------------------------
@@ -417,6 +430,7 @@ pub struct Watch {
     stop: Arc<AtomicBool>,
     handle: Option<JoinHandle<()>>,
     dir: PathBuf,
+    target: Option<(String, String)>,
 }
 
 const TICK: Duration = Duration::from_secs(5);
@@ -425,8 +439,16 @@ impl Watch {
     pub fn start(game_dir: &Path) -> Watch {
         let stop = Arc::new(AtomicBool::new(false));
         let (flag, dir) = (stop.clone(), game_dir.to_path_buf());
-        let handle = std::thread::spawn(move || run(&dir, &flag, TICK, Duration::from_secs(1), Duration::from_secs(60)));
-        Watch { stop, handle: Some(handle), dir: game_dir.to_path_buf() }
+        let handle = std::thread::spawn(move || run(&dir, None, &flag, TICK, Duration::from_secs(1), Duration::from_secs(60)));
+        Watch { stop, handle: Some(handle), dir: game_dir.to_path_buf(), target: None }
+    }
+
+    /// Watches a specific account folder and profile name (e.g. a co-op launch without changing active profile in pkp.ini).
+    pub fn start_for(game_dir: &Path, key: String, profile: String) -> Watch {
+        let stop = Arc::new(AtomicBool::new(false));
+        let (flag, dir, tgt) = (stop.clone(), game_dir.to_path_buf(), (key.clone(), profile.clone()));
+        let handle = std::thread::spawn(move || run(&dir, Some(tgt), &flag, TICK, Duration::from_secs(1), Duration::from_secs(60)));
+        Watch { stop, handle: Some(handle), dir: game_dir.to_path_buf(), target: Some((key, profile)) }
     }
 
     /// The game has ended: stops the timer, then makes the closing copy (when backups are on). Call it after the process is gone.
@@ -437,7 +459,11 @@ impl Watch {
         }
         let s = settings_of(&self.dir);
         if s.minutes > 0 && s.on_exit {
-            if let Err(e) = snapshot(&self.dir, KIND_EXIT) {
+            let res = match &self.target {
+                Some((key, profile)) => snapshot_for_impl(&self.dir, key, profile, KIND_EXIT, Duration::from_secs(1), false),
+                None => snapshot(&self.dir, KIND_EXIT),
+            };
+            if let Err(e) = res {
                 eprintln!("Save backup at exit: {}", e);
             }
         }
@@ -454,7 +480,7 @@ fn sleep_unless(stop: &AtomicBool, total: Duration) {
 }
 
 /// The timer loop (a function so a test can run it with a short tick and a short "minute"). `retry_wait` is passed on to the copy.
-fn run(dir: &Path, stop: &AtomicBool, tick: Duration, retry_wait: Duration, minute: Duration) {
+fn run(dir: &Path, target: Option<(String, String)>, stop: &AtomicBool, tick: Duration, retry_wait: Duration, minute: Duration) {
     let mut last = Instant::now();
     while !stop.load(Ordering::SeqCst) {
         sleep_unless(stop, tick);
@@ -468,7 +494,11 @@ fn run(dir: &Path, stop: &AtomicBool, tick: Duration, retry_wait: Duration, minu
         }
         if last.elapsed() >= minute * s.minutes {
             last = Instant::now();
-            if let Err(e) = snapshot_with(dir, KIND_AUTO, retry_wait) {
+            let res = match &target {
+                Some((key, profile)) => snapshot_for_impl(dir, key, profile, KIND_AUTO, retry_wait, false),
+                None => snapshot_with(dir, KIND_AUTO, retry_wait),
+            };
+            if let Err(e) = res {
                 eprintln!("Save backup: {}", e);
             }
         }
@@ -664,7 +694,7 @@ mod tests {
         let run_for = |d: &PathBuf, ms: u64| {
             let stop = AtomicBool::new(false);
             std::thread::scope(|s| {
-                let h = s.spawn(|| run(d, &stop, Duration::from_millis(5), Duration::from_millis(5), Duration::from_millis(20)));
+                let h = s.spawn(|| run(d, None, &stop, Duration::from_millis(5), Duration::from_millis(5), Duration::from_millis(20)));
                 std::thread::sleep(Duration::from_millis(ms));
                 stop.store(true, Ordering::SeqCst);
                 h.join().unwrap();

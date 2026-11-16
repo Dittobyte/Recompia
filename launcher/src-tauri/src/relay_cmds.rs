@@ -15,6 +15,10 @@ pub fn stop_relay(app: &AppHandle) {
     }
 }
 
+pub fn is_running(app: &AppHandle) -> bool {
+    app.relay().0.lock().unwrap().is_some()
+}
+
 /// The relay server the launcher runs on a thread (Host button, phase 4). None: not running.
 #[derive(Default)]
 pub struct RelayState(Mutex<Option<relay::RelayServer>>);

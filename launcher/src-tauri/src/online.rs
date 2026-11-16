@@ -79,13 +79,17 @@ impl Player {
     }
 }
 
-/// The player for this run: the active profile's uid with the install's salt (made and saved now if there is none), the online name from
+/// The player for `uid` with the install's salt (made and saved now if there is none), the online name from
 /// launcher.json and this launcher's version. None when no salt could be saved.
-fn player_of(app: &tauri::AppHandle, game_dir: &Path) -> Option<Player> {
+fn player_for(app: &tauri::AppHandle, uid: &str) -> Option<Player> {
     let salt = crate::config::online_salt(app)?;
     let cfg = crate::config::load_config(app);
+    Some(Player::new(uid, &salt, &cfg.online_name, &app.package_info().version.to_string()))
+}
+
+fn player_of(app: &tauri::AppHandle, game_dir: &Path) -> Option<Player> {
     let uid = crate::profiles::load(game_dir).active_profile().uid.clone();
-    Some(Player::new(&uid, &salt, &cfg.online_name, &app.package_info().version.to_string()))
+    player_for(app, &uid)
 }
 
 enum Failure {
@@ -206,6 +210,19 @@ impl Watch {
                 on: &|| switched_on(&dir),
                 player: &|| player_of(&app, &dir),
                 count: &|| crate::home_count::home_count(&dir),
+            };
+            run(client, &inp, stop, POLL, MIN_INTERVAL);
+        })
+    }
+
+    /// Presence for a specific launched profile (`uid`, `save_key`), used when launching co-op without writing pkp.ini.
+    pub fn start_for(app: &tauri::AppHandle, game_dir: &Path, uid: String, save_key: String) -> Watch {
+        let (app, dir) = (app.clone(), game_dir.to_path_buf());
+        Watch::spawn(SERVER, move |client, stop| {
+            let inp = Inputs {
+                on: &|| switched_on(&dir),
+                player: &|| player_for(&app, &uid),
+                count: &|| crate::home_count::of_key(&dir, &save_key),
             };
             run(client, &inp, stop, POLL, MIN_INTERVAL);
         })

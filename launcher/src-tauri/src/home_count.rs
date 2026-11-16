@@ -47,10 +47,17 @@ pub fn count(file: &[u8]) -> Option<u32> {
     Some(at_home as u32)
 }
 
+/// The count of `key`'s committed save in this game folder; None when there is no save, it is being written, or it is not
+/// a layout this knows.
+pub fn of_key(game_dir: &Path, key: &str) -> Option<u32> {
+    count(&crate::savebackup::read_committed_key(game_dir, key, FILE, Duration::from_secs(1))?)
+}
+
 /// The count of the active profile's committed save in this game folder; None when there is no save, it is being written, or it is not
 /// a layout this knows.
 pub fn home_count(game_dir: &Path) -> Option<u32> {
-    count(&crate::savebackup::read_committed(game_dir, FILE, Duration::from_secs(1))?)
+    let (_, key) = crate::saveimport::locate(game_dir);
+    of_key(game_dir, &key)
 }
 
 #[cfg(test)]

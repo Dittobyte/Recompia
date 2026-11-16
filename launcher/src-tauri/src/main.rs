@@ -7,6 +7,7 @@ mod branding_cmds;
 mod child_lines;
 mod cli;
 mod config;
+mod coop;
 mod dialogs;
 mod dlss;
 mod dlss_cmds;
@@ -160,6 +161,7 @@ fn main() {
             settings_cmds::write_settings,
             settings_cmds::prompt_icon_pack,
             launch::play,
+            launch::play_coop,
             setup_job::setup_status,
             setup_job::start_setup,
             setup_job::preflight,
@@ -181,6 +183,10 @@ fn main() {
             profile_cmds::profile_rename,
             profile_cmds::profile_remove,
             profile_cmds::profile_select,
+            profile_cmds::profile_add_coop,
+            profile_cmds::profile_start_coop_from,
+            profile_cmds::profile_copy_to_singleplayer,
+            profile_cmds::profile_coop_update,
             repair_cmds::repair_plan,
             repair_cmds::repair_apply,
             repair_cmds::repair_undo,
