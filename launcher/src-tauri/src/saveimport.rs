@@ -266,15 +266,31 @@ fn put_back(old: &[PathBuf], bacc: &Path) {
 /// Brings `src` (a folder holding G00 and S00, optionally B00) in as the game's committed account save. The source is only read. The
 /// caller has checked that the game is not running.
 pub fn import(save_dir: &Path, key: &str, src: &Path) -> Result<Report, String> {
+    let canon = |p: &Path| fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    if is_save_folder(src) && canon(src).starts_with(canon(save_dir)) {
+        return Err(format!("{} is inside the save folder the game plays. Pick a copy outside it.", fwd(src)));
+    }
+    place(save_dir, key, src)
+}
+
+/// One account's save as a copy of another's in the same save folder.
+/// Only for an account that has no save yet: `to_key`'s folder must not exist. The source is only read; the caller has checked
+/// that the game is not running.
+pub fn copy_account(save_dir: &Path, from_key: &str, to_key: &str) -> Result<Report, String> {
+    let acc = save_dir.join("account");
+    if from_key == to_key || acc.join(to_key).exists() {
+        return Err(format!("{} already holds a save.", fwd(&acc.join(to_key))));
+    }
+    place(save_dir, to_key, &acc.join(from_key))
+}
+
+/// The copy itself: `src` staged beside the account folder, an old save moved aside, the copy put in its place, its .meta written.
+fn place(save_dir: &Path, key: &str, src: &Path) -> Result<Report, String> {
     if !is_save_folder(src) {
         return Err(format!("{} holds no Pokopia save (no G00 and S00 folders).", fwd(src)));
     }
     let acc = save_dir.join("account");
     let root = acc.join(key);
-    let canon = |p: &Path| fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
-    if canon(src).starts_with(canon(save_dir)) {
-        return Err(format!("{} is inside the save folder the game plays. Pick a copy outside it.", fwd(src)));
-    }
     fs::create_dir_all(&acc).map_err(|e| format!("Cannot create {}: {}", fwd(&acc), e))?;
     let t = crate::fsutil::file_stamp();
 
@@ -426,5 +442,27 @@ save_dir = second
         let mut late = "0".repeat(63);
         late.push_str("éé");
         assert!(late.len() >= 66 && !meta_with(&late));
+    }
+
+    #[test]
+    fn copy_account_copies_an_existing_save_and_refuses_to_overwrite() {
+        let dir = std::env::temp_dir().join(format!("pkp-copy-account-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let from = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let to = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let src = dir.join("account").join(from);
+        fs::create_dir_all(src.join("G00")).unwrap();
+        fs::create_dir_all(src.join("S00")).unwrap();
+        fs::write(src.join("G00").join("CMNDAT.BIN"), b"common").unwrap();
+        fs::write(src.join("S00").join("SYDAT.BIN"), b"system").unwrap();
+
+        let rep = copy_account(&dir, from, to).unwrap();
+        assert_eq!(rep.files, 2);
+        assert_eq!(rep.backup, None);
+        assert_eq!(fs::read(dir.join("account").join(to).join("G00").join("CMNDAT.BIN")).unwrap(), b"common");
+        assert!(dir.join("account").join(format!("{}.meta", to)).is_file());
+        assert!(copy_account(&dir, from, to).unwrap_err().contains("already holds a save"));
+        assert!(copy_account(&dir, from, from).is_err());
+        let _ = fs::remove_dir_all(&dir);
     }
 }

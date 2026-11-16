@@ -54,3 +54,30 @@ pub fn profile_select(app: AppHandle, id: String) -> Result<profiles::Store, Str
     crate::mods::refresh_plan(&dir)?;
     Ok(profiles)
 }
+
+
+#[tauri::command]
+pub fn profile_add_coop(app: AppHandle, name: String, room_code: Option<String>, relay: Option<String>) -> Result<profiles::Store, String> {
+    profiles::add_coop(&profiles_guard(&app)?, &name, room_code.as_deref(), relay.as_deref())
+}
+
+#[tauri::command]
+pub fn profile_start_coop_from(app: AppHandle, source_id: String, name: String, room_code: Option<String>, relay: Option<String>) -> Result<profiles::Store, String> {
+    profiles::start_coop_from(&profiles_guard(&app)?, &source_id, &name, room_code.as_deref(), relay.as_deref())
+}
+
+#[tauri::command]
+pub fn profile_copy_to_singleplayer(app: AppHandle, source_id: String, name: String) -> Result<profiles::Store, String> {
+    profiles::copy_to_singleplayer(&profiles_guard(&app)?, &source_id, &name)
+}
+
+#[tauri::command]
+pub fn profile_coop_update(
+    app: AppHandle,
+    id: String,
+    room_code: Option<String>,
+    relay: Option<String>,
+    members: Option<Vec<profiles::Member>>,
+) -> Result<profiles::Store, String> {
+    profiles::update_coop(&profiles_guard(&app)?, &id, room_code.as_deref(), relay.as_deref(), members)
+}

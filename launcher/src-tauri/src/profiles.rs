@@ -25,6 +25,28 @@ const MAX_NICK_BYTES: usize = 32;
 const BUILT_IN_UID: &str = "000000000000000141434e4852656370";
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Member {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub net_uid: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub role: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Coop {
+    /// Private room code on the relay (XXXX-XXXX-XXXX-XXXX, Crockford base32), never listed publicly.
+    pub room_code: String,
+    /// Optional custom relay address (<IPv4>[:<port>]); empty means the public relay.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub relay: String,
+    #[serde(default)]
+    pub members: Vec<Member>,
+    #[serde(default)]
+    pub world_version: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Profile {
     pub id: String,
     pub name: String,
@@ -34,6 +56,9 @@ pub struct Profile {
     pub nickname: String,
     /// [net] uid (Link Play identity): 32 hex digits, or empty to keep the one in the save folder
     pub net_uid: String,
+    /// Present when this profile is a co-op save (own folder, launched in co-op mode only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coop: Option<Coop>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -66,6 +91,7 @@ fn default_profile(ini: &Ini) -> Profile {
         uid: get("account", "uid"),
         nickname,
         net_uid: get("net", "uid"),
+        coop: None,
     }
 }
 
@@ -160,15 +186,135 @@ fn taken(s: &Store, name: &str, except: Option<&str>) -> bool {
 }
 
 pub fn add(dir: &Path, name: &str) -> Result<Store, String> {
-    let name = clean_name(name)?;
     let mut s = load(dir);
-    if taken(&s, &name, None) {
+    let p = make_profile(&s, name, None)?;
+    s.profiles.push(p);
+    save(dir, &s)?;
+    Ok(s)
+}
+
+fn make_profile(s: &Store, name: &str, coop: Option<Coop>) -> Result<Profile, String> {
+    let name = clean_name(name)?;
+    if taken(s, &name, None) {
         return Err(format!("There is already a profile called {}.", name));
     }
     let uids: Vec<&str> = s.profiles.iter().flat_map(|p| [p.uid.as_str(), p.net_uid.as_str()]).collect();
     let (uid, net_uid) = (new_uid(&uids)?, new_uid(&uids)?);
     let id = format!("p{}", &uid[..8]);
-    s.profiles.push(Profile { id, name: name.clone(), uid, nickname: nickname_of(&name), net_uid });
+    Ok(Profile { id, name: name.clone(), uid, nickname: nickname_of(&name), net_uid, coop })
+}
+
+fn make_coop(room_code: Option<&str>, relay: Option<&str>, creator_name: &str, net_uid: &str, world_version: u64) -> Result<Coop, String> {
+    let room_code = match room_code.map(str::trim).filter(|c| !c.is_empty()) {
+        Some(c) => crate::coop::normalize_room_code(c)?,
+        None => crate::coop::new_room_code()?,
+    };
+    let relay = match relay {
+        Some(r) => crate::coop::validate_relay(r)?,
+        None => String::new(),
+    };
+    let members = vec![Member { name: creator_name.to_string(), net_uid: net_uid.to_string(), role: "host".into() }];
+    Ok(Coop { room_code, relay, members, world_version })
+}
+
+/// Creates a new co-op profile with its own save folder, private room code and recorded group metadata.
+pub fn add_coop(dir: &Path, name: &str, room_code: Option<&str>, relay: Option<&str>) -> Result<Store, String> {
+    let mut s = load(dir);
+    let mut p = make_profile(&s, name, None)?;
+    p.coop = Some(make_coop(room_code, relay, &p.name, &p.net_uid, 0)?);
+    s.profiles.push(p);
+    save(dir, &s)?;
+    Ok(s)
+}
+
+/// Account save folder key of `p`, falling back to `saveimport::locate` only for the default profile's legacy save folder.
+fn account_key_for(save_dir: &Path, found_key: &str, p: &Profile) -> String {
+    let own = crate::saveimport::account_key_of(&p.uid);
+    if p.id != DEFAULT_ID || crate::saveimport::is_save_folder(&save_dir.join("account").join(&own)) {
+        own
+    } else {
+        found_key.to_string()
+    }
+}
+
+fn check_copy_source(save_dir: &Path, key: &str) -> Result<(), String> {
+    let acc = save_dir.join("account");
+    if !crate::saveimport::is_save_folder(&acc.join(key)) {
+        return Err("That profile has no save to copy yet.".into());
+    }
+    if acc.join(format!("{}.commit", key)).exists() {
+        return Err("That save has a write the game did not finish. Start the game once on that profile, then try again.".into());
+    }
+    Ok(())
+}
+
+/// "Start coop from my singleplayer save": creates a co-op profile from a copy of a singleplayer profile's save via saveimport::copy_account.
+pub fn start_coop_from(dir: &Path, source_id: &str, name: &str, room_code: Option<&str>, relay: Option<&str>) -> Result<Store, String> {
+    let mut s = load(dir);
+    let src = s.get(source_id).ok_or("That profile does not exist.")?.clone();
+    if src.coop.is_some() {
+        return Err("Pick a singleplayer profile to start co-op from.".into());
+    }
+    let (save_dir, found_key) = crate::saveimport::locate(dir);
+    let from_key = account_key_for(&save_dir, &found_key, &src);
+    check_copy_source(&save_dir, &from_key)?;
+
+    let mut p = make_profile(&s, name, None)?;
+    p.coop = Some(make_coop(room_code, relay, &p.name, &p.net_uid, 1)?);
+    let to_key = crate::saveimport::uid_key(&p.uid).ok_or("Cannot make an id for the profile.")?;
+    crate::saveimport::copy_account(&save_dir, &from_key, &to_key)?;
+    s.profiles.push(p);
+    save(dir, &s)?;
+    Ok(s)
+}
+
+/// "Copy to singleplayer": creates a singleplayer profile from a copy of a co-op profile's save via saveimport::copy_account.
+pub fn copy_to_singleplayer(dir: &Path, source_id: &str, name: &str) -> Result<Store, String> {
+    let mut s = load(dir);
+    let src = s.get(source_id).ok_or("That profile does not exist.")?.clone();
+    if src.coop.is_none() {
+        return Err("That profile is already a singleplayer profile.".into());
+    }
+    let (save_dir, found_key) = crate::saveimport::locate(dir);
+    let from_key = account_key_for(&save_dir, &found_key, &src);
+    check_copy_source(&save_dir, &from_key)?;
+
+    let p = make_profile(&s, name, None)?;
+    let to_key = crate::saveimport::uid_key(&p.uid).ok_or("Cannot make an id for the profile.")?;
+    crate::saveimport::copy_account(&save_dir, &from_key, &to_key)?;
+    s.profiles.push(p);
+    save(dir, &s)?;
+    Ok(s)
+}
+
+/// Updates a co-op profile's private room code (Some("") regenerates a fresh code), relay address, or member list.
+pub fn update_coop(dir: &Path, id: &str, room_code: Option<&str>, relay: Option<&str>, members: Option<Vec<Member>>) -> Result<Store, String> {
+    let mut s = load(dir);
+    let p = s.profiles.iter_mut().find(|p| p.id == id).ok_or("That profile does not exist.")?;
+    let coop = p.coop.as_mut().ok_or("That profile is not a co-op profile.")?;
+    if let Some(code) = room_code {
+        coop.room_code = if code.trim().is_empty() {
+            crate::coop::new_room_code()?
+        } else {
+            crate::coop::normalize_room_code(code)?
+        };
+    }
+    if let Some(r) = relay {
+        coop.relay = crate::coop::validate_relay(r)?;
+    }
+    if let Some(m) = members {
+        coop.members = crate::coop::validate_members(m)?;
+    }
+    save(dir, &s)?;
+    Ok(s)
+}
+
+/// Increments a co-op profile's world version after a session finishes.
+pub fn bump_world_version(dir: &Path, id: &str) -> Result<Store, String> {
+    let mut s = load(dir);
+    let p = s.profiles.iter_mut().find(|p| p.id == id).ok_or("That profile does not exist.")?;
+    let coop = p.coop.as_mut().ok_or("That profile is not a co-op profile.")?;
+    coop.world_version = coop.world_version.saturating_add(1);
     save(dir, &s)?;
     Ok(s)
 }
@@ -219,13 +365,17 @@ pub fn select(dir: &Path, id: &str) -> Result<Store, String> {
     Ok(s)
 }
 
-/// Writes the active profile's uid, nickname and Link Play uid into pkp.ini. Does nothing until the player has made a profile.
+/// Writes the active singleplayer profile's uid, nickname and Link Play uid into pkp.ini.
+/// Does nothing until the player has made a profile, and never writes a co-op profile's uid or settings into pkp.ini.
 pub fn apply_active(dir: &Path) -> Result<(), String> {
     if !exists(dir) {
         return Ok(());
     }
     let s = load(dir);
     let p = s.active_profile().clone();
+    if p.coop.is_some() {
+        return Ok(());
+    }
     let path = dir.join(PKP_INI);
     let mut ini = load_ini(dir);
     let mut changed = !path.exists();
@@ -425,5 +575,97 @@ mod tests {
         let err = add(&d, "Sam").unwrap_err();
         assert!(err.contains("damaged"), "{}", err);
         assert_eq!(fs::read_to_string(d.join(FILE)).unwrap(), "broken", "the damaged file is untouched");
+    }
+
+    fn write_save(d: &Path, uid: &str, tag: &[u8]) {
+        let key = crate::saveimport::account_key_of(uid);
+        let root = d.join("save").join("account").join(key);
+        fs::create_dir_all(root.join("G00")).unwrap();
+        fs::create_dir_all(root.join("S00")).unwrap();
+        fs::write(root.join("G00").join("CMNDAT.BIN"), tag).unwrap();
+        fs::write(root.join("S00").join("SYDAT.BIN"), tag).unwrap();
+    }
+
+    #[test]
+    fn coop_profile_has_own_folder_members_version_and_never_touches_pkp_ini() {
+        let sp_uid = "0123456789abcdef0123456789abcdef";
+        let d = tmp("coop", &format!("[account]\nuid = {}\nnickname = Ash\n[fs]\nsave_dir = save\n", sp_uid));
+        let s = add_coop(&d, "Group One", None, None).unwrap();
+        let cp = s.profiles.iter().find(|p| p.name == "Group One").unwrap().clone();
+        let coop = cp.coop.as_ref().expect("coop metadata");
+        assert_ne!(cp.uid, sp_uid);
+        assert_eq!(coop.room_code.len(), 19);
+        assert_eq!(coop.world_version, 0);
+        assert_eq!(coop.members.len(), 1);
+        assert_eq!(coop.members[0].name, "Group One");
+        assert_eq!(coop.members[0].role, "host");
+
+        // selecting a co-op profile never writes its uid or co-op settings into pkp.ini
+        select(&d, &cp.id).unwrap();
+        assert_eq!(ini_of(&d, "account", "uid").as_deref(), Some(sp_uid));
+        assert_eq!(ini_of(&d, "account", "nickname").as_deref(), Some("Ash"));
+        assert_eq!(strict_save_key(&d), crate::saveimport::uid_key(&cp.uid));
+
+        // members, room code, relay, world version updates
+        let s = update_coop(
+            &d,
+            &cp.id,
+            Some("abcd 1234 efgh 5678"),
+            Some("203.0.113.5:47610"),
+            Some(vec![
+                Member { name: "Group One".into(), net_uid: cp.net_uid.clone(), role: "host".into() },
+                Member { name: "Misty".into(), net_uid: String::new(), role: "visitor".into() },
+            ]),
+        )
+        .unwrap();
+        let updated = s.get(&cp.id).unwrap().coop.as_ref().unwrap();
+        assert_eq!(updated.room_code, "ABCD-1234-EFGH-5678");
+        assert_eq!(updated.relay, "203.0.113.5:47610");
+        assert_eq!(updated.members.len(), 2);
+
+        let s = bump_world_version(&d, &cp.id).unwrap();
+        assert_eq!(s.get(&cp.id).unwrap().coop.as_ref().unwrap().world_version, 1);
+    }
+
+    #[test]
+    fn copy_between_singleplayer_and_coop_modes_uses_copy_account() {
+        let sp_uid = "0123456789abcdef0123456789abcdef";
+        let d = tmp("copy-modes", &format!("[account]\nuid = {}\nnickname = Ash\n[fs]\nsave_dir = save\n", sp_uid));
+        write_save(&d, sp_uid, b"singleplayer-world");
+
+        let s = start_coop_from(&d, DEFAULT_ID, "Island Co-op", None, None).unwrap();
+        let cp = s.profiles.iter().find(|p| p.name == "Island Co-op").unwrap().clone();
+        let cp_coop = cp.coop.as_ref().unwrap();
+        assert_eq!(cp_coop.world_version, 1);
+        let cp_key = crate::saveimport::uid_key(&cp.uid).unwrap();
+        assert_eq!(fs::read(d.join("save").join("account").join(&cp_key).join("G00").join("CMNDAT.BIN")).unwrap(), b"singleplayer-world");
+
+        // cannot start co-op from a co-op profile, nor copy singleplayer to singleplayer
+        assert!(start_coop_from(&d, &cp.id, "Bad", None, None).is_err());
+        assert!(copy_to_singleplayer(&d, DEFAULT_ID, "Bad2").is_err());
+
+        // modify co-op save and copy back to a new singleplayer profile
+        fs::write(d.join("save").join("account").join(&cp_key).join("G00").join("CMNDAT.BIN"), b"coop-progress").unwrap();
+        let s = copy_to_singleplayer(&d, &cp.id, "Solo Copy").unwrap();
+        let sp2 = s.profiles.iter().find(|p| p.name == "Solo Copy").unwrap();
+        assert!(sp2.coop.is_none());
+        let sp2_key = crate::saveimport::uid_key(&sp2.uid).unwrap();
+        assert_eq!(fs::read(d.join("save").join("account").join(&sp2_key).join("G00").join("CMNDAT.BIN")).unwrap(), b"coop-progress");
+        // original singleplayer save was untouched
+        let sp_key = crate::saveimport::uid_key(sp_uid).unwrap();
+        assert_eq!(fs::read(d.join("save").join("account").join(&sp_key).join("G00").join("CMNDAT.BIN")).unwrap(), b"singleplayer-world");
+    }
+
+    #[test]
+    fn old_profiles_json_without_coop_field_loads_as_singleplayer() {
+        let d = tmp("compat", "");
+        fs::write(
+            d.join(FILE),
+            r#"{"active":"default","profiles":[{"id":"default","name":"Player","uid":"","nickname":"Player","net_uid":""}]}"#,
+        )
+        .unwrap();
+        let s = load(&d);
+        assert_eq!(s.profiles.len(), 1);
+        assert!(s.profiles[0].coop.is_none());
     }
 }
