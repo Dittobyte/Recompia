@@ -71,6 +71,7 @@ export const store = {
     setup: null,          // setup_status
     game: null,           // game_status
     news: { releases: [], update: null },
+    profiles: null,       // profiles_list, loaded for Play / Play co-op routing
     task: null,           // derived: { kind: 'setup'|'update'|'unpack'|'dlss', label, pct (null: unknown) } | null
     update: null,         // last update-progress while an update runs
     updateError: null,
@@ -95,7 +96,10 @@ export const store = {
   async start() {
     const on = (event, fn) => listen(event, (ev) => fn(ev.payload)).catch((e) => console.error(event, e));
     await Promise.all([
-      on('game-status', (p) => set({ game: p }, 'game')),
+      on('game-status', (p) => {
+        set({ game: p }, 'game');
+        if (p?.state === 'exited') store.refreshProfiles();
+      }),
       on('setup-status', onSetupEvent),
       on('update-progress', (p) => set({ update: p }, 'update')),
       on('dlss-progress', (p) => store.state.dlss && set({ dlss: p }, 'task')),
@@ -183,14 +187,23 @@ export const store = {
 
   cancelRepack: () => api.cancelShaderStorage().catch((e) => toast(errText(e), 'error')),
 
-  /** Reloads launcher_state, setup_status and game_status. A failed part keeps its last value. */
+  /** Reloads launcher_state, setup_status, game_status and profiles. A failed part keeps its last value. */
   async refresh() {
-    const [app, setup, game] = await Promise.allSettled([api.launcherState(), api.setupStatus(), api.gameStatus()]);
+    const [app, setup, game, profiles] = await Promise.allSettled([api.launcherState(), api.setupStatus(), api.gameStatus(), api.profilesList()]);
     const patch = { loadError: app.status === 'rejected' ? errText(app.reason) : null };
     if (app.status === 'fulfilled') patch.app = app.value;
     if (setup.status === 'fulfilled') patch.setup = setup.value;
     if (game.status === 'fulfilled') patch.game = game.value;
+    if (profiles.status === 'fulfilled') patch.profiles = profiles.value;
     set(patch, 'app');
+  },
+
+  async refreshProfiles() {
+    try {
+      set({ profiles: await api.profilesList() }, 'app');
+    } catch (e) {
+      console.warn('profiles_list', e);
+    }
   },
 
   /** get_releases. refresh=false serves the cache, true asks GitHub. Silent on failure: patch notes are optional. */
@@ -240,6 +253,24 @@ export const store = {
     set({ starting: true }, 'task');
     try {
       await api.play(withoutMods ? { withoutMods } : undefined);
+    } catch (e) {
+      toast(errText(e), 'error');
+      store.refresh();
+    } finally {
+      set({ starting: false }, 'task');
+    }
+  },
+
+  /** Launches a co-op profile with its co-op settings in the process environment only (nothing written to pkp.ini). */
+  async playCoop({ id = null, withoutMods = false } = {}) {
+    if (store.state.starting) return;
+    await askOnlineOnce();
+    set({ starting: true }, 'task');
+    try {
+      const args = {};
+      if (id) args.id = id;
+      if (withoutMods) args.withoutMods = withoutMods;
+      await api.playCoop(args);
     } catch (e) {
       toast(errText(e), 'error');
       store.refresh();
@@ -311,6 +342,7 @@ export const store = {
       case 'game-folder': return go('settings', { section: 'game' });
       case 'setup': return store.startSetup();
       case 'play': return store.play();
+      case 'play-coop': return store.playCoop();
       case 'refresh': return store.refresh();
     }
   },

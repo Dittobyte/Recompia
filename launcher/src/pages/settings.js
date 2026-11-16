@@ -91,7 +91,10 @@ export async function render(el, ctx) {
     const active = h.env().gameBusy;
     const dlssEnded = hadDlss && !s.dlss;
     hadDlss = !!s.dlss;
-    if ((wasActive && !active) || dlssEnded) h.reload().catch((e) => console.error(e));   // the game writes its settings as it leaves
+    if ((wasActive && !active) || dlssEnded) {
+      h.reload().catch((e) => console.error(e));   // the game writes its settings as it leaves
+      modules.forEach((m) => m.reload?.());
+    }
     else if (why !== 'setup' || st.section === 'game') h.draw();
     wasActive = active;
   });

@@ -168,7 +168,10 @@ export function render(el, ctx) {
       case 'cancel': return store.cancelUpdate();
       case 'pause': return store.pauseSetup();
       case 'stop-repack': return store.cancelRepack();
-      case 'play-without-mods': return store.play({ withoutMods: true });
+      case 'play-without-mods': {
+        const active = store.state.profiles?.profiles?.find((p) => p.id === store.state.profiles.active);
+        return active?.coop ? store.playCoop({ withoutMods: true }) : store.play({ withoutMods: true });
+      }
       case 'dismiss':
         crashDismissed = true;
         return draw(store.state);
@@ -208,7 +211,7 @@ export function render(el, ctx) {
   }).catch((e) => console.warn('read_settings', e));
   // with more than one profile the player picks who plays here; the choice is the Settings > Saves list
   const profileSelect = (list, busy) => `<select class="chip on-art" id="profile-pick" aria-label="${esc(t('Profile'))}" ${busy ? 'disabled' : ''}>${
-    list.profiles.map((p) => `<option value="${esc(p.id)}" ${p.id === list.active ? 'selected' : ''}>${esc(t('Profile: {name}', { name: p.name }))}</option>`).join('')}</select>`;
+    list.profiles.map((p) => `<option value="${esc(p.id)}" ${p.id === list.active ? 'selected' : ''}>${esc(p.coop ? t('Co-op: {name}', { name: p.name }) : t('Profile: {name}', { name: p.name }))}</option>`).join('')}</select>`;
   // the play time is the active profile's save's, as the game counted it; a save not played since that count began shows none
   const loadProfiles = () => Promise.all([api.profilesList(), api.profilesPlayTime().catch(() => ({}))]).then(([list, times]) => {
     profileChip = list.profiles.length > 1 ? profileSelect(list, ['starting', 'running', 'finishing'].includes(gamePhase(store.state.game))) : '';
@@ -229,6 +232,7 @@ export function render(el, ctx) {
     if (e.target.id !== 'profile-pick') return;
     try {
       await api.profileSelect({ id: e.target.value });
+      await store.refreshProfiles();
     } catch (err) {
       toast(errText(err), 'error');
     }

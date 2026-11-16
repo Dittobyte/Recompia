@@ -12,6 +12,7 @@ import {
   HOST_PORT, RELAY_PORT, addrProblem, addressRows, applyEdits, editsFor, interactEdits, internetShare, pathParts, protocolEdits, readIni,
   relayPort, storyEdits, uiFrom,
 } from '../linkplay-model.js';
+import { createCoopSection } from './linkplay-coop.js';
 
 const LS = 'pkp.linkplay';
 const POLL_MS = 3000;   // this PC's relay and its link count, while the own-relay Host view is on screen
@@ -346,6 +347,7 @@ export async function render(el, ctx) {
     <div class="lp-path" id="lp-path"></div>
     <div class="lp-part" id="lp-body"></div>
     <div class="lp-part" id="lp-shared"></div>
+    <div class="lp-part" id="lp-coop"></div>
   </div>`;
 
   el.addEventListener('input', (e) => {
@@ -388,7 +390,12 @@ export async function render(el, ctx) {
     else if (t.dataset.act === 'switch') inOrder(async () => { await save(protocolEdits()); draw(); });
   });
 
-  ctx.on(() => drawChrome());
+  const coopSection = createCoopSection(part('lp-coop'), { copy, gameActive });
+
+  ctx.on(() => {
+    drawChrome();
+    coopSection.draw();
+  });
 
   const timer = setInterval(async () => {
     if (document.hidden || !isHost()) return;

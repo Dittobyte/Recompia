@@ -539,11 +539,21 @@ export const SECTIONS = [
           {
             expand: (env) => (env.profiles?.profiles ?? []).map((p) => {
               const on = p.id === env.profiles.active;
+              const coop = p.coop;
               return {
                 id: `profile_${p.id}`, label: p.name, type: 'info',
-                value: [on ? t('Playing') : '', playTimeLine(env.playTimes, p.id)].filter(Boolean).join(' · '),
+                value: [
+                  on ? t('Playing') : '',
+                  coop ? t('Co-op') : '',
+                  coop ? t('World v{version}', { version: num(coop.world_version ?? 0) }) : '',
+                  coop ? t('{count} in group', { count: num(coop.members?.length ?? 1) }) : '',
+                  playTimeLine(env.playTimes, p.id),
+                ].filter(Boolean).join(' · '),
                 actions: [
                   ...(on ? [] : [{ act: 'profile-use', arg: p.id, name: p.name, label: t('Use'), icon: 'user-check', disabled: env.gameBusy }]),
+                  ...(coop
+                    ? [{ act: 'profile-copy-singleplayer', arg: p.id, name: p.name, label: t('Copy to singleplayer'), icon: 'copy', disabled: env.gameBusy }]
+                    : [{ act: 'profile-start-coop', arg: p.id, name: p.name, label: t('Start co-op'), icon: 'users', disabled: env.gameBusy }]),
                   { act: 'profile-rename', arg: p.id, name: p.name, label: t('Rename'), icon: 'pencil', disabled: env.gameBusy },
                   ...(p.id === 'default' ? [] : [{ act: 'profile-remove', arg: p.id, name: p.name, label: t('Remove'), icon: 'trash-2', disabled: env.gameBusy || on }]),
                 ],
@@ -552,7 +562,10 @@ export const SECTIONS = [
           },
           {
             id: 'profile_new', label: t('New profile'), type: 'info',
-            actions: (env) => [{ act: 'profile-new', label: t('Add'), icon: 'plus', disabled: env.gameBusy }],
+            actions: (env) => [
+              { act: 'profile-new', label: t('Add'), icon: 'plus', disabled: env.gameBusy },
+              { act: 'profile-new-coop', label: t('New co-op profile'), icon: 'users', disabled: env.gameBusy },
+            ],
           },
         ],
       },

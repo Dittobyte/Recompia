@@ -169,6 +169,11 @@ const TEXTS = [
   msg('pkp.exe in {1} is missing or from an older release: open the launcher and press Set up.'),
   msg('Setup has not finished: open the launcher and press Set up.'),
   msg('The profile could not be applied, so the game was not started: {1}'),
+  msg('This profile is a co-op save. Start it from Co-op instead, or switch to a singleplayer profile.'),
+  msg('This profile is a co-op save. Start it from Co-op in the launcher instead, or switch to a singleplayer profile.'),
+  msg('This profile is a singleplayer save. Pick a co-op profile, or start co-op from a copy of it.'),
+  msg('This co-op profile has no valid account ID.'),
+  msg('The relay on this PC is off. Turn on Run a relay on this PC on the Link Play page, or clear the relay address to use the public relay.'),
 
   // preflight.rs: the checks before Set up
   msg('Not enough free disk space'),
@@ -203,7 +208,7 @@ const TEXTS = [
   msg('{1} runs microcode {2}. These CPUs can become unstable, and crash Windows under long heavy loads like the shader translation (1 to 2 hours on every core), until the motherboard\'s BIOS carries Intel\'s microcode fix (0x12B or newer). Update the BIOS from your motherboard maker first, and turn on "Use fewer cores" below.'),
   msg('{1} has microcode that could not be read. These CPUs can become unstable, and crash Windows under long heavy loads like the shader translation (1 to 2 hours on every core), until the motherboard\'s BIOS carries Intel\'s microcode fix (0x12B or newer). Update the BIOS from your motherboard maker first, and turn on "Use fewer cores" below.'),
 
-  // profiles.rs
+  // profiles.rs, coop.rs
   msg('profiles.json is damaged and could not be copied aside ({1}), so nothing was changed.'),
   msg('Type a name for the profile.'),
   msg('The name can have at most {n1} characters.'),
@@ -211,6 +216,18 @@ const TEXTS = [
   msg('There is already a profile called {1}.'),
   msg('That profile does not exist.'),
   msg('The first profile holds the existing save and cannot be removed.'),
+  msg('Cannot make a room code: {1}'),
+  msg('Type a 16-character room code (XXXX-XXXX-XXXX-XXXX).'),
+  msg('Type a relay address like 203.0.113.5:47610, or leave it empty for the public relay.'),
+  msg("A member's network ID must be 32 hex digits."),
+  msg("A member's role must be host or visitor."),
+  msg('{1} is already in the group.'),
+  msg('That profile has no save to copy yet.'),
+  msg('That save has a write the game did not finish. Start the game once on that profile, then try again.'),
+  msg('Pick a singleplayer profile to start co-op from.'),
+  msg('Cannot make an id for the profile.'),
+  msg('That profile is already a singleplayer profile.'),
+  msg('That profile is not a co-op profile.'),
 
   // relay_cmds.rs
   msg('Cannot open port {1}: {2}'),
@@ -234,6 +251,7 @@ const TEXTS = [
   msg('Cannot put the backup in place: {1}. Your save was not changed.'),
 
   // saveimport.rs, saves.rs
+  msg('{1} already holds a save.'),
   msg('{1} holds no Pokopia save (no G00 and S00 folders).'),
   msg('{1} holds no Pokopia save (it needs the G00 and S00 folders).'),
   msg('{1} is inside the save folder the game plays. Pick a copy outside it.'),

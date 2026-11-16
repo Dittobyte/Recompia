@@ -41,6 +41,7 @@ export const api = {
 
   // Play and setup
   play: (args) => invoke('play', args),   // { withoutMods } (optional: this one start runs without mods)
+  playCoop: (args) => invoke('play_coop', args),   // { id, withoutMods }
   gameStatus: () => invoke('game_status'),
   setupStatus: () => invoke('setup_status'),
   startSetup: (args) => invoke('start_setup', args),   // { gentle }
@@ -76,6 +77,10 @@ export const api = {
   profileRename: (args) => invoke('profile_rename', args),   // { id, name }
   profileRemove: (args) => invoke('profile_remove', args),   // { id }
   profileSelect: (args) => invoke('profile_select', args),   // { id }
+  profileAddCoop: (args) => invoke('profile_add_coop', args),   // { name, roomCode, relay }
+  profileStartCoopFrom: (args) => invoke('profile_start_coop_from', args),   // { sourceId, name, roomCode, relay }
+  profileCopyToSingleplayer: (args) => invoke('profile_copy_to_singleplayer', args),   // { sourceId, name }
+  profileCoopUpdate: (args) => invoke('profile_coop_update', args),   // { id, roomCode, relay, members }
 
   // Steam
   steamStatus: () => invoke('steam_status'),

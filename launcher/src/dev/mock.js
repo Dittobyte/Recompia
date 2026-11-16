@@ -440,7 +440,16 @@ function handle(cmd, args) {
     case 'get_releases': return { releases: sc.releases ?? (mockChannel === 'testing' ? [{ ...release('v0.8.1-beta.2', 'Pokopia Recomp 0.8.1-beta.2 (Testing)', '2026-11-12T12:00:00Z'), prerelease: true }, { ...release('v0.8.1-beta.1', 'Pokopia Recomp 0.8.1-beta.1 (Testing)', '2026-11-10T12:00:00Z'), prerelease: true }, ...(sc.update ? [NEXT, ...RELEASES] : RELEASES)] : (sc.update ? [NEXT, ...RELEASES] : RELEASES)), update: sc.update && mockChannel !== 'testing' ? { tag: NEXT.tag, name: NEXT.name, url: NEXT.url, size: 148_000_000 } : null };   // Testing offers no update (update.rs Channel::offers_updates)
     case 'install_update': return runUpdate();
     case 'cancel_update': return updateStop?.();
-    case 'play': return runPlay();
+    case 'play': {
+      const p = mockProfiles.profiles.find((x) => x.id === mockProfiles.active);
+      if (p?.coop) throw 'This profile is a co-op save. Start it from Co-op instead, or switch to a singleplayer profile.';
+      return runPlay();
+    }
+    case 'play_coop': {
+      const p = mockProfiles.profiles.find((x) => x.id === (args?.id || mockProfiles.active));
+      if (!p?.coop) throw 'This profile is a singleplayer save. Pick a co-op profile, or start co-op from a copy of it.';
+      return runPlay().then(() => { p.coop.world_version = (p.coop.world_version ?? 0) + 1; });
+    }
     case 'preflight': return sleep(500).then(() => ({ ...PREFLIGHT[sc.preflight || 'ok'], need_bytes: (looseShaders ? 31 : 14) * 2 ** 30 }));
     case 'start_setup': return runSetup();
     case 'cancel_setup': return pauseSetup();
@@ -516,6 +525,30 @@ function handle(cmd, args) {
     case 'profile_rename': mockProfiles.profiles.find((p) => p.id === args.id).name = args.name; return structuredClone(mockProfiles);
     case 'profile_remove': mockProfiles.profiles = mockProfiles.profiles.filter((p) => p.id !== args.id); mockProfiles.active = 'default'; return structuredClone(mockProfiles);
     case 'profile_select': mockProfiles.active = args.id; return structuredClone(mockProfiles);
+    case 'profile_add_coop':
+      mockProfiles.profiles.push({
+        id: `p${mockProfiles.profiles.length}`, name: args.name, uid: '', nickname: args.name, net_uid: '',
+        coop: { room_code: args.roomCode || 'ABCD-EFGH-JKMN-PQRS', relay: args.relay || '', members: [{ name: args.name, role: 'host' }], world_version: 0 },
+      });
+      return structuredClone(mockProfiles);
+    case 'profile_start_coop_from':
+      mockProfiles.profiles.push({
+        id: `p${mockProfiles.profiles.length}`, name: args.name, uid: '', nickname: args.name, net_uid: '',
+        coop: { room_code: args.roomCode || 'ABCD-EFGH-JKMN-PQRS', relay: args.relay || '', members: [{ name: args.name, role: 'host' }], world_version: 1 },
+      });
+      return structuredClone(mockProfiles);
+    case 'profile_copy_to_singleplayer':
+      mockProfiles.profiles.push({ id: `p${mockProfiles.profiles.length}`, name: args.name, uid: '', nickname: args.name, net_uid: '' });
+      return structuredClone(mockProfiles);
+    case 'profile_coop_update': {
+      const p = mockProfiles.profiles.find((x) => x.id === args.id);
+      if (p?.coop) {
+        if (args.roomCode !== null && args.roomCode !== undefined) p.coop.room_code = args.roomCode || 'WXYZ-2345-6789-ABCD';
+        if (args.relay !== null && args.relay !== undefined) p.coop.relay = args.relay;
+        if (args.members) p.coop.members = args.members;
+      }
+      return structuredClone(mockProfiles);
+    }
     case 'save_sources': return [{ label: 'Eden', path: 'C:/Users/player/AppData/Roaming/eden/nand/user/save/0000000000000000/1/0100F4300BF2C000' }];
     case 'import_save': return { source: 'Eden', files: 12, backup: `${GAME_DIR}/save.backup-20261106`, target: `${GAME_DIR}/save` };
     case 'relay_start':
