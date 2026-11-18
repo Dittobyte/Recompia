@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+**Update:** press **Update** in the launcher, then **Set up again** (the game code gets three new hook points and is linked again; saves and shaders are kept, no shader is translated again).
+
+### Gameplay
+- Fixed the camera jumping in steps when flying or gliding and when sinking or swimming underwater above 60 fps (#741, #743)
+  - Before: above 60 fps the follow camera's vertical dead zone held the view still and then snapped it toward the player a few times a second (about once a second while gliding, five times a second underwater at 144 fps)
+  - Now: the camera follows smoothly at high frame rates; 60 fps and below are unchanged
+  - Until **Set up again** has run, the camera stays as it was
+
 ## 0.14.2 (build R: Raccoon Hotfix a2)
 
 **Update:** press **Update** in the launcher. No **Set up again** needed.
