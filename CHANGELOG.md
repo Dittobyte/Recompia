@@ -4,6 +4,23 @@
 
 **Update:** press **Update** in the launcher, then **Set up again** (the game code gets three new hook points and is linked again; saves and shaders are kept, no shader is translated again).
 
+### Added
+- Every download (Windows, Linux, macOS) carries the licence texts of what it contains, and Settings has a Licences row that opens them
+- Each release also has the source of the bundled save editor and of libusb
+- A Privacy page (PRIVACY.md) that lists every connection the launcher and the game make, linked from Settings
+
+### Changed
+- Settings > Source code opens the source of the version you have installed
+
+### Game
+- Changed the game window's title and the game exe's description to Recompia
+
+### Launcher
+- Changed the launcher window's title to Recompia
+- Changed the launcher's list of community mods
+- Changed the launcher's default colours to **Meadow** and removed the **Koi's Camp** colours; a launcher set to Koi's Camp opens in Meadow
+- Changed the pictures of the Steam shortcuts to the Meadow scene
+
 ### Gameplay
 - Fixed the camera jumping in steps when flying or gliding and when sinking or swimming underwater above 60 fps (#741, #743)
   - Before: above 60 fps the follow camera's vertical dead zone held the view still and then snapped it toward the player a few times a second (about once a second while gliding, five times a second underwater at 144 fps)
@@ -17,7 +34,7 @@
 ### Highlights
 - **Seamless co-op v2 is ready for testing: join the Open Alpha!** Play together in one world over the internet, each player with their own character. It is stable now: there are still bugs, but nothing game-breaking. Get it from [Recompia: Co-op alpha 5](https://github.com/Dittobyte/Recompia/releases/tag/coop-v2-alpha.5) and tell us what you find
 - Fixed new Pokémon showing up invisible when **Pokémon in town** was set high (#745)
-- Added four community mods to Browse before the mod hub lists them, and Community Achievements 0.4.1 no longer gives five achievements too early
+- Added community mods to Browse before the mod hub lists them, and Community Achievements 0.4.1 no longer gives five achievements too early
 
 ### Link Play
 - Added the seamless co-op v2 Open Alpha: a separate test build, not part of this update
@@ -49,8 +66,7 @@
 - Community Achievements 0.4.1 now comes with the launcher, until the mod hub has a newer version
   - Fixed Identity Revealed, Cloud Pioneer, First Steps, Wanderer and Cartographer being earned before the player visited those places; the ones earned too early are taken back once and come back when the player gets there
   - Added `achievements.json` in the mod's folder: every achievement with its progress, the time it was earned, the share of players who have it and its picture, for other programs to read
-- Added four community mods to Browse before the mod hub lists them: Unlimited Crafting Storage Range, Play as Pokemon, Simple Cheats (Windows) and Pokopia Anime Voices; each one leaves the launcher's list once the hub lists it
-  - Pokopia Anime Voices is not installed by the launcher: **Get it yourself** explains why and opens its author's page
+- Added three community mods to Browse before the mod hub lists them; each one leaves the launcher's list once the hub lists it
 
 ## 0.14.1 (build R: Raccoon Hotfix a1)
 
