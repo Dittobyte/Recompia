@@ -10,8 +10,9 @@
 //  * The count stays within 1 and the game's max stack (layout::kMaxStack), the range the game's own stacking keeps.
 //  * While an item is held the bag screen works on a temp copy (layout::kItemTempFlag) that it copies back over the bag; the Settings
 //    screen is not the bag screen, but the flag is checked all the same.
-//  * Link Play: online the bag is another array and moves go through the game's network requests, so nothing is read or written while
-//    layout::kOnline is true (as the inventory sort).
+//  * Link Play: a visitor, and every player in the shared online town (stage 0x11, the host too), uses the online bag, another array,
+//    and a session's item moves go through the game's network requests, so nothing is read or written while layout::kIsOnline is true
+//    (any session, the host's too; the visitor bit alone would let the host through).
 #include "ui/pkp_item_edit.h"
 
 #include <algorithm>
@@ -40,7 +41,7 @@ struct State {
 // The bag's slots when it can be edited now, else 0 with the reason in *why.
 uint64_t bag_slots(::Ctx* c, const char** why) {
     if (!g.on) return *why = "Switch on Item editor in the Gameplay tab and start the game again.", 0;
-    if (call(c, g.base + layout::kOnline, 0) & 1) return *why = "Not during Link Play.", 0;
+    if (call(c, g.base + layout::kIsOnline, 0) & 1) return *why = "Not during Link Play.", 0;
     const uint64_t save = rd<uint64_t>(g.base + layout::kSaveRoot);
     const uint64_t arr = save ? save + layout::kSaveCommon + layout::kBagOffline : 0;
     if (!arr || !ok(arr, layout::kBagSlots * items::kSlotSize)) return *why = "Load your save first.", 0;

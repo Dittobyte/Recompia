@@ -104,7 +104,9 @@ constexpr uint64_t kStateEvent = 0xd0, kEventBusy = 0x6ea;   // game state: the 
 constexpr uint64_t kFrameStep = 0xbfc4fc;
 
 // ---- game functions ----
-constexpr uint64_t kOnline = 0x376c4;            // () -> bit 0: Link Play session
+// The getters of the game state's session bits (kStateSession), for the game's own checks: a host has kIsOnline but not kIsVisitor.
+constexpr uint64_t kIsOnline = 0x207b0;          // () -> bit 0: a Link Play session is open (kSessionOnline; host and visitor)
+constexpr uint64_t kIsVisitor = 0x376c4;         // () -> bit 0: this game visits another's town (kSessionVisitor; never the host)
 constexpr uint64_t kMaxStack = 0x2a7f0c;         // () -> the max stack (u16), one value for every item
 constexpr uint64_t kNameOf = 0xa34e1c;           // (name id, form) -> UTF-8 name in the game's language
 constexpr uint64_t kLayoutOf = 0x9132fc;         // (source) -> layout

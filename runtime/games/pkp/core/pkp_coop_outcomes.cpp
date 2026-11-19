@@ -81,7 +81,7 @@ constexpr uint64_t kPopFlags = 0x11752c;        // (u16 row +0x2a)
 constexpr uint64_t kFriendship = 0x619410;      // (&h)
 constexpr uint64_t kBulbasaur = 0x13a9b0;       // (&h), id 73
 constexpr uint32_t kBulbasaurId = 0x49;
-constexpr uint64_t kStage11 = 0x77ecb0, kOnline = layout::kOnline;   // () -> bit 0: the general entry's select
+constexpr uint64_t kStage11 = 0x77ecb0, kIsVisitor = layout::kIsVisitor;   // () -> bit 0: the general entry's select
 // The request row (#1557): the data-table manager's table at 0x1160 (slot 0x22c, the table at +0 while the manager holds fewer),
 // row object +8 -> the row, or the default row *(main + 0x34845e8) when that is 0 (0x6184e8..0x618500).
 constexpr uint64_t kRowTable = 0x1160;
@@ -189,7 +189,7 @@ void general_entry(::Ctx* c, uint64_t comp, uint16_t kind) {
     const uint64_t r = save_root();
     uint64_t entry = r + kEntryOwn;
     if (guest::call(c, base() + kStage11, 0) & 1) entry = r + kEntryStage11;
-    else if (guest::call(c, base() + kOnline, 0) & 1) entry = r + kEntryMirror;
+    else if (guest::call(c, base() + kIsVisitor, 0) & 1) entry = r + kEntryMirror;
     const uint32_t chara = guest::rd<uint32_t>(comp + kCompChara);
     if (chara < kEntryCharaMax) entry += chara * kEntrySize;
     if (!guest::ok(entry + kEntryDate, 4) || !guest::ok(r + kDate, 4)) return;

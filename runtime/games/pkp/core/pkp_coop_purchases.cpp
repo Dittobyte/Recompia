@@ -59,7 +59,7 @@ constexpr const char* kTag = "pkp";
 
 constexpr uint64_t kGrant = 0xe889f8;         // (slot, entry, count, flag) -> 1: given
 constexpr uint64_t kBought = 0x5bdc5c;        // (entry): the purchase record's bought bit
-constexpr uint64_t kVisitorCheck = layout::kOnline;   // () -> bit 0; the buy sets the bought bit only when it is 0 (0xe889a8)
+constexpr uint64_t kVisitorCheck = layout::kIsVisitor;   // () -> bit 0; the buy sets the bought bit only when it is 0 (0xe889a8)
 constexpr uint64_t kEntryToItem = 0x63e3b8;   // (shop manager, entry) -> the entry's item (bits 0..12)
 constexpr uint64_t kShopManager = 0x3565170;  // main + : the shop manager
 constexpr uint32_t kEntryMax = 0x7ff;         // entries 1..0x7ff (the grant's own check)

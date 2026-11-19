@@ -34,7 +34,8 @@
 //    its text "Search: <word>" while a word is active (the widget takes set 26 again after a new word), and its layout goes to the menu
 //    pointer (the key guide's click routing, pkp_menu.cpp): a click on it asks too. Y is free in this screen (A Confirm, B Close, X Sort,
 //    (+) Favorite, (-) Details, L / R tabs).
-//  * Link Play (0x71000376c4 true): the list is local UI, but the key guide is left as the game has it and nothing is filtered.
+//  * Link Play (layout::kIsOnline: any session, the host's too): the list is local UI, but the key guide is left as the game has it and
+//    nothing is filtered.
 #include "ui/pkp_craft.h"
 #include "core/pkp_guest.h"
 #include "core/pkp_items.h"
@@ -73,7 +74,7 @@ constexpr uint64_t kDetailShow = 0xeed680;       // (detail pane, recipe id)
 constexpr uint64_t kAsk = 0x1131700;             // (mode, char* buf, size, options*) -> bit 0: OK
 constexpr uint64_t kAlloc = 0x1121ee8;           // (allocator, 3, size, align, tag*)
 constexpr uint64_t kAllocator = 0x3483d58;
-using layout::kOnline;
+using layout::kIsOnline;
 constexpr uint64_t kRecipeTable = 0x330;
 using layout::kLanguage;
 constexpr uint64_t kChildren = 0x48, kState = 0xa8;
@@ -327,7 +328,7 @@ int hook_screen_frame(::Ctx* c, uint64_t, void*) {
         g.click = false;
     }
     g.last_frame = now;
-    g.online = call(c, g.base + kOnline, 0) & 1;
+    g.online = call(c, g.base + kIsOnline, 0) & 1;
     uint64_t buttons = 0;
     if (auto src = hid::input_source()) {
         hid::InputSnapshot snap;
@@ -364,7 +365,7 @@ void set_taken(::Ctx* c, uint64_t w, uint32_t set) {
         g.set_ids = ids;
     }
     // Search in the first free slot, or out of the set while online
-    const bool online = call(c, g.base + kOnline, 0) & 1;
+    const bool online = call(c, g.base + kIsOnline, 0) & 1;
     g.online = online;
     int at = -1, free_slot = -1;
     for (int i = 0; i < key_guide::kSetSlots; ++i) {
