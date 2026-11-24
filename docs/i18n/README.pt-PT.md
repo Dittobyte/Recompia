@@ -1,4 +1,4 @@
-<!-- source-sha256: ca46cbecd8109a73a9c0353eb903326efef3f51d5c73908e657addcd47fdb990 -->
+<!-- source-sha256: 0f70b170153f4255522df0ac85f7ce9658b2c5baad7c9b0bc7fa79f488381ecb -->
 > Esta é uma tradução automática do [README em inglês](../../README.md); pode conter erros. O README em inglês é a versão oficial.
 
 <h1 align="center">
@@ -181,6 +181,8 @@ MyMod/                       <- choose this folder in Settings > Game > Mods
 
 Se uma transferência tiver uma pasta exterior (por exemplo `2.0.1/romfs/...`), escolha a pasta `romfs` de dentro, a que contém `LD_C0_R.BIN`, e não a exterior. Se o nível da pasta estiver errado, o `pkp.log` diz que nenhum ficheiro do mod substitui um ficheiro do jogo. Os mods que substituem ficheiros que contêm shaders não são suportados.
 
+Os pacotes de mods (`.pkmod`) indicam a versão do jogo como `2.0.1`, sem o "a" do dump 2.0.1a: escreva `game = ["2.0.1"]` no `mod.toml`. Um mod que indica apenas `2.0.1a` fica desligado, e o `pkp.log` diz que foi feito para outra versão do jogo.
+
 ### Mods e traduções (Português do Brasil)
 
 Você pode colocar uma pasta de arquivos de substituição (um mod de texto ou de texturas, uma tradução) por cima do jogo sem mexer no dump: **Settings > Game > Mods**, ou `romfs_mod` em `[fs]` no `pkp.ini`. Este projeto não inclui nenhum mod; peça ao autor do mod.
@@ -188,6 +190,8 @@ Você pode colocar uma pasta de arquivos de substituição (um mod de texto ou d
 A pasta escolhida precisa ter a mesma estrutura da pasta `romfs` do jogo: os mesmos arquivos e pastas, a partir do nível mais alto. Os arquivos dela substituem os arquivos do jogo com o mesmo caminho, as pastas são mescladas, e arquivos que só existem no mod também são usados.
 
 Se o download tiver uma pasta externa (por exemplo `2.0.1/romfs/...`), escolha a pasta `romfs` de dentro, a que contém `LD_C0_R.BIN`, e não a pasta externa. Se o nível da pasta estiver errado, o `pkp.log` avisa que nenhum arquivo do mod substitui um arquivo do jogo. Mods que substituem arquivos com shaders não são suportados.
+
+Pacotes de mod (`.pkmod`) indicam a versão do jogo como `2.0.1`, sem o "a" do dump 2.0.1a: escreva `game = ["2.0.1"]` no `mod.toml`. Um mod que lista só `2.0.1a` fica desligado, e o `pkp.log` diz que ele foi feito para outra versão do jogo.
 
 ## Atualizar a partir de uma versão mais antiga
 

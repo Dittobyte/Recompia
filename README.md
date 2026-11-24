@@ -190,6 +190,8 @@ MyMod/                       <- choose this folder in Settings > Game > Mods
 
 If a download has an outer folder (for example `2.0.1/romfs/...`), choose the inner `romfs` folder, the one that contains `LD_C0_R.BIN`, not the outer one. If the folder level is wrong, `pkp.log` says that none of the mod's files replaces a game file. Mods that replace files containing shaders are not supported.
 
+Mod packages (`.pkmod`) name the game version as `2.0.1`, without the "a" of the 2.0.1a dump: write `game = ["2.0.1"]` in `mod.toml`. A mod that lists only `2.0.1a` stays off, and `pkp.log` says it was made for another game version.
+
 ### Mods e traduções (Português do Brasil)
 
 Você pode colocar uma pasta de arquivos de substituição (um mod de texto ou de texturas, uma tradução) por cima do jogo sem mexer no dump: **Settings > Game > Mods**, ou `romfs_mod` em `[fs]` no `pkp.ini`. Este projeto não inclui nenhum mod; peça ao autor do mod.
@@ -197,6 +199,8 @@ Você pode colocar uma pasta de arquivos de substituição (um mod de texto ou d
 A pasta escolhida precisa ter a mesma estrutura da pasta `romfs` do jogo: os mesmos arquivos e pastas, a partir do nível mais alto. Os arquivos dela substituem os arquivos do jogo com o mesmo caminho, as pastas são mescladas, e arquivos que só existem no mod também são usados.
 
 Se o download tiver uma pasta externa (por exemplo `2.0.1/romfs/...`), escolha a pasta `romfs` de dentro, a que contém `LD_C0_R.BIN`, e não a pasta externa. Se o nível da pasta estiver errado, o `pkp.log` avisa que nenhum arquivo do mod substitui um arquivo do jogo. Mods que substituem arquivos com shaders não são suportados.
+
+Pacotes de mod (`.pkmod`) indicam a versão do jogo como `2.0.1`, sem o "a" do dump 2.0.1a: escreva `game = ["2.0.1"]` no `mod.toml`. Um mod que lista só `2.0.1a` fica desligado, e o `pkp.log` diz que ele foi feito para outra versão do jogo.
 
 ## Updating from an older version
 

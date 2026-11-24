@@ -1,4 +1,4 @@
-<!-- source-sha256: ca46cbecd8109a73a9c0353eb903326efef3f51d5c73908e657addcd47fdb990 -->
+<!-- source-sha256: 0f70b170153f4255522df0ac85f7ce9658b2c5baad7c9b0bc7fa79f488381ecb -->
 > Esta es una traducción automática del [README en inglés](../../README.md); puede contener errores. El README en inglés es la versión definitiva.
 
 <h1 align="center">
@@ -183,6 +183,8 @@ MyMod/                       <- choose this folder in Settings > Game > Mods
 
 Si la descarga tiene una carpeta exterior (por ejemplo `2.0.1/romfs/...`), elige la carpeta `romfs` interior, la que contiene `LD_C0_R.BIN`, no la exterior. Si el nivel de la carpeta es incorrecto, `pkp.log` indica que ningún archivo del mod reemplaza un archivo del juego. No se admiten mods que reemplacen archivos que contienen sombreadores.
 
+Los paquetes de mods (`.pkmod`) indican la versión del juego como `2.0.1`, sin la "a" del volcado 2.0.1a: escribe `game = ["2.0.1"]` en `mod.toml`. Un mod que solo indica `2.0.1a` queda desactivado, y `pkp.log` dice que se hizo para otra versión del juego.
+
 ### Mods y traducciones (portugués de Brasil)
 
 Puedes superponer al juego una carpeta de archivos de reemplazo (un mod de texto o texturas, o una traducción) sin modificar el volcado: **Settings > Game > Mods**, o `romfs_mod` dentro de `[fs]` en `pkp.ini`. Este proyecto no incluye ningún mod; pídelo a su autor.
@@ -190,6 +192,8 @@ Puedes superponer al juego una carpeta de archivos de reemplazo (un mod de texto
 La carpeta elegida debe tener la misma estructura que la carpeta `romfs` del juego: los mismos archivos y carpetas, empezando por el nivel superior. Sus archivos reemplazan los archivos del juego con la misma ruta, las carpetas se combinan y también se utilizan los archivos que solo existen en el mod.
 
 Si la descarga tiene una carpeta exterior (por ejemplo `2.0.1/romfs/...`), elige la carpeta `romfs` interior, la que contiene `LD_C0_R.BIN`, no la exterior. Si el nivel de la carpeta es incorrecto, `pkp.log` indica que ningún archivo del mod reemplaza un archivo del juego. No se admiten mods que reemplacen archivos que contienen sombreadores.
+
+Los paquetes de mods (`.pkmod`) indican la versión del juego como `2.0.1`, sin la "a" del volcado 2.0.1a: escribe `game = ["2.0.1"]` en `mod.toml`. Un mod que solo indica `2.0.1a` queda desactivado, y `pkp.log` dice que se hizo para otra versión del juego.
 
 ## Actualizar desde una versión anterior
 
