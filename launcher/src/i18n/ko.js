@@ -1180,4 +1180,5 @@ export default {
   'The windows find each other on their own once every player is in the game.': '모든 플레이어가 게임에 들어오면 창끼리 자동으로 연결됩니다.',
   '{name} plays with': '{name}의 조작',
   'Controllers count in the order they were connected. The keyboard and mouse play in the window you click.': '컨트롤러는 연결된 순서대로 셉니다. 키보드와 마우스는 클릭한 창에서 작동합니다.',
+  'Above 60 fps the game is buggy: it is made for 60, and things it times by frames can run wrong. Match display runs above 60 on a screen faster than 60 Hz.': '60 fps를 넘으면 게임에 버그가 생깁니다. 게임은 60 fps에 맞춰 만들어져 프레임 단위로 재는 동작이 잘못될 수 있습니다. 60 Hz보다 빠른 화면에서는 디스플레이에 맞춤도 60을 넘습니다.',
 };

@@ -167,7 +167,7 @@ struct DisplaySettings {
     // else the cap; with vsync on, a cap only applies when it is below the refresh rate
     int fps_cap = 60;
     // [display] fps_snap: "auto" (on for a detected Steam Deck only), "true" (on anywhere), "false" (off). With vsync on, a limit below the
-    // refresh rate then runs at an even divisor of it (40 -> 30 on 90 Hz). F1 "Cap FPS to 30 for Steam Deck" writes true / false.
+    // refresh rate then runs at an even divisor of it (40 -> 30 on 90 Hz). F1 "Even frame pacing" writes true / false.
     std::string fps_snap = "auto";
     int width = 1280, height = 720;    // windowed client size, remembered
     bool keep_aspect = true;       // letterbox instead of stretching

@@ -8,6 +8,8 @@
 ### Changed
 - Changed the frame rate limit to 60 fps by default on every PC and handheld, the rate the game runs at on the console: many bugs only show above 60. Players on the old default (Match Display) move to 60 once; a limit you picked yourself stays. To play above 60, pick Match Display, a higher rate or Unlimited in Settings > Display > Frame Rate Limit
 - Changed the Desktop PC quality preset to 60 fps instead of the display's refresh rate
+- Added a warning to the Frame Rate Limit settings (in-game Settings, F1 and the launcher): every choice that can run above 60 fps is marked Buggy
+- Changed the F1 "Cap FPS to 30 for Steam Deck" box to "Even frame pacing": it runs the frame rate at the refresh rate divided by a whole number (90, 45 or 30 at 90 Hz; 60 or 30 at 60 Hz; 40 at 80 Hz), not always 30
 
 ### Fixed
 - Fixed a black picture in play with the DLAA upscaler when the window is taller than the game's 1080p frame (1440p, ultrawide)

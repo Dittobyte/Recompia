@@ -441,6 +441,11 @@ export const SECTIONS = [
               { value: '120', label: t('120') }, { value: '144', label: t('144') }, { value: '0', label: t('Unlimited') },
             ],
           },
+          {   // the game is made for 60 fps; many of its bugs only show above it (Match Display can be above 60 on a fast screen)
+            id: 'fps_limit_note', type: 'note',
+            when: (v) => v.fps_limit === 'auto' || v.fps_limit === '0' || Number(v.fps_limit) > 60,
+            note: () => ({ kind: 'danger', text: t('Above 60 fps the game is buggy: it is made for 60, and things it times by frames can run wrong. Match display runs above 60 on a screen faster than 60 Hz.') }),
+          },
           { id: 'vsync', label: t('VSync'), type: 'toggle', ...fromSchema(controls('display', 'vsync')) },
           { id: 'fps_show', label: t('Frame rate counter'), type: 'toggle', ...fromSchema(controls('fps', 'show')) },
         ],

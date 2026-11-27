@@ -1180,4 +1180,5 @@ export default {
   'The windows find each other on their own once every player is in the game.': 'Les fenêtres se retrouvent toutes seules dès que chaque joueur est en jeu.',
   '{name} plays with': '{name} joue avec',
   'Controllers count in the order they were connected. The keyboard and mouse play in the window you click.': 'Les manettes comptent dans l\'ordre où elles ont été connectées. Le clavier et la souris jouent dans la fenêtre sur laquelle tu cliques.',
+  'Above 60 fps the game is buggy: it is made for 60, and things it times by frames can run wrong. Match display runs above 60 on a screen faster than 60 Hz.': 'Au-delà de 60 fps, le jeu a des bugs : il est fait pour 60, et ce qu’il mesure en images peut mal fonctionner. « Comme l’écran » dépasse 60 sur un écran de plus de 60 Hz.',
 };

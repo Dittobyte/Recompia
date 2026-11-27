@@ -386,19 +386,24 @@ void framerate_group(UiHost& host, const LiveStatus& live, Page& p) {
         ImGui::EndCombo();
     }
     tip("Refresh rate follows the display. With vsync on, a limit only counts when it is below the refresh rate.");
+    // The game is made for 60 fps (its console rate); many of its bugs only show above it. Shown while the limit can run above 60: a
+    // higher number, Unlimited, or the refresh rate of a screen above 60 Hz.
+    if (d.fps_cap > 60 || d.fps_cap == 0 || (d.fps_cap < 0 && live.refresh_hz > 60.5f))
+        ImGui::TextColored(kOrange, "Above 60 fps the game is buggy: it is made for 60, and things it times by frames can run wrong.");
     {   // [display] fps_snap: on by default on a detected Steam Deck only (auto); this box writes true / false
         const bool deck = nxrt::host_is_steam_deck();
         bool snap = d.fps_snap == "true" || (d.fps_snap == "auto" && deck);
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.45f, 0.85f, 1.0f, 1.0f));
-        if (ImGui::Checkbox("Cap FPS to 30 for Steam Deck", &snap)) {
+        if (ImGui::Checkbox("Even frame pacing", &snap)) {
             d.fps_snap = snap ? "true" : "false";
             mark(p);
         }
         ImGui::PopStyleColor();
-        tip("The Steam Deck's screen refreshes at a fixed 90 Hz (OLED) or 60 Hz (LCD) and cannot follow the game. At 40 fps, frames stay on "
-            "screen for uneven times, which feels like stutter; at 30 every frame stays for the same time. Needs vsync on. With a higher limit "
-            "it takes the next even step instead (60 becomes 45 at 90 Hz). Off: your frame limit stays exactly as set.");
-        ImGui::TextColored(ImVec4(0.45f, 0.85f, 1.0f, 1.0f), "THIS ACTUALLY MAKES THE GAME SMOOTHER on a Steam Deck.");
+        tip("A fixed-refresh screen (Steam Deck: 90 Hz OLED, 60 Hz LCD) shows a frame for a whole number of refreshes. With a limit that "
+            "does not divide the refresh rate, frames stay on screen for uneven times, which feels like stutter. On: the frame rate runs at "
+            "the refresh rate divided by a whole number, at or below your limit: 90, 45 or 30 at 90 Hz; 60 or 30 at 60 Hz; 40 at 80 Hz. "
+            "Needs vsync on. Off: your frame limit stays exactly as set.");
+        ImGui::TextColored(ImVec4(0.45f, 0.85f, 1.0f, 1.0f), "Smoother on a Steam Deck: every frame stays on screen for the same time.");
         ImGui::TextDisabled(deck ? "On by default on this Steam Deck. Untick it to keep your frame limit exactly as set."
                                  : "Off by default here: this is not a Steam Deck. Tick it only on a screen without G-Sync / FreeSync.");
         if (snap && !d.vsync) ImGui::TextColored(kOrange, "Turn vsync on for this to work.");

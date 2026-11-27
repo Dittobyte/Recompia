@@ -54,11 +54,16 @@ int fps_value(int pos) {   // pos 0: Match Display, 1..n: hz / pos, n + 1: Unlim
     const int n = fps_divisors();
     return pos <= 0 ? -1 : pos > n ? 0 : static_cast<int>(std::ceil(fps_panel_hz() / static_cast<float>(pos) - 1e-3f));
 }
+// The game is made for 60 fps (its console rate) and many of its bugs only show above it: every entry that can run above 60 says so in its
+// name, so the warning is on screen the moment the player moves the row there. Match Display only on a screen above 60 Hz.
+constexpr float kBuggyAboveHz = 60.5f;   // 59.94 and 60 Hz panels stay plain
 const char* fps_text(int pos, char* out, size_t n) {
     const int d = fps_divisors();
-    if (pos <= 0) return "Match Display";
-    if (pos > d) return "Unlimited";
-    std::snprintf(out, n, "%d", static_cast<int>(fps_panel_hz() / static_cast<float>(pos)));
+    const bool fast = fps_panel_hz() > kBuggyAboveHz;
+    if (pos <= 0) return fast ? "Match Display (Buggy)" : "Match Display";
+    if (pos > d) return "Unlimited (Buggy)";
+    const int fps = static_cast<int>(fps_panel_hz() / static_cast<float>(pos));
+    std::snprintf(out, n, fps > 60 ? "%d (Buggy)" : "%d", fps);
     return out;
 }
 int fps_max() { return fps_divisors() + 1; }
@@ -73,6 +78,18 @@ int fps_get(const S& s) {
 }
 void fps_set(S& s, int v) { s.display.fps_cap = fps_value(v); play::quality_preset_edited(s.display, play::QualityField::FrameLimit); }
 bool not_phone() { return !nxrt::host_is_phone(); }
+// A PC's Frame Rate Limit row: kFpsNames, with "(Buggy)" on the entries above 60 fps (fps_text above says why). Position kFpsCount is Custom (a
+// limit typed into controls.ini), which the row shows but never sets.
+const char* pc_fps_text(int pos, char* out, size_t n) {
+    if (pos < 0 || pos >= kFpsCount) return kFpsNames[kFpsCount];
+    const int fps = kFpsValues[pos];
+    if (fps < 0) return fps_panel_hz() > kBuggyAboveHz ? "Match Display (Buggy)" : "Match Display";
+    if (fps == 0) return "Unlimited (Buggy)";
+    if (fps <= 60) return kFpsNames[pos];
+    std::snprintf(out, n, "%d (Buggy)", fps);
+    return out;
+}
+int pc_fps_max() { return kFpsCount; }
 
 // A phone's Resolution row: [pkp] resolution (render/pkp_phone_res.h), percent of the screen per side in 5 % steps from kPhoneResMin up to
 // the screen (or its presented share); a value between the steps (worked out from the keys before it) is an entry of its own. Each entry
@@ -237,12 +254,15 @@ constexpr Row kDisplay[] = {
           [](S& s, int v) { if (v < kAspectCount) s.display.aspect = kAspectValues[v]; }, true),
     choice("Letterbox", "Black bars keep the picture's shape when it does not fit the window, instead of stretching it.", kOffOn, 2, ROW_BOOL(display.keep_aspect)),
     when(choice("VSync", "Wait for the display between frames: no tearing, a little more delay.", kOffOn, 2, ROW_BOOL(display.vsync)), not_phone),
-    when(names("Frame Rate Limit", "The highest frame rate. 60 is the console's rate; above it the game can show bugs it does not have at 60. Match Display follows the refresh rate.", kFpsNames, kFpsCount + 1,
+    when(dynamic("Frame Rate Limit", "The highest frame rate. The game is made for 60 fps, its console rate: above 60 it is buggy (things the game "
+                 "times by frames can run wrong). Match Display follows the refresh rate.", pc_fps_text, pc_fps_max,
           [](const S& s) { return index_of(kFpsValues, kFpsCount, s.display.fps_cap, kFpsCount); },
           [](S& s, int v) { if (v < kFpsCount) { s.display.fps_cap = kFpsValues[v]; play::quality_preset_edited(s.display, play::QualityField::FrameLimit); } }), not_phone),
-    when(dynamic("Frame Rate Limit", "The highest frame rate, each a whole number of the screen's refreshes (even frames). Lower keeps a hot phone running evenly.",
+    when(dynamic("Frame Rate Limit", "The highest frame rate, each a whole number of the screen's refreshes (even frames). Lower keeps a hot phone running evenly. "
+                 "The game is made for 60 fps: above 60 it is buggy.",
                  fps_text, fps_max, fps_get, fps_set), nxrt::host_is_phone),
-    choice("Even Frame Pacing", "With VSync, run at an even divisor of the refresh rate (Steam Deck: 30 instead of 40).", kOffOn, 2,
+    choice("Even Frame Pacing", "With VSync, the frame rate runs at the refresh rate divided by a whole number, at or below the limit, so every "
+           "frame stays on screen as long (90 Hz: 90, 45 or 30; 60 Hz: 60 or 30; 80 Hz: 40). On by default on a Steam Deck.", kOffOn, 2,
            [](const S& s) { return static_cast<int>(s.display.fps_snap == "true" || (s.display.fps_snap == "auto" && (nxrt::host_is_steam_deck() || nxrt::host_is_phone()))); },
            [](S& s, int v) { s.display.fps_snap = v ? "true" : "false"; }),
     when(autonum("Render Scale", "The game's resolution; 100% is 1920 x 1080. Auto follows the window.", 76, "%.0f%%", 20, 5,

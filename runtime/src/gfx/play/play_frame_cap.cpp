@@ -13,7 +13,7 @@ gfx::PresentMode present_mode_for(const DisplaySettings& d) {
     return d.fps_cap == 0 ? gfx::PresentMode::Mailbox : gfx::PresentMode::Fifo;
 }
 
-// [display] fps_snap = auto|true|false (controls.ini / F1 "Cap FPS to 30 for Steam Deck"; NXRT_DISPLAY_FPS_SNAP overrides it), read on every apply_frame_cap. auto (default) = on for a detected Steam Deck
+// [display] fps_snap = auto|true|false (controls.ini / F1 "Even frame pacing"; NXRT_DISPLAY_FPS_SNAP overrides it), read on every apply_frame_cap. auto (default) = on for a detected Steam Deck
 // (host_is_steam_deck: its 90 / 60 Hz panel has no VRR) and a phone (host_is_phone), off on every other machine (a desktop screen may be VRR, and a
 // player's chosen 40 must stay 40). Returns the divisor k (>= 2) the cap snaps to, or 0 with *reason set to why it does not.
 // The first half of that decision, without the cap: the player has vsync on and fps_snap says the screen is a fixed-refresh panel.

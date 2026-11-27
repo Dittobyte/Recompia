@@ -1180,4 +1180,5 @@ export default {
   'The windows find each other on their own once every player is in the game.': '每位玩家进入游戏后，各窗口会自动互相连接。',
   '{name} plays with': '{name} 的操作方式',
   'Controllers count in the order they were connected. The keyboard and mouse play in the window you click.': '手柄按连接顺序编号。键盘和鼠标在你点击的窗口中操作。',
+  'Above 60 fps the game is buggy: it is made for 60, and things it times by frames can run wrong. Match display runs above 60 on a screen faster than 60 Hz.': '超过 60 fps 时游戏会出错：游戏是按 60 fps 制作的，按帧计时的内容可能运行异常。在高于 60 Hz 的屏幕上，“跟随显示器”也会超过 60。',
 };

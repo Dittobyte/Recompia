@@ -1180,4 +1180,5 @@ export default {
   'The windows find each other on their own once every player is in the game.': '全員がゲームに入ると、ウィンドウ同士が自動でつながります。',
   '{name} plays with': '{name}の操作',
   'Controllers count in the order they were connected. The keyboard and mouse play in the window you click.': 'コントローラーは接続した順に数えます。キーボードとマウスはクリックしたウィンドウで使えます。',
+  'Above 60 fps the game is buggy: it is made for 60, and things it times by frames can run wrong. Match display runs above 60 on a screen faster than 60 Hz.': '60 fpsを超えるとゲームに不具合が出ます。ゲームは60 fps向けに作られており、フレーム単位で計る処理が正しく動かないことがあります。60 Hzより速い画面では「ディスプレイに合わせる」も60を超えます。',
 };
