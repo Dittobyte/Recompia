@@ -342,7 +342,7 @@ const SettingDef kTable[] = {
     {ROW("hdr", "format", Choice), ENUM(extras.hdr.format, extras::HdrFormat), .words = kHdrFormatWords, .nxrt_key = "hdr.format",
      .doc = "Swapchain format (auto: HDR10 when offered, else scRGB)."},
     {ROW("hdr", "peak_nits", Real), REAL(extras.hdr.peak_nits), .lo = 200.0, .hi = 10000.0, .ranged = true, .zero_ok = true, .exact = true,
-     .nxrt_key = "hdr.peak_nits", .doc = "0 = the display's reported peak."},
+     .nxrt_key = "hdr.peak_nits", .doc = "0 = automatic peak (Android: twice the reported peak, capped at 4000 nits)."},
     {ROW("hdr", "paper_white_nits", Real), REAL(extras.hdr.paper_white_nits), .lo = 80.0, .hi = 500.0, .ranged = true, .zero_ok = true,
      .exact = true, .nxrt_key = "hdr.paper_white_nits", .doc = "0 = Windows' SDR content brightness."},
     {ROW("hdr", "highlight_boost", Real), REAL(extras.hdr.highlight_boost), .lo = 0.0, .hi = 2.0, .ranged = true, .exact = true,

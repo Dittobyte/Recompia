@@ -32,6 +32,13 @@ class GameActivity : SDLActivity() {
         // Environment for this start, set in ONE place below (NXRT_<SECTION>_<KEY> overrides pkp.ini; the runtime reads it at SDL_main;
         // the ":game" process is new for every start, so nothing carries over between starts).
         val env = linkedMapOf<String, String>()
+        // Vulkan's swapchain dataspace tells Android how to composite the surface.
+        // Pass the activity display's capabilities before SDL starts the renderer.
+        hdrDisplayCapabilities(display)?.let { hdr ->
+            env["NXRT_ANDROID_DISPLAY_HDR"] = "1"
+            reportedHdrPeak(hdr)?.let { env["NXRT_ANDROID_DISPLAY_MAX_NITS"] = it.toString() }
+            env["NXRT_ANDROID_DISPLAY_MIN_NITS"] = hdr.desiredMinLuminance.toString()
+        }
         // the file-backed heap ([memory] section_dir) must never fill the storage: below the free space it needs, this start uses the
         // zram heap instead and says so
         if (org.recompia.pkp.ui.DeviceFacts.heapFileShort()) {

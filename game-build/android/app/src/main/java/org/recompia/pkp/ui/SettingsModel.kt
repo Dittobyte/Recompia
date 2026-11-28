@@ -6,6 +6,8 @@ import androidx.annotation.StringRes
 import org.json.JSONObject
 import org.recompia.pkp.Paths
 import org.recompia.pkp.R
+import org.recompia.pkp.hdrDisplayCapabilities
+import org.recompia.pkp.reportedHdrPeak
 
 /**
  * The short, phone-safe set of settings, grouped and labelled as in the PC launcher (launcher/src/settings-schema.js). Keys and
@@ -27,7 +29,7 @@ object SettingsModel {
 
     data class Choice(override val id: String, val file: File, val section: String, val key: String, @StringRes val label: Int,
                       val def: String, val options: List<Option>, val parent: String? = null, val text: String = "",
-                      @StringRes val note: Int = 0) : Row
+                      @StringRes val note: Int = 0, val slider: Boolean = false) : Row
 
     data class Group(@StringRes val title: Int, val rows: List<Row>, @StringRes val note: Int = 0)
 
@@ -109,6 +111,29 @@ object SettingsModel {
                 Option("0", R.string.ui_set_upscale_off), Option("1", text = "SGSR")) + if (lowMemoryProfile()) emptyList() else listOf(Option("2", text = "SGSR 2")),
                 note = R.string.ui_set_upscale_note),
         ), note = R.string.ui_set_display_note)
+        val hdr = hdrDisplayCapabilities(ctx.display)?.let { caps ->
+            val reportedPeak = reportedHdrPeak(caps)
+            val peak = reportedPeak ?: 1000
+            // Mirrors hdr_auto_peak_nits and hdr_peak_limit_nits in the runtime.
+            val peakLimit = 4000
+            val autoPeak = ctx.getString(
+                if (reportedPeak != null) R.string.ui_set_hdr_auto_peak else R.string.ui_set_hdr_fallback_peak, (peak * 2).coerceAtMost(peakLimit)
+            )
+            val peaks = 200..peakLimit step 50
+            listOf(Group(R.string.ui_set_hdr, listOf(
+                Choice("hdr_mode", c, "hdr", "mode", R.string.ui_set_hdr_mode, "auto", listOf(
+                    Option("off", R.string.ui_off), Option("auto", R.string.ui_set_automatic),
+                    Option("on", R.string.ui_set_hdr_on), Option("native", R.string.ui_set_hdr_native))),
+                Choice("hdr_format", c, "hdr", "format", R.string.ui_set_hdr_format, controls.def("hdr", "format"), listOf(
+                    Option("auto", R.string.ui_set_automatic), Option("hdr10", text = "HDR10"), Option("scrgb", text = "scRGB"))),
+                Choice("hdr_peak", c, "hdr", "peak_nits", R.string.ui_set_hdr_peak, controls.def("hdr", "peak_nits"),
+                    listOf(Option("0", text = autoPeak)) + peaks.map { Option("$it", text = "$it nits") }, slider = true),
+                Choice("hdr_white", c, "hdr", "paper_white_nits", R.string.ui_set_hdr_white, controls.def("hdr", "paper_white_nits"),
+                    listOf(Option("0", R.string.ui_set_automatic)) + (80..500 step 10).map { Option("$it", text = "$it nits") }, slider = true),
+                Choice("hdr_boost", c, "hdr", "highlight_boost", R.string.ui_set_hdr_boost, controls.def("hdr", "highlight_boost"),
+                    (0..200 step 5).map { val n = it.toBigDecimal().movePointLeft(2); Option(n.stripTrailingZeros().toPlainString(), text = n.toPlainString()) }, slider = true),
+            ), note = R.string.ui_set_hdr_note))
+        }.orEmpty()
         val game = Group(R.string.ui_set_game, listOf(
             Choice("language", c, "tweaks", "language", R.string.ui_set_language, controls.def("tweaks", "language"),
                 listOf(Option("auto", R.string.ui_set_automatic)) + LANGUAGES.map { Option(it.first, text = it.second) }),
@@ -126,7 +151,7 @@ object SettingsModel {
                     parent, key)
             }
         }.sortedForParents(), note = R.string.ui_set_gameplay_note)
-        return listOf(display, game, gameplay)
+        return listOf(display, game) + hdr + gameplay
     }
 
     /** Each mod's settings directly under its switch, in schema order (launcher gameplayRows). */
@@ -155,7 +180,10 @@ object SettingsModel {
             if (r.id == PHONE_UPSCALER && !lowMemoryProfile(inis[File.PKP]!!) && inis[File.CONTROLS]!!.get("upscale", "mode")?.trim()?.lowercase() == "sgsr2") r.id to "2"
             else when (r) {
                 is Toggle -> r.id to (inis[r.file]!!.get(r.section, r.key)?.let { if (truthy(it)) "1" else "0" } ?: if (r.def) "1" else "0")
-                is Choice -> r.id to (inis[r.file]!!.get(r.section, r.key)?.ifBlank { null } ?: r.def)
+                is Choice -> {
+                    val value = inis[r.file]!!.get(r.section, r.key)?.ifBlank { null } ?: r.def
+                    r.id to if (r.section == "hdr") value.toBigDecimalOrNull()?.stripTrailingZeros()?.toPlainString() ?: value else value
+                }
             }
 
     fun write(row: Row, value: String) {

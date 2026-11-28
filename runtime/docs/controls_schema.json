@@ -78,7 +78,7 @@
     {"name": "hdr", "keys": [
         {"key": "mode", "type": "choice", "default": "auto", "choices": ["off", "auto", "on", "native"], "overridden_by": {"ini": "hdr.mode", "env": "NXRT_HDR_MODE"}, "doc": "HDR output."},
         {"key": "format", "type": "choice", "default": "auto", "choices": ["auto", "hdr10", "scrgb"], "overridden_by": {"ini": "hdr.format", "env": "NXRT_HDR_FORMAT"}, "doc": "Swapchain format (auto: HDR10 when offered, else scRGB)."},
-        {"key": "peak_nits", "type": "real", "default": "0", "min": 200, "max": 10000, "zero_ok": true, "overridden_by": {"ini": "hdr.peak_nits", "env": "NXRT_HDR_PEAK_NITS"}, "doc": "0 = the display's reported peak."},
+        {"key": "peak_nits", "type": "real", "default": "0", "min": 200, "max": 10000, "zero_ok": true, "overridden_by": {"ini": "hdr.peak_nits", "env": "NXRT_HDR_PEAK_NITS"}, "doc": "0 = automatic peak (Android: twice the reported peak, capped at 4000 nits)."},
         {"key": "paper_white_nits", "type": "real", "default": "0", "min": 80, "max": 500, "zero_ok": true, "overridden_by": {"ini": "hdr.paper_white_nits", "env": "NXRT_HDR_PAPER_WHITE_NITS"}, "doc": "0 = Windows' SDR content brightness."},
         {"key": "highlight_boost", "type": "real", "default": "1", "min": 0, "max": 2, "overridden_by": {"ini": "hdr.highlight_boost", "env": "NXRT_HDR_HIGHLIGHT_BOOST"}, "doc": "0 = the game's SDR look up to its own white, 1 = highlights reach the peak."}
     ]},

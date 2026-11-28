@@ -485,6 +485,7 @@ void scene_stretch_for_draw(const ProgLayout& pl) {
         }
         if (part.width >= te.width && part.height >= te.height) return;
         if constexpr (facts::kPhone) publish_res(part, out, cheap ? (std::string(extras::scene_upscale_name()) == "sgsr" ? 1 : 2) : 0);
+        const bool extended_input = cheap && extras::hdr_scene_active();
         extras::SpatialUpscaler* su = cheap ? static_cast<extras::SpatialUpscaler*>(cheap) : extras::scene_upscaler(&device(), part, out);
         if (!su) return;
         end_pass();                                                           // compute work cannot run inside a render pass
@@ -497,7 +498,7 @@ void scene_stretch_for_draw(const ProgLayout& pl) {
             // its input at uv x fraction, so handing it the result needed an image of out / fraction (at 15 %: an RGBA16F image 6.7 times the screen per side, 1.4 GB,
             // made when the Resolution was lowered: a phone was killed for memory); this needs one of the target's size.
             if (cheap && (part.width < se.width || part.height < se.height)) {
-                VkImageView up = cheap->upscale(F->cb, src, part, VkExtent2D{se.width, se.height}, out, false, 1.0f, 0.0f, out);
+                VkImageView up = cheap->upscale(F->cb, src, part, VkExtent2D{se.width, se.height}, out, extended_input, 1.0f, 0.0f, out);
                 shadow_invalidate();
                 memory_barrier(F->cb);
                 if (up && tex_blit_from(target, *F, cheap->image(), VK_FORMAT_R16G16B16A16_SFLOAT, out)) {
@@ -506,14 +507,15 @@ void scene_stretch_for_draw(const ProgLayout& pl) {
                     static bool told_phone = false;
                     if (!told_phone) {
                         told_phone = true;
-                        NXLOG_I(kTag, "scene upscale: %s on the scene stretch %s, %ux%u -> %ux%u, written into its target (the draw is skipped)",
-                                extras::scene_upscale_name(), S.stage[kFragment]->hash.c_str(), part.width, part.height, out.width, out.height);
+                        NXLOG_I(kTag, "scene upscale: %s on the scene stretch %s, %ux%u -> %ux%u, written into its target (the draw is skipped)%s",
+                                extras::scene_upscale_name(), S.stage[kFragment]->hash.c_str(), part.width, part.height, out.width, out.height, extended_input ? " (HDR input)" : "");
                     }
                 }
                 return;   // without the blit the game's own stretch draws (bilinear)
             }
         }
-        VkImageView up = su->upscale(F->cb, src, part, VkExtent2D{se.width, se.height}, out, false, 1.0f, extras::upscale_sharpness(), out_tex);
+        VkImageView up = su->upscale(F->cb, src, part, VkExtent2D{se.width, se.height}, out, extended_input, 1.0f,
+                                     extras::upscale_sharpness(), out_tex);
         shadow_invalidate();
         if (up) {
             g_su.tex = r.tex;
@@ -522,8 +524,8 @@ void scene_stretch_for_draw(const ProgLayout& pl) {
         static bool told = false;
         if (!told) {
             told = true;
-            NXLOG_I(kTag, "scene upscale: %s on the scene stretch %s, %ux%u -> %ux%u", cheap ? extras::scene_upscale_name()
-                    : extras::upscale_mode() == extras::UpscaleMode::Nis ? "NIS" : "FSR 1", S.stage[kFragment]->hash.c_str(), part.width, part.height, out.width, out.height);
+            NXLOG_I(kTag, "scene upscale: %s on the scene stretch %s, %ux%u -> %ux%u%s", cheap ? extras::scene_upscale_name()
+                    : extras::upscale_mode() == extras::UpscaleMode::Nis ? "NIS" : "FSR 1", S.stage[kFragment]->hash.c_str(), part.width, part.height, out.width, out.height, extended_input ? " (HDR input)" : "");
         }
         return;
     }
@@ -556,7 +558,7 @@ void scene_sharpen_for_draw(const ProgLayout& pl) {
             VkImageView src = tex_sampled_view(r.tex, make_request(b, r));
             if (!src) return;
             const VkExtent2D in{se.width, se.height}, out{te.width, te.height};
-            VkImageView v = cheap->upscale(F->cb, src, in, in, out, false, 1.0f, 0.0f);
+            VkImageView v = cheap->upscale(F->cb, src, in, in, out, extras::hdr_scene_active(), 1.0f, 0.0f);
             shadow_invalidate();
             if (!v) return;
             g_su.tex = r.tex;

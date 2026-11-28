@@ -1,7 +1,7 @@
 # Compiles the scene upscaler shaders of extras/sgsr_spatial.cpp and writes src/gfx/extras/sgsr_shaders.inc (uint32 arrays; the .inc is
 # committed, so building the runtime does not need a shader compiler).
 #   sgsr     Snapdragon Game Super Resolution 1 (Qualcomm, BSD-3-Clause, third_party/qualcomm_sgsr, unmodified), the mobile single-pass
-#            version with edge direction: its functions and main() are wrapped into a compute shader (one invocation per output pixel).
+#            version with edge direction: its functions and main() are wrapped into a compute shader (one invocation per output pixel), with an HDR-safe output range.
 #   bicubic  Catmull-Rom (16 texels as 9 bilinear taps), for comparison.
 #   sgsr2    Snapdragon Game Super Resolution 2 (same source and licence, third_party/qualcomm_sgsr/v2, unmodified), the 2-pass compute
 #            version (convert, upscale) for extras/temporal_sgsr2.cpp. Edited here, at generation time: Vulkan bindings in one set (the
@@ -20,7 +20,7 @@ layout(set = 0, binding = 0) uniform sampler u_smp;
 layout(set = 0, binding = 1) uniform texture2D u_in;
 layout(set = 0, binding = 2, rgba16f) uniform writeonly image2D u_out;
 // vp: 1 / input size (xy), input size (zw), as SGSR's ViewportInfo[0]; out: output size (xy), 1 / output size (zw)
-// clip: the largest uv of the input part a pixel's centre may take (keeps the 4x4 neighbourhood inside the part: a scene part of larger targets)
+// clip: largest input UV for the pixel centre (xy); z enables extended linear HDR for SGSR.
 layout(push_constant) uniform PC { vec4 vp; vec4 out_size; vec4 clip; } pc;
 """
 
@@ -31,6 +31,18 @@ def sgsr_glsl():
     body = src[i:]
     body = body.replace("void main()", "vec4 sgsr_pixel(vec4 in_TEXCOORD0)")
     body = body.replace("out_Target0.xyzw = color;", "return color;")
+    sdr_clamp = "\n\t\t\t".join(
+        f"color.{c} = clamp((color.{c}+deltaY),0.0,1.0);" for c in "xyz"
+    )
+    assert sdr_clamp in body, "SGSR output clamp changed"
+    body = body.replace(sdr_clamp, """
+            if (pc.clip.z > 0.5) {
+                // Ease in the bounded correction at the edge threshold and preserve values above paper white.
+                float edgeStrength = smoothstep(EdgeThreshold, 2.0 * EdgeThreshold, edgeVote);
+                color.xyz = max(color.xyz + vec3(deltaY * edgeStrength), vec3(0.0));
+            } else {
+                color.xyz = clamp(color.xyz + vec3(deltaY), 0.0, 1.0);
+            }""")
     body = re.sub(r"\bhighp\s+|\bmediump\s+|\blowp\s+", "", body)
     defs = ("#define UseEdgeDirection\n#define OperationMode 1\n#define EdgeThreshold (8.0/255.0)\n#define EdgeSharpness 2.0\n"
             "#define ps0 sampler2D(u_in, u_smp)\n#define ViewportInfo vp_info\n")
@@ -42,7 +54,7 @@ void main() {
 }
 """
     note = ("// Snapdragon Game Super Resolution 1, mobile, edge direction: Copyright (c) 2025, Qualcomm Innovation Center, Inc.\n"
-            "// SPDX-License-Identifier: BSD-3-Clause (third_party/qualcomm_sgsr/LICENSE); wrapped into a compute shader.\n")
+            "// SPDX-License-Identifier: BSD-3-Clause (third_party/qualcomm_sgsr/LICENSE); adapted to compute and HDR at generation time.\n")
     return HEAD + note + "vec4 vp_info[1];\n" + defs + body.replace("vec4 sgsr_pixel(vec4 in_TEXCOORD0)\n{", "vec4 sgsr_pixel(vec4 in_TEXCOORD0)\n{\n\tvp_info[0] = pc.vp;") + main
 
 

@@ -20,9 +20,11 @@
 // HDR output is on (a Wayland surface never gets them), so there the format list is the answer (formats_tell). gamescope
 // gives the application no luminance numbers: paper white is the 203 nits, the peak is left unknown.
 #include "extras/win_display.h"
+#include "nxrt/platform_facts.h"
 
 #if !defined(_WIN32)
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -73,6 +75,27 @@ bool query_display_hdr(void* hwnd, DisplayHdrInfo* out) {
 #else
     (void)hwnd;
     constexpr float kReferenceWhiteNits = 203.0f;   // ITU-R BT.2408: reference white of ST 2084 content
+    if constexpr (facts::kOnAndroid) {
+        const char* hdr = getenv("NXRT_ANDROID_DISPLAY_HDR");
+        out->valid = true;
+        out->hdr_enabled = hdr && strcmp(hdr, "1") == 0;
+        snprintf(out->monitor, sizeof out->monitor, "of the activity");
+        snprintf(out->how, sizeof out->how, "Android display capabilities");
+        if (out->hdr_enabled) {
+            const auto read_nits = [](const char* key) {
+                const char* value = getenv(key);
+                if (!value) return 0.0f;
+                char* end = nullptr;
+                const float nits = strtof(value, &end);
+                return end != value && *end == '\0' && isfinite(nits) && nits > 0.0f ? nits : 0.0f;
+            };
+            const float peak = read_nits("NXRT_ANDROID_DISPLAY_MAX_NITS");
+            if (peak >= 200.0f && peak <= 10000.0f) out->max_nits = peak;
+            out->min_nits = read_nits("NXRT_ANDROID_DISPLAY_MIN_NITS");
+            out->sdr_white_nits = kReferenceWhiteNits;
+        }
+        return true;
+    }
     if (const char* gs = getenv("GAMESCOPE_WAYLAND_DISPLAY"); gs && *gs) {
         out->valid = true;
         out->formats_tell = true;

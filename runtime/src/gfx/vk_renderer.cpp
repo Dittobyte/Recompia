@@ -26,6 +26,7 @@
 #include "nxrt/text.h"
 #include "extras/gpu_keepalive.h"
 #include "extras/hdr_capture.h"
+#include "nxrt/platform_facts.h"
 #include "extras/hdr_math.h"
 #include "extras/win_display.h"
 #include "vk_gauges.h"
@@ -393,19 +394,22 @@ struct Renderer::Impl {
         const extras::HdrState hs = extras::hdr_state();
         md_serial = hs.metadata_serial;
         if (headless || !swapchain || kind == extras::OutputKind::Sdr8 || !dev->features().hdr_metadata) return;
-        const bool native = extras::settings().hdr.mode == extras::HdrMode::Native;
+        const bool native = hs.mode == extras::HdrMode::Native;
         VkHdrMetadataEXT md = {VK_STRUCTURE_TYPE_HDR_METADATA_EXT};
         md.displayPrimaryRed = {0.708f, 0.292f};       // BT.2020
         md.displayPrimaryGreen = {0.170f, 0.797f};
         md.displayPrimaryBlue = {0.131f, 0.046f};
         md.whitePoint = {0.3127f, 0.3290f};
         md.maxLuminance = hs.peak_nits;
-        md.minLuminance = 0.0f;
         md.maxContentLightLevel = hs.peak_nits;
-        md.maxFrameAverageLightLevel = std::max(hs.paper_white_nits, hs.peak_nits * 0.25f);
+        if constexpr (!facts::kOnAndroid) {
+            md.maxFrameAverageLightLevel = std::max(hs.paper_white_nits, hs.peak_nits * 0.25f);
+        }
         if (native) {
-            const float cll = hs.game_max_cll > 0 ? hs.game_max_cll : hs.game_extended_nits;
-            if (cll > 0) md.maxContentLightLevel = std::min(std::max(cll, hs.paper_white_nits), hs.peak_nits);
+            if constexpr (!facts::kOnAndroid) {
+                const float cll = hs.game_max_cll > 0 ? hs.game_max_cll : hs.game_extended_nits;
+                if (cll > 0) md.maxContentLightLevel = std::min(std::max(cll, hs.paper_white_nits), hs.peak_nits);
+            }
             if (hs.game_max_fall > 0) md.maxFrameAverageLightLevel = std::min(hs.game_max_fall, md.maxContentLightLevel);
             else md.maxFrameAverageLightLevel = std::min(md.maxFrameAverageLightLevel, md.maxContentLightLevel);
         }
@@ -425,9 +429,10 @@ struct Renderer::Impl {
         hs.game_max_fall = prev.game_max_fall;
         hs.game_display_max_nits = prev.game_display_max_nits;
         hs.metadata_serial = prev.metadata_serial + 1;
-        const bool forced = es.hdr.mode == extras::HdrMode::On || es.hdr.mode == extras::HdrMode::Native;   // Native: the game's HDR TV path, forced like On
+        hs.mode = headless || extras::hdr_controls_available() ? es.hdr.mode : extras::HdrMode::Off;
+        const bool forced = hs.mode == extras::HdrMode::On || hs.mode == extras::HdrMode::Native;   // Native: the game's HDR TV path, forced like On
         wanted = extras::OutputKind::Sdr8;
-        if (es.hdr.mode != extras::HdrMode::Off) {
+        if (hs.mode != extras::HdrMode::Off) {
             bool o10 = false, osc = false;
             extras::DisplayHdrInfo di;
             if (headless) {
@@ -446,7 +451,7 @@ struct Renderer::Impl {
                 NXLOG_I(kTag, "HDR: surface offers HDR10 %s, scRGB %s; display %s: hdr %s, peak %.0f nits, SDR white %.0f nits (%s)", o10 ? "yes" : "no", osc ? "yes" : "no",
                         di.monitor, di.hdr_enabled ? "on" : "off", di.max_nits, di.sdr_white_nits, di.how);
             }
-            if (!headless && es.hdr.mode == extras::HdrMode::Auto && !(di.valid && di.hdr_enabled)) {
+            if (!headless && hs.mode == extras::HdrMode::Auto && !(di.valid && di.hdr_enabled)) {
                 // the NVIDIA driver on Windows and Mesa on Wayland list HDR10 and scRGB surface formats whether or not HDR is on for the monitor, so
                 // "auto" needs the system's own answer
                 if (o10 || osc) NXLOG_I(kTag, "HDR: the surface lists HDR formats but the system does not report HDR on for this monitor (%s): SDR output (set [hdr] mode = on to force HDR)", di.how);
@@ -460,16 +465,14 @@ struct Renderer::Impl {
             hs.display_hdr = di.hdr_enabled;
             hs.display_peak_nits = di.valid ? di.max_nits : 0.0f;
             hs.display_sdr_white_nits = di.valid ? di.sdr_white_nits : 80.0f;
-            extras::hdr_resolve_levels(es.hdr, di.valid && di.hdr_enabled, di.valid ? di.max_nits : 0.0f, di.sdr_white_nits, &hs.paper_white_nits, &hs.peak_nits);
-            if (es.hdr.mode == extras::HdrMode::Native && es.hdr.paper_white_nits <= 0 && hs.game_standard_nits >= 80.0f) {
-                hs.paper_white_nits = std::clamp(hs.game_standard_nits, 80.0f, 500.0f);
-                hs.peak_nits = std::max(hs.peak_nits, hs.paper_white_nits);
-            }
+            extras::hdr_resolve_levels(es.hdr, hs.display_hdr, hs.display_peak_nits, hs.display_sdr_white_nits,
+                                       &hs.paper_white_nits, &hs.peak_nits,
+                                       hs.mode == extras::HdrMode::Native ? hs.game_standard_nits : 0.0f);
             hs.peak_ratio = wanted == extras::OutputKind::Sdr8 ? 1.0f : extras::peak_ratio(hs.peak_nits, hs.paper_white_nits, static_cast<float>(es.hdr.highlight_boost));
         }
         hs.output = extras::OutputKind::Sdr8;     // the swapchain sets the real one
         extras::hdr_set_state(hs);
-        NXLOG_I(kTag, "HDR: mode %d, scene %s, wanted output %s, paper white %.0f nits, peak %.0f nits, peak ratio %.2f", static_cast<int>(es.hdr.mode), hs.scene_hdr ? "HDR" : "SDR",
+        NXLOG_I(kTag, "HDR: mode %d, scene %s, wanted output %s, paper white %.0f nits, peak %.0f nits, peak ratio %.2f", static_cast<int>(hs.mode), hs.scene_hdr ? "HDR" : "SDR",
                 extras::output_kind_name(wanted), hs.paper_white_nits, hs.peak_nits, hs.peak_ratio);
     }
 

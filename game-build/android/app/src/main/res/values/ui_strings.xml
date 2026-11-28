@@ -515,4 +515,15 @@
     <string name="ui_upd_err_conflict">Android refused the update because it conflicts with the installed app, usually because the two are signed with different keys (%1$s).</string>
     <string name="ui_upd_err_storage">Not enough free storage to install the update. Free some space and try again.</string>
     <string name="ui_upd_err_install">Android could not install the update (%1$s).</string>
+    <string name="ui_set_hdr">HDR</string>
+    <string name="ui_set_hdr_mode">HDR mode</string>
+    <string name="ui_set_hdr_on">On</string>
+    <string name="ui_set_hdr_native">Native</string>
+    <string name="ui_set_hdr_format">HDR format</string>
+    <string name="ui_set_hdr_auto_peak">Auto (%1$d nits)</string>
+    <string name="ui_set_hdr_fallback_peak">Auto (%1$d nits fallback)</string>
+    <string name="ui_set_hdr_peak">Peak brightness</string>
+    <string name="ui_set_hdr_white">Paper white</string>
+    <string name="ui_set_hdr_boost">Highlight boost</string>
+    <string name="ui_set_hdr_note">Changes apply the next time you start the game. Native uses the HDR levels declared by the game.</string>
 </resources>

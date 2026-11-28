@@ -125,7 +125,6 @@ void SgsrSpatial::shutdown() {
 
 VkImageView SgsrSpatial::upscale(VkCommandBuffer cb, VkImageView src, VkExtent2D in_view, VkExtent2D in_tex, VkExtent2D out, bool linear_hdr, float prescale,
                                 float sharpness, VkExtent2D out_tex) {
-    (void)linear_hdr;
     (void)prescale;
     (void)sharpness;   // SGSR sharpens by its own constant (EdgeSharpness 2); Catmull-Rom has none
     if (!dev_ || !src || !in_view.width || !in_view.height || !out.width || !out.height) return VK_NULL_HANDLE;
@@ -138,7 +137,7 @@ VkImageView SgsrSpatial::upscale(VkCommandBuffer cb, VkImageView src, VkExtent2D
                             // the centre stays 2 texels inside the part: SGSR's gathers and Catmull-Rom reach 2 texels past it, and outside the
                             // part a scene of larger targets holds stale pixels (the game's dynamic resolution)
                             std::max(0.5f, static_cast<float>(in_view.width) - 2.0f) / static_cast<float>(in_tex.width),
-                            std::max(0.5f, static_cast<float>(in_view.height) - 2.0f) / static_cast<float>(in_tex.height), 0.0f, 0.0f};
+                            std::max(0.5f, static_cast<float>(in_view.height) - 2.0f) / static_cast<float>(in_tex.height), linear_hdr ? 1.0f : 0.0f, 0.0f};
     if (!img_ || extent_.width != res.width || extent_.height != res.height) {
         if (img_) {
             dev_->wait_idle();
@@ -218,8 +217,9 @@ const char* scene_upscale_name() {
 SgsrSpatial* scene_cheap_upscaler(void* gfx_device) {
     static SgsrSpatial* up[2] = {};   // one per kind, made on first use (a live switch back costs nothing)
     static bool tried[2] = {};
-    if (!gfx_device || !*scene_upscale_name()) return nullptr;
-    const int k = std::string(scene_upscale_name()) == "sgsr" ? 0 : 1;
+    const char* name = scene_upscale_name();
+    if (!gfx_device || !*name) return nullptr;
+    const int k = std::strcmp(name, "sgsr") == 0 ? 0 : 1;
     if (!tried[k]) {
         tried[k] = true;
         auto* u = new SgsrSpatial(k == 0 ? SgsrSpatial::Kind::Sgsr : SgsrSpatial::Kind::Bicubic);

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Android
+- HDR defaults to Auto on compatible displays. Automatic peak brightness targets twice the reported peak, with a 4000-nit ceiling for both automatic and manual targets. HDR settings are available in the launcher and in-game. SGSR preserves HDR highlights.
+
+### Changed
+- In-game Picture settings preview peak brightness and paper white live on PC as well as Android, and refresh HDR metadata when the levels change. Highlight Boost and the Native mode selection take full effect after restarting.
+
 ## 0.18.1 (build V: Vaquita Hotfix a1)
 
 **Update:** press **Update** in the launcher, then **Set up again** once (new hook sites; saves and shaders are kept, no shader is rebuilt). On Android, the app updates from inside it. Everyone in a co-op session needs this version: an older build cannot join a newer one.

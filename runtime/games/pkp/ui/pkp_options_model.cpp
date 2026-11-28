@@ -96,6 +96,7 @@ void StaticTab::revert() {
     if (std::any_of(rows_, rows_ + count_, [](const Row& r) { return r.live; })) {
         const S s = play::current_settings();
         extras::set_picture_live(s.extras.picture);
+        extras::hdr_preview_levels(s.extras.hdr);
         extras::set_scene_scale_live(s.extras.upscale.scene_scale);
         extras::set_upscale_sharpness_live(static_cast<float>(s.extras.upscale.sharpness));
     }
@@ -108,6 +109,7 @@ void StaticTab::preview(int, int) {
     for (int i = 0; i < count_; ++i)
         if (rows_[i].live && cur[i] != orig[i] && !is_key_row(rows_[i])) rows_[i].set(s, cur[i]);
     extras::set_picture_live(s.extras.picture);
+    extras::hdr_preview_levels(s.extras.hdr);
     extras::set_scene_scale_live(s.extras.upscale.scene_scale);   // a phone's Resolution row: the scene size follows at once
     extras::set_upscale_sharpness_live(static_cast<float>(s.extras.upscale.sharpness));   // a phone's Sharpness row: SGSR 2's sharpening follows at once
 }

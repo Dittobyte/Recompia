@@ -52,12 +52,13 @@ bool auto_nits_slider(const char* label, double* v, int lo, int hi) {
 }
 
 void hdr_group(Page& p) {
+    if (!extras::hdr_controls_available()) return;
     extras::HdrSettings& h = p.edit.extras.hdr;
     ImGui::SeparatorText("HDR output");
 
     const int mode = static_cast<int>(h.mode);
     const bool mode_open = ImGui::BeginCombo("Mode##hdr_mode", kHdrModeNames[mode]);
-    tip("Off keeps the SDR picture, Auto uses HDR when the display and Windows offer it, On runs the HDR pipeline even without an HDR display. "
+    tip("Off keeps the SDR picture, Auto uses HDR when the display and platform support it, On runs the HDR pipeline even without an HDR display. "
         "Native is On with the levels the game declares for an HDR TV on Switch 2.");
     if (mode_open) {
         for (int i = 0; i < 4; ++i) {
@@ -84,12 +85,12 @@ void hdr_group(Page& p) {
     }
     restart_badge();
 
-    if (auto_nits_slider("Peak brightness##hdr_peak", &h.peak_nits, 200, 10000)) mark(p);
-    tip("How bright the brightest highlights get, in nits; auto reads the peak brightness the display reports.");
+    if (auto_nits_slider("Peak brightness##hdr_peak", &h.peak_nits, 200, extras::hdr_peak_limit_nits())) mark(p);
+    tip("Auto follows the reported display peak (Android: twice it, at most 4000 nits). The output limit previews live. Restart to rebuild the highlight curve.");
     if (auto_nits_slider("Paper white##hdr_paper", &h.paper_white_nits, 80, 500)) mark(p);
     tip("The brightness of ordinary white in the game, in nits; auto follows Windows' SDR content brightness when HDR is on there, else 203.");
     if (slider("Highlight boost", &h.highlight_boost, 0.0, 2.0, "%.2f")) mark(p);
-    tip("0 keeps the game's SDR look up to its own white, 1 lets highlights reach the display's peak, 2 pushes them further.");
+    tip("0 keeps the game's SDR look up to its own white, 1 lets highlights reach the display's peak, 2 pushes them further. Restart to rebuild the highlight curve.");
 
     const extras::HdrState hs = extras::hdr_state();
     ImGui::Text("HDR scene: %s, swapchain: %s, paper white %.0f nits, peak %.0f nits, peak ratio %.2f, display reports HDR: %s",

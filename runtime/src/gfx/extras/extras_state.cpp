@@ -11,9 +11,11 @@
 #include "nxrt/config.h"
 #include "nxrt/host_device.h"
 #include "nxrt/log.h"
+#include "nxrt/platform_facts.h"
 #include "nxrt/text.h"
 #include "extras/hdr_math.h"
 #include "extras/temporal.h"
+#include "extras/win_display.h"
 
 namespace nxrt::extras {
 namespace {
@@ -270,21 +272,42 @@ void hdr_set_state(const HdrState& s) {
     g_seq.store(a + 2, std::memory_order_release);
 }
 
-void hdr_refresh_levels() {
+bool hdr_controls_available() {
+    if constexpr (facts::kOnAndroid) {
+        DisplayHdrInfo display{};
+        return query_display_hdr(nullptr, &display) && display.hdr_enabled;
+    }
+    return true;
+}
+
+int hdr_reported_peak_nits() {
+    if constexpr (facts::kOnAndroid) {
+        DisplayHdrInfo display{};
+        if (query_display_hdr(nullptr, &display)) return static_cast<int>(display.max_nits);
+    }
+    return 0;
+}
+
+int hdr_auto_peak_nits(float reported) {
+    return static_cast<int>(std::min((reported >= 200.0f ? reported : 1000.0f) * 2.0f, static_cast<float>(hdr_peak_limit_nits())));
+}
+
+int hdr_peak_limit_nits() { return facts::kOnAndroid ? 4000 : 10000; }
+
+void hdr_preview_levels(const HdrSettings& hdr) {
     HdrState hs = hdr_state();
     if (!hs.scene_hdr) return;
-    const Settings es = settings();
-    hdr_resolve_levels(es.hdr, hs.display_hdr, hs.display_peak_nits, hs.display_sdr_white_nits, &hs.paper_white_nits, &hs.peak_nits);
-    if (es.hdr.mode == HdrMode::Native && es.hdr.paper_white_nits <= 0 && hs.game_standard_nits >= 80.0f) {
-        // the game's SDR-graded range is what a Switch 2 shows at the TV's paper white; [hdr] paper_white_nits, when set, still wins
-        hs.paper_white_nits = std::clamp(hs.game_standard_nits, 80.0f, 500.0f);
-        hs.peak_nits = std::max(hs.peak_nits, hs.paper_white_nits);
-    }
-    hs.peak_ratio = hs.output == OutputKind::Sdr8 ? 1.0f : peak_ratio(hs.peak_nits, hs.paper_white_nits, static_cast<float>(es.hdr.highlight_boost));
+    const float old_paper = hs.paper_white_nits, old_peak = hs.peak_nits;
+    hdr_resolve_levels(hdr, hs.display_hdr, hs.display_peak_nits, hs.display_sdr_white_nits, &hs.paper_white_nits, &hs.peak_nits,
+                       hs.mode == HdrMode::Native ? hs.game_standard_nits : 0.0f);
+    hs.peak_ratio = hs.output == OutputKind::Sdr8 ? 1.0f : peak_ratio(hs.peak_nits, hs.paper_white_nits, static_cast<float>(hdr.highlight_boost));
+    if (hs.paper_white_nits != old_paper || hs.peak_nits != old_peak) ++hs.metadata_serial;
     hdr_set_state(hs);
 }
 
-bool hdr_mode_native() { return settings().hdr.mode == HdrMode::Native; }
+void hdr_refresh_levels() { hdr_preview_levels(settings().hdr); }
+
+bool hdr_mode_native() { return hdr_state().mode == HdrMode::Native; }
 
 namespace {
 std::mutex g_note_mu;
@@ -344,11 +367,21 @@ void hdr_note_window_hdr(int color_space, const float* display, const float* con
     after_note();
 }
 
-void hdr_resolve_levels(const HdrSettings& s, bool display_hdr, float display_peak_nits, float display_sdr_white_nits, float* paper, float* peak) {
+void hdr_resolve_levels(const HdrSettings& s, bool display_hdr, float display_peak_nits, float display_sdr_white_nits, float* paper, float* peak, float native_standard_nits) {
     float pw = static_cast<float>(s.paper_white_nits);
-    if (pw <= 0) pw = display_hdr && display_sdr_white_nits >= 80.0f ? std::clamp(display_sdr_white_nits, 80.0f, 500.0f) : 203.0f;
+    if (pw <= 0) {
+        const float white = native_standard_nits >= 80.0f ? native_standard_nits : display_hdr ? display_sdr_white_nits : 0.0f;
+        pw = white >= 80.0f ? std::clamp(white, 80.0f, 500.0f) : 203.0f;
+    }
     float pk = static_cast<float>(s.peak_nits);
     if (pk <= 0) pk = display_peak_nits >= 200.0f ? std::min(display_peak_nits, 10000.0f) : 1000.0f;
+    if constexpr (facts::kOnAndroid) {
+        if (display_hdr) {
+            pk = s.peak_nits <= 0 ? static_cast<float>(hdr_auto_peak_nits(display_peak_nits))
+                                  : std::min(pk, static_cast<float>(hdr_peak_limit_nits()));
+            pw = std::min(pw, pk);
+        }
+    }
     pk = std::max(pk, pw);
     if (paper) *paper = pw;
     if (peak) *peak = pk;
