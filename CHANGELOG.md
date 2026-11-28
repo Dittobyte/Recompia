@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Launcher
+- Added Indonesian (`Bahasa Indonesia`) to the launcher and translated READMEs: it follows an Indonesian system language on its own, or pick **Bahasa Indonesia** in Settings > About > Language
+
 ## 0.18.1 (build V: Vaquita Hotfix a1)
 
 **Update:** press **Update** in the launcher, then **Set up again** once (new hook sites; saves and shaders are kept, no shader is rebuilt). On Android, the app updates from inside it. Everyone in a co-op session needs this version: an older build cannot join a newer one.
