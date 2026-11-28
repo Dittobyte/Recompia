@@ -53,3 +53,4 @@ First build, from the repository root:
 4. `pwsh -File game-build\scripts\build.ps1`
 
 - Shaders: [tools/shaders/README.md](tools/shaders/README.md). Launcher: `npm install`, `npm run tauri build` in `launcher\`.
+- Linux & NixOS: [docs/linux-port.md](docs/linux-port.md) and [docs/nixos.md](docs/nixos.md).

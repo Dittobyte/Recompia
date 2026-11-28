@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Linux & Steam Deck
+- Added a NixOS flake (`flake.nix`) providing the wrapped launcher/runtime package (`nix run`) and development shell (`nix develop`); see `docs/nixos.md`
+
 ## 0.18.1 (build V: Vaquita Hotfix a1)
 
 **Update:** press **Update** in the launcher, then **Set up again** once (new hook sites; saves and shaders are kept, no shader is rebuilt). On Android, the app updates from inside it. Everyone in a co-op session needs this version: an older build cannot join a newer one.
