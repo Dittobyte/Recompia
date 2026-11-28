@@ -1,7 +1,7 @@
 # tools/i18n: translated READMEs
 
 The English `README.md` and the Linux release `game-build/release_b/README.linux.txt` have machine translations in Simplified
-Chinese (`zh-CN`), Spanish (`es`), Arabic (`ar`), Hindi (`hi`), Brazilian Portuguese (`pt-BR`) and European Portuguese (`pt-PT`):
+Chinese (`zh-CN`), Spanish (`es`), Arabic (`ar`), Hindi (`hi`), Brazilian Portuguese (`pt-BR`), European Portuguese (`pt-PT`) and Indonesian (`id`):
 
 | English file | Translations |
 |---|---|
