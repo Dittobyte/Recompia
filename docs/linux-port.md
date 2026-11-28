@@ -126,6 +126,8 @@ recent-fault list; it is a diagnostic, and it is listed in §7.
 
 ## 4. Build
 
+On NixOS, see [docs/nixos.md](nixos.md) for `nix run` and `nix develop`.
+
 Prerequisites: CMake ≥ 3.28, a C++20 compiler (GCC 13 or clang 18), Vulkan loader + headers, and the SDL3/volk/VMA deps
 that `runtime/cmake/gfx_deps.cmake` fetches (they land in `$XDG_CACHE_HOME/nxrt/deps`).
 
