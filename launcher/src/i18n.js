@@ -15,6 +15,7 @@ import ptBR from './i18n/pt-BR.js';
 import ko from './i18n/ko.js';
 import zhCN from './i18n/zh-CN.js';
 import zhTW from './i18n/zh-TW.js';
+import id from './i18n/id.js';
 
 /** The languages the launcher is written in. `name` is the language's own name, so a player can find theirs whatever is showing. */
 export const LANGUAGES = [
@@ -28,6 +29,7 @@ export const LANGUAGES = [
   { code: 'ko', name: '한국어', catalog: ko },
   { code: 'zh-CN', name: '简体中文', catalog: zhCN },
   { code: 'zh-TW', name: '繁體中文', catalog: zhTW },
+  { code: 'id', name: 'Bahasa Indonesia', catalog: id },
 ];
 
 export const DEFAULT_LANGUAGE = 'en';
@@ -38,13 +40,14 @@ const TRADITIONAL = ['tw', 'hk', 'mo', 'hant'];   // zh-TW, zh-HK, zh-MO and zh-
 /**
  * The code of LANGUAGES a system language tag stands for, or null. Only the language counts, so es-ES and es-MX are both 'es'.
  * Chinese is told apart by script or region: zh-Hant, zh-TW, zh-HK, zh-MO are Traditional, the rest Simplified. Portuguese has one
- * catalog, Brazilian: pt-BR, pt-PT and plain pt all read it.
+ * catalog, Brazilian: pt-BR, pt-PT and plain pt all read it. Legacy Indonesian code 'in' maps to 'id'.
  */
 export function matchLanguage(tag) {
   const parts = String(tag ?? '').trim().toLowerCase().replace(/_/g, '-').split('-');
   const base = parts[0];
   if (base === 'zh') return parts.slice(1).some((p) => TRADITIONAL.includes(p)) ? 'zh-TW' : 'zh-CN';
   if (base === 'pt') return 'pt-BR';
+  if (base === 'in') return 'id';
   return LANGUAGES.some((l) => l.code === base) ? base : null;
 }
 
